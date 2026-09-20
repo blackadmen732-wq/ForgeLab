@@ -1,0 +1,18 @@
+{
+  "name": "@forgelab/materials",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Centralized ForgeLab material property database.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project default"
+  },
+  "dependencies": {
+    "@forgelab/shared": "workspace:*"
+  }
+}

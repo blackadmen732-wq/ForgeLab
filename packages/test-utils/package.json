@@ -1,0 +1,21 @@
+{
+  "name": "@forgelab/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Test helpers for ForgeLab simulation packages.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project default"
+  },
+  "dependencies": {
+    "@forgelab/materials": "workspace:*",
+    "@forgelab/reactor-components": "workspace:*",
+    "@forgelab/shared": "workspace:*",
+    "@forgelab/sim-core": "workspace:*"
+  }
+}
