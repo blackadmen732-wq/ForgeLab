@@ -2,7 +2,13 @@ import { QUATERNION_IDENTITY, quaternion, transform, vec3, Vec3Math } from "@for
 import type { PhysicalProperties, SimulationComponent } from "../component.js";
 import type { Connection, ConnectionPoint, ConnectionType } from "../connections.js";
 import { CONNECTION_TYPES } from "../connections.js";
-import { boxGeometry, cylinderGeometry, type ComponentGeometry } from "../geometry.js";
+import {
+  boxGeometry,
+  cylinderGeometry,
+  torusGeometry,
+  type ComponentGeometry,
+} from "../geometry.js";
+import { isPlantRole, resolveParameters } from "../plant/roles.js";
 import { makeSettings, type SimulationSettings } from "../settings.js";
 import { SimulationWorld, type WorldOptions } from "../world.js";
 import {
@@ -82,6 +88,8 @@ export function serializeComponent(component: SimulationComponent): SerializedCo
     additionalMassKg: component.additionalMassKg,
     anchored: component.anchored,
     ...(movedFromAuthoredPlacement ? { physical: serializePhysical(physical) } : {}),
+    role: component.role,
+    parameters: { ...component.parameters },
   };
 }
 
@@ -118,6 +126,15 @@ function serializeGeometry(geometry: ComponentGeometry): SerializedGeometry {
     return {
       kind: "box",
       sizeM: serializeVec3(geometry.sizeM),
+      ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
+    };
+  }
+  if (geometry.kind === "torus") {
+    return {
+      kind: "torus",
+      majorRadiusM: geometry.majorRadiusM,
+      minorRadiusM: geometry.minorRadiusM,
+      axis: geometry.axis,
       ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
     };
   }
@@ -159,6 +176,9 @@ function serializeSettings(settings: SimulationSettings): SerializedSimulationSe
     failurePropagation: settings.failurePropagation,
     maxFailureLogEntries: settings.maxFailureLogEntries,
     bucklingEffectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
+    ambientTemperatureK: settings.ambientTemperatureK,
+    initialThermalState: settings.initialThermalState,
+    initialVacuumState: settings.initialVacuumState,
   };
 }
 
@@ -197,9 +217,9 @@ export function parseAssemblyFile(input: unknown): AssemblyFileV1 {
     throw new AssemblyFileError(`Unsupported assembly schema version ${version}.`);
   }
 
-  // Version 1 is the earliest format, so there is nothing to migrate yet. When version 2
-  // lands, the chain of migrations runs here, oldest first.
-  return validateV1(record);
+  // Migrations run here, oldest first. Version 1 → 2: every component becomes a plain
+  // structural part with no plant parameters, which is exactly what it meant in version 1.
+  return validateFile(record, version);
 }
 
 export function fromJson(json: string): AssemblyFileV1 {
@@ -238,6 +258,8 @@ export function deserializeWorld(
       connectionPoints: component.connectionPoints.map(deserializeConnectionPoint),
       additionalMassKg: component.additionalMassKg,
       anchored: component.anchored,
+      role: component.role,
+      parameters: component.parameters,
     });
 
     if (component.physical !== undefined) {
@@ -279,6 +301,14 @@ function deserializeGeometry(geometry: SerializedGeometry): ComponentGeometry {
   if (geometry.kind === "box") {
     return boxGeometry(toVec3(geometry.sizeM), geometry.wallThicknessM);
   }
+  if (geometry.kind === "torus") {
+    return torusGeometry(
+      geometry.majorRadiusM,
+      geometry.minorRadiusM,
+      geometry.axis,
+      geometry.wallThicknessM,
+    );
+  }
   return cylinderGeometry(
     geometry.radiusM,
     geometry.heightM,
@@ -311,10 +341,10 @@ function quaternionEquals(
  * Validation
  * ------------------------------------------------------------------------------------ */
 
-function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
+function validateFile(record: Record<string, unknown>, version: number): AssemblyFileV1 {
   const name = typeof record["name"] === "string" ? record["name"] : "Untitled Assembly";
   const components = requireArray(record["components"], "components").map((value, index) =>
-    validateComponent(value, index),
+    validateComponent(value, index, version),
   );
   const connections = requireArray(record["connections"], "connections").map((value, index) =>
     validateConnection(value, index),
@@ -364,7 +394,7 @@ function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
   };
 }
 
-function validateComponent(value: unknown, index: number): SerializedComponent {
+function validateComponent(value: unknown, index: number, version: number): SerializedComponent {
   if (!isRecord(value)) {
     throw new AssemblyFileError(`components[${index}] is not an object.`);
   }
@@ -390,7 +420,23 @@ function validateComponent(value: unknown, index: number): SerializedComponent {
     ...(isRecord(value["physical"])
       ? { physical: validatePhysical(value["physical"], `components[${index}].physical`) }
       : {}),
+    ...validateRoleAndParameters(value, index, version),
   };
+}
+
+function validateRoleAndParameters(
+  value: Record<string, unknown>,
+  index: number,
+  version: number,
+): Pick<SerializedComponent, "role" | "parameters"> {
+  if (version < 2) return { role: "structure", parameters: {} };
+  const role = value["role"] ?? "structure";
+  if (!isPlantRole(role)) {
+    throw new AssemblyFileError(`components[${index}].role "${String(role)}" is not a known role.`);
+  }
+  const raw = isRecord(value["parameters"]) ? value["parameters"] : {};
+  // resolveParameters drops unknown keys, clamps ranges and defaults wrong types.
+  return { role, parameters: { ...resolveParameters(role, raw) } };
 }
 
 function validateGeometry(value: unknown, path: string): SerializedGeometry {
@@ -420,8 +466,23 @@ function validateGeometry(value: unknown, path: string): SerializedGeometry {
         : {}),
     };
   }
+  if (kind === "torus") {
+    const axis = value["axis"];
+    if (axis !== "x" && axis !== "y" && axis !== "z") {
+      throw new AssemblyFileError(`${path}.axis must be "x", "y" or "z".`);
+    }
+    return {
+      kind: "torus",
+      majorRadiusM: requireFinite(value["majorRadiusM"], `${path}.majorRadiusM`),
+      minorRadiusM: requireFinite(value["minorRadiusM"], `${path}.minorRadiusM`),
+      axis,
+      ...(typeof value["wallThicknessM"] === "number"
+        ? { wallThicknessM: value["wallThicknessM"] }
+        : {}),
+    };
+  }
   throw new AssemblyFileError(
-    `${path}.kind must be "box" or "cylinder", received ${String(kind)}.`,
+    `${path}.kind must be "box", "cylinder" or "torus", received ${String(kind)}.`,
   );
 }
 
@@ -510,6 +571,10 @@ function validateSettings(value: unknown): SerializedSimulationSettings {
       value["bucklingEffectiveLengthFactor"],
       defaults.bucklingEffectiveLengthFactor,
     ),
+    ambientTemperatureK: positiveOr(value["ambientTemperatureK"], defaults.ambientTemperatureK),
+    initialThermalState: value["initialThermalState"] === "cold" ? "cold" : "hot-standby",
+    initialVacuumState:
+      value["initialVacuumState"] === "atmospheric" ? "atmospheric" : "pumped-down",
   };
 }
 

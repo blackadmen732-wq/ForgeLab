@@ -53,6 +53,20 @@ export interface FailureEvent {
    * upward. This is the load path the player needs to lighten or brace.
    */
   readonly loadPathComponentIds: readonly ComponentId[];
+  /** One-line headline, e.g. `Pump "pump-2" lost flow`. Plant events always carry one. */
+  readonly summary?: string;
+  /** Failure keys of the upstream events this one was caused by. */
+  readonly causeKeys?: readonly string[];
+  /** The reconstructed chain from root cause to this event, root first. */
+  readonly causalChain?: readonly CausalLink[];
+}
+
+/** One step in a causal failure chain. */
+export interface CausalLink {
+  readonly componentId: ComponentId;
+  readonly system: string;
+  readonly failureType: string;
+  readonly summary: string;
 }
 
 /** Utilization bands. Numbers only: sim-core has no idea what colour "stressed" is. */

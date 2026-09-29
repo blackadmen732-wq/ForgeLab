@@ -5,6 +5,7 @@ import {
   type ComponentSpec,
   type ConnectionPoint,
   type ConnectionType,
+  type PlantRole,
   dominantLocalAxis,
   sectionAreaPerpendicularToLocalAxis,
 } from "@forgelab/sim-core";
@@ -18,7 +19,37 @@ export interface PlacementOptions {
   readonly anchored?: boolean;
   /** Contents the geometry does not model: coolant inventory, internals, ballast. */
   readonly additionalMassKg?: number;
+  /** Overrides of the preset operating parameters. */
+  readonly parameters?: Readonly<Record<string, unknown>>;
+  /** Overrides of the default dimensions (metres), clamped to each dimension's range. */
+  readonly dimensions?: Readonly<Record<string, number>>;
 }
+
+/** An editable size of a catalogue part, in metres. */
+export interface DimensionSpec {
+  readonly key: string;
+  readonly label: string;
+  readonly defaultM: number;
+  readonly minM: number;
+  readonly maxM: number;
+}
+
+/** Palette categories, in the order the component browser shows them. */
+export const COMPONENT_CATEGORIES = Object.freeze([
+  "Structure",
+  "Chambers",
+  "Magnets",
+  "Fuel",
+  "Vacuum",
+  "Electrical",
+  "Thermal",
+  "Fluids",
+  "Power conversion",
+  "Sensors",
+  "Controls",
+] as const);
+
+export type ComponentCategory = (typeof COMPONENT_CATEGORIES)[number];
 
 /**
  * A component the player can place.
@@ -34,7 +65,26 @@ export interface ComponentDefinition {
   readonly defaultMaterialId: MaterialId;
   /** Nominal bounding size, for palette previews and placement offsets. */
   readonly nominalSizeM: Vec3;
+  readonly category: ComponentCategory;
+  /** The physics role every instance gets. */
+  readonly role: PlantRole;
+  /** Preset operating parameters (SI). Missing keys take the role defaults in sim-core. */
+  readonly presetParameters: Readonly<Record<string, number | boolean | string>>;
+  /** One headline figure for the palette card, already formatted. */
+  readonly keyProperty: string;
+  /** Sizes a builder may change. Sockets move with them. */
+  readonly dimensions: readonly DimensionSpec[];
   createSpec(options: PlacementOptions): ComponentSpec;
+  /**
+   * Geometry and sockets for a set of dimensions (clamped), with socket ratings derived
+   * from `materialId`. Used to resize a placed part.
+   */
+  reshape(
+    dimensions: Readonly<Record<string, number>>,
+    materialId: MaterialId,
+  ): { geometry: ComponentGeometry; connectionPoints: readonly ConnectionPoint[] };
+  /** Recovers the dimensions of a placed part from its geometry. */
+  dimensionsOf(geometry: ComponentGeometry): Record<string, number>;
 }
 
 /**

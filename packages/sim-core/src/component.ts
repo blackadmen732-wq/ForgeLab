@@ -29,6 +29,8 @@ import {
 } from "./geometry.js";
 import type { StructuralStatus } from "./failure.js";
 import type { MemberRole } from "./systems/members.js";
+import { type ComponentParameters, type PlantRole, resolveParameters } from "./plant/roles.js";
+import { type ComponentPlantState, ZERO_PLANT_STATE } from "./plant/state.js";
 
 /**
  * The live kinematic state of a component.
@@ -126,6 +128,8 @@ export interface ComponentState {
   readonly physical: PhysicalProperties;
   readonly support: SupportState;
   readonly structural: StructuralState;
+  /** Written only by the plant solver (electrical, thermal, coolant, magnetics, plasma...). */
+  readonly plant: ComponentPlantState;
 }
 
 /**
@@ -160,6 +164,10 @@ export interface SimulationComponent {
   readonly anchored: boolean;
   /** Free-text label shown in the workspace. Never read by physics. */
   readonly label: string;
+  /** Which plant physics applies to this component. `structure` means none. */
+  readonly role: PlantRole;
+  /** Operating parameters for the role, in SI, validated and complete. */
+  readonly parameters: ComponentParameters;
 }
 
 /**
@@ -242,6 +250,9 @@ export interface ComponentSpec {
   readonly additionalMassKg?: Kilograms;
   readonly anchored?: boolean;
   readonly label?: string;
+  readonly role?: PlantRole;
+  /** Partial parameters; missing ones take the role's defaults. */
+  readonly parameters?: Readonly<Record<string, unknown>>;
   /** Restores a saved kinematic state instead of starting from the authored transform. */
   readonly physical?: PhysicalProperties;
 }
@@ -250,6 +261,7 @@ export function createComponent(spec: ComponentSpec): SimulationComponent {
   const transform = spec.transform ?? makeTransform(VEC3_ZERO, QUATERNION_IDENTITY);
   const additionalMassKg = spec.additionalMassKg ?? 0;
   const massKg = resolveMassKg(spec.geometry, spec.materialId, additionalMassKg);
+  const role = spec.role ?? "structure";
 
   return Object.freeze({
     id: spec.id,
@@ -263,10 +275,13 @@ export function createComponent(spec: ComponentSpec): SimulationComponent {
     additionalMassKg,
     anchored: spec.anchored ?? false,
     label: spec.label ?? spec.type,
+    role,
+    parameters: resolveParameters(role, spec.parameters ?? {}),
     state: Object.freeze({
       physical: spec.physical ?? initialPhysicalProperties(massKg, transform),
       support: ZERO_SUPPORT_STATE,
       structural: ZERO_STRUCTURAL_STATE,
+      plant: ZERO_PLANT_STATE,
     }),
   });
 }
@@ -286,6 +301,7 @@ export function withComponent(
       | "connections"
       | "state"
       | "connectionPoints"
+      | "parameters"
     >
   >,
 ): SimulationComponent {
@@ -321,6 +337,10 @@ export function withComponent(
     label: changes.label ?? component.label,
     connections: changes.connections ?? component.connections,
     connectionPoints: changes.connectionPoints ?? component.connectionPoints,
+    parameters:
+      changes.parameters === undefined
+        ? component.parameters
+        : resolveParameters(component.role, changes.parameters),
     state: Object.freeze({ ...state, physical }),
   });
 }
@@ -343,6 +363,16 @@ export function withSolverState(
 ): SimulationComponent {
   return Object.freeze({
     ...component,
-    state: Object.freeze({ physical: component.state.physical, support, structural }),
+    state: Object.freeze({ ...component.state, support, structural }),
+  });
+}
+
+export function withPlantState(
+  component: SimulationComponent,
+  plant: ComponentPlantState,
+): SimulationComponent {
+  return Object.freeze({
+    ...component,
+    state: Object.freeze({ ...component.state, plant }),
   });
 }

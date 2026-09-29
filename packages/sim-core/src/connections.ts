@@ -7,21 +7,28 @@ export type ConnectionPointId = string;
 /**
  * Kinds of connection ForgeLab understands.
  *
- * Milestone 0 implements `structural` and `mount` only. The remaining names are reserved
- * so that save files written today keep their meaning when the corresponding physics
- * phase lands; nothing in Milestone 0 reads them, and `isLoadBearing` treats them as
- * non-structural.
+ * `structural` and `mount` carry mechanical load. The rest are plant networks read by the
+ * V0.1 plant solver (see docs/ARCHITECTURE.md §13):
+ *   electrical — DC power network
+ *   coolant    — primary coolant loop
+ *   steam      — heat exchanger secondary side to a turbine
+ *   shaft      — turbine to generator
+ *   vacuum     — vacuum pump to vessel
+ *   fuel       — fuel injector to vessel
+ *   port       — plasma heater to vessel
+ *   control    — sensor / controller / actuator signals
  */
 export const CONNECTION_TYPES = Object.freeze([
   "structural",
   "mount",
-  // Reserved for later phases. See docs/PHYSICS_ROADMAP.md.
   "electrical",
   "coolant",
   "vacuum",
   "fuel",
   "control",
   "shaft",
+  "steam",
+  "port",
 ] as const);
 
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];

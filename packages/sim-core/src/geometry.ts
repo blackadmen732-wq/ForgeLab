@@ -40,7 +40,103 @@ export interface CylinderGeometry {
   readonly wallThicknessM?: Meters;
 }
 
-export type ComponentGeometry = BoxGeometry | CylinderGeometry;
+/**
+ * A ring torus centred on its local origin, its symmetry axis along `axis`.
+ * `majorRadiusM` is the distance from the axis to the centre of the tube; `minorRadiusM`
+ * is the tube's outer radius. With `wallThicknessM` it is a hollow tube (a vessel).
+ *
+ * Added for V0.1 plant components: toroidal vacuum vessels, toroidal-field coil sets
+ * and breeding blankets.
+ */
+export interface TorusGeometry {
+  readonly kind: "torus";
+  readonly majorRadiusM: Meters;
+  readonly minorRadiusM: Meters;
+  readonly axis: GeometryAxis;
+  readonly wallThicknessM?: Meters;
+}
+
+export type ComponentGeometry = BoxGeometry | CylinderGeometry | TorusGeometry;
+
+export function torusGeometry(
+  majorRadiusM: Meters,
+  minorRadiusM: Meters,
+  axis: GeometryAxis = "y",
+  wallThicknessM?: Meters,
+): TorusGeometry {
+  assertPositive(majorRadiusM, "torusGeometry.majorRadiusM");
+  assertPositive(minorRadiusM, "torusGeometry.minorRadiusM");
+  if (!(minorRadiusM < majorRadiusM)) {
+    throw new RangeError("torusGeometry.minorRadiusM must be smaller than majorRadiusM.");
+  }
+  if (wallThicknessM === undefined) {
+    return Object.freeze({ kind: "torus", majorRadiusM, minorRadiusM, axis });
+  }
+  assertPositive(wallThicknessM, "torusGeometry.wallThicknessM");
+  return Object.freeze({ kind: "torus", majorRadiusM, minorRadiusM, axis, wallThicknessM });
+}
+
+/**
+ * Volume enclosed by the inside of a hollow primitive (the vacuum or coolant space), m³.
+ * Zero for solids.
+ */
+export function geometryInteriorVolumeM3(geometry: ComponentGeometry): CubicMeters {
+  const t = geometry.wallThicknessM;
+  if (t === undefined) return 0;
+  switch (geometry.kind) {
+    case "box": {
+      const { x, y, z } = geometry.sizeM;
+      return Math.max(0, x - 2 * t) * Math.max(0, y - 2 * t) * Math.max(0, z - 2 * t);
+    }
+    case "cylinder": {
+      const ir = Math.max(0, geometry.radiusM - t);
+      return Math.PI * ir * ir * Math.max(0, geometry.heightM - 2 * t);
+    }
+    case "torus": {
+      const ia = Math.max(0, geometry.minorRadiusM - t);
+      return 2 * Math.PI ** 2 * geometry.majorRadiusM * ia * ia;
+    }
+  }
+}
+
+/** Inner (wetted / vacuum-facing) surface area of a hollow primitive, m². Zero for solids. */
+export function geometryInteriorSurfaceM2(geometry: ComponentGeometry): SquareMeters {
+  const t = geometry.wallThicknessM;
+  if (t === undefined) return 0;
+  switch (geometry.kind) {
+    case "box": {
+      const x = Math.max(0, geometry.sizeM.x - 2 * t);
+      const y = Math.max(0, geometry.sizeM.y - 2 * t);
+      const z = Math.max(0, geometry.sizeM.z - 2 * t);
+      return 2 * (x * y + y * z + x * z);
+    }
+    case "cylinder": {
+      const ir = Math.max(0, geometry.radiusM - t);
+      const ih = Math.max(0, geometry.heightM - 2 * t);
+      return 2 * Math.PI * ir * ih + 2 * Math.PI * ir * ir;
+    }
+    case "torus": {
+      const ia = Math.max(0, geometry.minorRadiusM - t);
+      return 4 * Math.PI ** 2 * geometry.majorRadiusM * ia;
+    }
+  }
+}
+
+/** Outer surface area, m². Used for convective and radiative loss to the surroundings. */
+export function geometryOuterSurfaceM2(geometry: ComponentGeometry): SquareMeters {
+  switch (geometry.kind) {
+    case "box": {
+      const { x, y, z } = geometry.sizeM;
+      return 2 * (x * y + y * z + x * z);
+    }
+    case "cylinder": {
+      const r = geometry.radiusM;
+      return 2 * Math.PI * r * geometry.heightM + 2 * Math.PI * r * r;
+    }
+    case "torus":
+      return 4 * Math.PI ** 2 * geometry.majorRadiusM * geometry.minorRadiusM;
+  }
+}
 
 export function boxGeometry(sizeM: Vec3, wallThicknessM?: Meters): BoxGeometry {
   assertPositive(sizeM.x, "boxGeometry.sizeM.x");
@@ -72,6 +168,7 @@ export function cylinderGeometry(
  * Solid primitives use their exact closed-form volume. Shells subtract the enclosed void:
  *  - box shell:      x*y*z - (x-2t)(y-2t)(z-2t)
  *  - cylinder shell: pi*r^2*h - pi*(r-t)^2*(h-2t)   (a capped tube)
+ *  - torus (Pappus): 2*pi^2*R*a^2; shell 2*pi^2*R*(a^2 - (a-t)^2)
  * A wall thickness that would consume the whole part yields the solid volume.
  */
 export function geometryVolumeM3(geometry: ComponentGeometry): CubicMeters {
@@ -97,6 +194,15 @@ export function geometryVolumeM3(geometry: ComponentGeometry): CubicMeters {
       if (ir <= 0 || ih <= 0) return outer;
       return outer - Math.PI * ir * ir * ih;
     }
+    case "torus": {
+      const { majorRadiusM: R, minorRadiusM: a } = geometry;
+      const outer = 2 * Math.PI ** 2 * R * a * a;
+      const t = geometry.wallThicknessM;
+      if (t === undefined) return outer;
+      const ia = a - t;
+      if (ia <= 0) return outer;
+      return outer - 2 * Math.PI ** 2 * R * ia * ia;
+    }
   }
 }
 
@@ -114,6 +220,19 @@ export function geometryLocalHalfExtentsM(geometry: ComponentGeometry): Vec3 {
           return vec3(r, h / 2, r);
         case "z":
           return vec3(r, r, h / 2);
+      }
+    }
+    // eslint-disable-next-line no-fallthrough
+    case "torus": {
+      const { majorRadiusM: R, minorRadiusM: a, axis } = geometry;
+      const outer = R + a;
+      switch (axis) {
+        case "x":
+          return vec3(a, outer, outer);
+        case "y":
+          return vec3(outer, a, outer);
+        case "z":
+          return vec3(outer, outer, a);
       }
     }
   }
@@ -183,6 +302,20 @@ export function sectionAreaPerpendicularToLocalAxis(
       const ih = h - 2 * t;
       if (ir <= 0 || ih <= 0) return outer;
       return outer - 2 * ir * ih;
+    }
+    case "torus": {
+      const { majorRadiusM: R, minorRadiusM: a, axis: torusAxis } = geometry;
+      const t = geometry.wallThicknessM;
+      const tube = t === undefined || t >= a ? a : undefined;
+      if (axis === torusAxis) {
+        // A plane perpendicular to the axis cuts two concentric annuli: 4*pi*R*a (solid)
+        // or exactly 4*pi*R*t for a shell.
+        return tube !== undefined ? 4 * Math.PI * R * a : 4 * Math.PI * R * t!;
+      }
+      // A plane containing the axis cuts the tube twice.
+      if (tube !== undefined) return 2 * Math.PI * a * a;
+      const ia = a - t!;
+      return 2 * Math.PI * (a * a - ia * ia);
     }
   }
 }

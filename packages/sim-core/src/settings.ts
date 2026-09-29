@@ -1,4 +1,5 @@
 import {
+  type Kelvin,
   type Meters,
   type MetersPerSecondSquared,
   type Ratio,
@@ -47,7 +48,23 @@ export interface SimulationSettings {
   readonly bucklingEffectiveLengthFactor: Ratio;
   /** Oldest failures are dropped past this count so a long run cannot grow without bound. */
   readonly maxFailureLogEntries: number;
+  /** Temperature of the surroundings, K. */
+  readonly ambientTemperatureK: Kelvin;
+  /**
+   * `hot-standby`: coolant loops that feed a turbine, and the components on them, start at
+   * the turbine's live-steam temperature — the pre-heated state real plants start from.
+   * `cold`: everything starts at ambient.
+   */
+  readonly initialThermalState: InitialThermalState;
+  /**
+   * `pumped-down`: vessels start at the base pressure their pumps can hold.
+   * `atmospheric`: vessels start at one standard atmosphere and must be pumped down.
+   */
+  readonly initialVacuumState: InitialVacuumState;
 }
+
+export type InitialThermalState = "hot-standby" | "cold";
+export type InitialVacuumState = "pumped-down" | "atmospheric";
 
 export const DEFAULT_FIXED_TIMESTEP_SEC: Seconds = 1 / 60;
 
@@ -59,6 +76,9 @@ export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = Object.freeze({
   failurePropagation: "report-only",
   bucklingEffectiveLengthFactor: 1,
   maxFailureLogEntries: 500,
+  ambientTemperatureK: 293.15,
+  initialThermalState: "hot-standby",
+  initialVacuumState: "pumped-down",
 });
 
 export function makeSettings(overrides: Partial<SimulationSettings> = {}): SimulationSettings {

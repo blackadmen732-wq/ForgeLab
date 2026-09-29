@@ -548,6 +548,8 @@ function analyseMember(input: MemberInput): MemberResult {
   const geometry = component.geometry;
   const rotation = component.state.physical.rotation;
   if (input.mode === "free") return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
+  // A torus (vessel, coil set, blanket) is a closed ring: V0.1 checks direct stress only.
+  if (geometry.kind === "torus") return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
 
   const localUp = QuaternionMath.inverseRotateVec3(rotation, UP);
   const verticalAxis = dominantLocalAxis(localUp);

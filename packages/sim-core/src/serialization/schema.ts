@@ -1,5 +1,10 @@
 import type { ConnectionType } from "../connections.js";
-import type { FailurePropagationMode } from "../settings.js";
+import type { PlantRole } from "../plant/roles.js";
+import type {
+  FailurePropagationMode,
+  InitialThermalState,
+  InitialVacuumState,
+} from "../settings.js";
 
 /**
  * ForgeLab assembly file, schema version 1.
@@ -24,7 +29,16 @@ import type { FailurePropagationMode } from "../settings.js";
  * the tick the file was saved on; failures that happened earlier in the original run and
  * have since been resolved do not come back.
  */
-export const CURRENT_SCHEMA_VERSION = 1 as const;
+export const CURRENT_SCHEMA_VERSION = 2 as const;
+
+/*
+ * VERSION HISTORY
+ *  1 — Milestone 0: structural components, box/cylinder geometry.
+ *  2 — Launch candidate V0.1: every component gains `role` and `parameters` (plant
+ *      physics), torus geometry, new connection types (steam, port) and new settings.
+ *      Version 1 files migrate by giving every component role "structure" and no
+ *      parameters, which preserves their meaning exactly.
+ */
 
 export interface SerializedVec3 {
   readonly x: number;
@@ -50,6 +64,13 @@ export type SerializedGeometry =
       readonly kind: "cylinder";
       readonly radiusM: number;
       readonly heightM: number;
+      readonly axis: "x" | "y" | "z";
+      readonly wallThicknessM?: number;
+    }
+  | {
+      readonly kind: "torus";
+      readonly majorRadiusM: number;
+      readonly minorRadiusM: number;
       readonly axis: "x" | "y" | "z";
       readonly wallThicknessM?: number;
     };
@@ -83,6 +104,10 @@ export interface SerializedComponent {
   readonly anchored: boolean;
   /** Omitted when the part has not moved from its authored transform. */
   readonly physical?: SerializedPhysicalState;
+  /** Plant role (schema 2). */
+  readonly role: PlantRole;
+  /** Operating parameters in SI (schema 2). */
+  readonly parameters: Readonly<Record<string, number | boolean | string>>;
 }
 
 export interface SerializedConnection {
@@ -102,6 +127,9 @@ export interface SerializedSimulationSettings {
   readonly maxFailureLogEntries: number;
   /** Added in Structural 0.1. Files without it load with the default of 1.0. */
   readonly bucklingEffectiveLengthFactor?: number;
+  readonly ambientTemperatureK?: number;
+  readonly initialThermalState?: InitialThermalState;
+  readonly initialVacuumState?: InitialVacuumState;
 }
 
 /** Clock state, so that reopening a save resumes the run rather than restarting it. */
@@ -111,7 +139,7 @@ export interface SerializedRuntime {
   readonly idCounter: number;
 }
 
-export interface AssemblyFileV1 {
+export interface AssemblyFileV2 {
   readonly schemaVersion: typeof CURRENT_SCHEMA_VERSION;
   readonly name: string;
   readonly components: readonly SerializedComponent[];
@@ -125,4 +153,6 @@ export interface AssemblyFileV1 {
   };
 }
 
-export type AnyAssemblyFile = AssemblyFileV1;
+/** The current file shape. Kept under its old name for callers written against V1. */
+export type AssemblyFileV1 = AssemblyFileV2;
+export type AnyAssemblyFile = AssemblyFileV2;

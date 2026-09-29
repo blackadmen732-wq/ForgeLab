@@ -30,6 +30,11 @@ export interface SectionProperties {
 /** Local extent of the geometry along one of its axes, m. */
 export function extentAlongAxis(geometry: ComponentGeometry, axis: GeometryAxis): Meters {
   if (geometry.kind === "box") return geometry.sizeM[axis];
+  if (geometry.kind === "torus") {
+    return axis === geometry.axis
+      ? 2 * geometry.minorRadiusM
+      : 2 * (geometry.majorRadiusM + geometry.minorRadiusM);
+  }
   return axis === geometry.axis ? geometry.heightM : 2 * geometry.radiusM;
 }
 

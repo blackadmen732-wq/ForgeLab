@@ -1,172 +1,864 @@
-import { MaterialIds } from "@forgelab/materials";
+import { MaterialIds, type MaterialId } from "@forgelab/materials";
 import { type Vec3, vec3 } from "@forgelab/shared";
-import { boxGeometry, cylinderGeometry, type ComponentSpec } from "@forgelab/sim-core";
+import {
+  type ComponentGeometry,
+  type ComponentSpec,
+  type ConnectionType,
+  type PlantRole,
+  boxGeometry,
+  cylinderGeometry,
+  torusGeometry,
+} from "@forgelab/sim-core";
 import {
   buildConnectionPoints,
+  type ComponentCategory,
   type ComponentDefinition,
+  type DimensionSpec,
   type PlacementOptions,
   type SocketTemplate,
 } from "./definition.js";
 
 /**
- * The four components Milestone 0 ships.
+ * ForgeLab's V0.1 component library.
  *
- * Every dimension below is a plain engineering choice stated in metres, not a tuned game
- * number: a 4 m beam with a 200 mm square section, a 6 m platform deck 200 mm thick, a
- * 3 m tall vessel with a 50 mm wall. Mass, capacity and stress all follow from these and
- * from the material, so changing a dimension changes the physics consistently.
+ * Every dimension is a plain engineering choice in metres, and every preset parameter is a
+ * representative value for the kind of plant the part stands in for (ITER-class where a
+ * reference exists). None of them is tuned to make a design succeed or fail: mass, loads,
+ * fields, temperatures and power all follow from these numbers through sim-core's
+ * documented physics. Every preset can be changed in the inspector.
  */
 
-const BEAM_LENGTH_M = 4;
-const BEAM_SECTION_M = 0.15;
-const BEAM_WALL_M = 0.008;
-const PLATFORM_SPAN_M = 6;
-const PLATFORM_THICKNESS_M = 0.2;
-const PLATFORM_PLATE_M = 0.012;
-const PLATFORM_CORNER_INSET_M = 0.3;
-const CHAMBER_RADIUS_M = 1.5;
-const CHAMBER_HEIGHT_M = 3;
-const CHAMBER_WALL_M = 0.05;
-const EQUIPMENT_SIZE_M = 1;
+/* ------------------------------------------------------------------------------------ *
+ * Socket helpers
+ * ------------------------------------------------------------------------------------ */
+
+function structural(id: string, localPosition: Vec3, localDirection: Vec3): SocketTemplate {
+  return { id, localPosition, localDirection, connectionType: "structural", derivedCapacity: true };
+}
+function mount(id: string, localPosition: Vec3, localDirection: Vec3): SocketTemplate {
+  return { id, localPosition, localDirection, connectionType: "mount", derivedCapacity: false };
+}
+function socket(
+  id: string,
+  connectionType: ConnectionType,
+  localPosition: Vec3,
+  localDirection: Vec3,
+): SocketTemplate {
+  return { id, localPosition, localDirection, connectionType, derivedCapacity: false };
+}
+
+const UP = vec3(0, 1, 0);
+const DOWN = vec3(0, -1, 0);
+const PX = vec3(1, 0, 0);
+const NX = vec3(-1, 0, 0);
+const PZ = vec3(0, 0, 1);
+const NZ = vec3(0, 0, -1);
+
+/** A base socket at the bottom of a part of height h, so it can stand on a deck. */
+const base = (h: number) => structural("base", vec3(0, -h / 2, 0), DOWN);
+
+interface Shape {
+  readonly geometry: ComponentGeometry;
+  readonly sockets: readonly SocketTemplate[];
+}
+
+interface Recipe {
+  readonly type: string;
+  readonly name: string;
+  readonly description: string;
+  readonly category: ComponentCategory;
+  readonly role: PlantRole;
+  readonly material: MaterialId;
+  readonly dimensions: readonly DimensionSpec[];
+  /** Geometry and sockets from clamped dimensions, in metres. */
+  readonly shape: (d: Readonly<Record<string, number>>) => Shape;
+  readonly dimensionsOf: (geometry: ComponentGeometry) => Record<string, number>;
+  readonly presets?: Readonly<Record<string, number | boolean | string>>;
+  readonly keyProperty: string;
+}
+
+const dim = (
+  key: string,
+  label: string,
+  defaultM: number,
+  minM: number,
+  maxM: number,
+): DimensionSpec => ({
+  key,
+  label,
+  defaultM,
+  minM,
+  maxM,
+});
+
+function resolveDimensions(
+  specs: readonly DimensionSpec[],
+  input: Readonly<Record<string, number>> = {},
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const spec of specs) {
+    const raw = input[spec.key];
+    const value = typeof raw === "number" && Number.isFinite(raw) ? raw : spec.defaultM;
+    out[spec.key] = Math.min(spec.maxM, Math.max(spec.minM, value));
+  }
+  return out;
+}
+
+function sizeOf(geometry: ComponentGeometry): Vec3 {
+  switch (geometry.kind) {
+    case "box":
+      return geometry.sizeM;
+    case "cylinder": {
+      const d = 2 * geometry.radiusM;
+      const h = geometry.heightM;
+      return geometry.axis === "x"
+        ? vec3(h, d, d)
+        : geometry.axis === "y"
+          ? vec3(d, h, d)
+          : vec3(d, d, h);
+    }
+    case "torus": {
+      const outer = 2 * (geometry.majorRadiusM + geometry.minorRadiusM);
+      return vec3(outer, 2 * geometry.minorRadiusM, outer);
+    }
+  }
+}
+
+function define(recipe: Recipe): ComponentDefinition {
+  const defaults = resolveDimensions(recipe.dimensions);
+  const defaultShape = recipe.shape(defaults);
+  return {
+    type: recipe.type,
+    name: recipe.name,
+    description: recipe.description,
+    defaultMaterialId: recipe.material,
+    nominalSizeM: sizeOf(defaultShape.geometry),
+    category: recipe.category,
+    role: recipe.role,
+    presetParameters: recipe.presets ?? {},
+    keyProperty: recipe.keyProperty,
+    dimensions: recipe.dimensions,
+    createSpec(options: PlacementOptions): ComponentSpec {
+      const materialId = options.materialId ?? recipe.material;
+      const { geometry, sockets } =
+        options.dimensions === undefined
+          ? defaultShape
+          : recipe.shape(resolveDimensions(recipe.dimensions, options.dimensions));
+      return {
+        id: options.id,
+        type: recipe.type,
+        geometry,
+        materialId,
+        connectionPoints: buildConnectionPoints(sockets, geometry, materialId),
+        role: recipe.role,
+        parameters: { ...(recipe.presets ?? {}), ...(options.parameters ?? {}) },
+        ...(options.transform === undefined ? {} : { transform: options.transform }),
+        ...(options.label === undefined ? {} : { label: options.label }),
+        ...(options.anchored === undefined ? {} : { anchored: options.anchored }),
+        ...(options.additionalMassKg === undefined
+          ? {}
+          : { additionalMassKg: options.additionalMassKg }),
+      };
+    },
+    reshape(dimensions, materialId) {
+      const { geometry, sockets } = recipe.shape(resolveDimensions(recipe.dimensions, dimensions));
+      return { geometry, connectionPoints: buildConnectionPoints(sockets, geometry, materialId) };
+    },
+    dimensionsOf(geometry) {
+      return resolveDimensions(recipe.dimensions, recipe.dimensionsOf(geometry));
+    },
+  };
+}
+
+/* ------------------------------------------------------------------------------------ *
+ * Structure (Milestone 0 parts, unchanged geometry and sockets)
+ * ------------------------------------------------------------------------------------ */
 
 /**
- * Structural Beam — a 150 x 150 x 8 mm square hollow section, 4 m long, lying along its
- * local X axis. That is a standard stocked profile, and a hollow section rather than a
- * solid bar because nobody builds frames out of 150 mm solid steel: the solid version
- * would weigh six times as much and every load below it would be wrong to match.
- *
- * Sockets sit on both ends and on the mid-span top and bottom faces, so the same part
- * works as a horizontal spanning beam or, rotated upright, as a column.
+ * Structural Beam — a square hollow section (default 150 x 150 x 8 mm, 4 m long) lying
+ * along its local X axis. A hollow section because nobody builds frames from solid bar:
+ * the solid version would weigh six times as much. Spans horizontally or, rotated, stands
+ * as a column.
  */
-export const STRUCTURAL_BEAM: ComponentDefinition = {
+export const STRUCTURAL_BEAM = define({
   type: "structural-beam",
   name: "Structural Beam",
   description:
-    "150 x 150 x 8 mm square hollow section, 4 m long. Spans horizontally or stands as a column when rotated.",
-  defaultMaterialId: MaterialIds.StructuralSteel,
-  nominalSizeM: vec3(BEAM_LENGTH_M, BEAM_SECTION_M, BEAM_SECTION_M),
-  createSpec(options: PlacementOptions): ComponentSpec {
-    const geometry = boxGeometry(vec3(BEAM_LENGTH_M, BEAM_SECTION_M, BEAM_SECTION_M), BEAM_WALL_M);
-    const materialId = options.materialId ?? MaterialIds.StructuralSteel;
-    const half = BEAM_LENGTH_M / 2;
-    const halfSection = BEAM_SECTION_M / 2;
-
-    const sockets: SocketTemplate[] = [
-      structural("end-a", vec3(-half, 0, 0), vec3(-1, 0, 0)),
-      structural("end-b", vec3(half, 0, 0), vec3(1, 0, 0)),
-      structural("top", vec3(0, halfSection, 0), vec3(0, 1, 0)),
-      structural("bottom", vec3(0, -halfSection, 0), vec3(0, -1, 0)),
-    ];
-
-    return spec(options, "structural-beam", geometry, materialId, sockets);
+    "Square hollow section, 150 x 150 x 8 mm and 4 m long by default. Spans horizontally or stands as a column when rotated.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [
+    dim("lengthM", "Length", 4, 0.5, 30),
+    dim("sectionM", "Section width", 0.15, 0.04, 1.5),
+    dim("wallM", "Wall thickness", 0.008, 0.002, 0.1),
+  ],
+  shape: (d) => {
+    const L = d["lengthM"]!;
+    const b = d["sectionM"]!;
+    const t = Math.min(d["wallM"]!, b / 2.5);
+    return {
+      geometry: boxGeometry(vec3(L, b, b), t),
+      sockets: [
+        structural("end-a", vec3(-L / 2, 0, 0), NX),
+        structural("end-b", vec3(L / 2, 0, 0), PX),
+        structural("top", vec3(0, b / 2, 0), UP),
+        structural("bottom", vec3(0, -b / 2, 0), DOWN),
+      ],
+    };
   },
-};
+  dimensionsOf: (g) =>
+    g.kind === "box"
+      ? { lengthM: g.sizeM.x, sectionM: g.sizeM.y, wallM: g.wallThicknessM ?? 0.008 }
+      : {},
+  keyProperty: "4 m · 150 SHS",
+});
 
 /**
- * Structural Platform — a 6 m square deck, 200 mm deep, built as a 12 mm plate box rather
- * than a solid slab. At 200 kg/m2 that is a plausible heavy industrial deck; a solid
- * 200 mm steel slab of the same footprint would be 56 tonnes and would dominate every
- * load case it appeared in.
- *
- * One socket on the top face to receive equipment, and four inset corner sockets
- * underneath so it can rest on legs. The corner spacing is what gives the load-splitting
- * lever arms something real to work with.
+ * Structural Platform — a square deck (default 6 m, 200 mm deep) built as a 12 mm plate
+ * box, with a socket on top and four inset corner sockets underneath.
  */
-export const STRUCTURAL_PLATFORM: ComponentDefinition = {
+export const STRUCTURAL_PLATFORM = define({
   type: "structural-platform",
   name: "Structural Platform",
   description:
-    "6 m square deck, 200 mm deep in 12 mm plate, with four inset corner mounts underneath and a central mount on top.",
-  defaultMaterialId: MaterialIds.StructuralSteel,
-  nominalSizeM: vec3(PLATFORM_SPAN_M, PLATFORM_THICKNESS_M, PLATFORM_SPAN_M),
-  createSpec(options: PlacementOptions): ComponentSpec {
-    const geometry = boxGeometry(
-      vec3(PLATFORM_SPAN_M, PLATFORM_THICKNESS_M, PLATFORM_SPAN_M),
-      PLATFORM_PLATE_M,
-    );
-    const materialId = options.materialId ?? MaterialIds.StructuralSteel;
-    const halfThickness = PLATFORM_THICKNESS_M / 2;
-    const corner = PLATFORM_SPAN_M / 2 - PLATFORM_CORNER_INSET_M;
-
-    const sockets: SocketTemplate[] = [
-      structural("top", vec3(0, halfThickness, 0), vec3(0, 1, 0)),
-      structural("bottom-nx-nz", vec3(-corner, -halfThickness, -corner), vec3(0, -1, 0)),
-      structural("bottom-nx-pz", vec3(-corner, -halfThickness, corner), vec3(0, -1, 0)),
-      structural("bottom-px-nz", vec3(corner, -halfThickness, -corner), vec3(0, -1, 0)),
-      structural("bottom-px-pz", vec3(corner, -halfThickness, corner), vec3(0, -1, 0)),
-    ];
-
-    return spec(options, "structural-platform", geometry, materialId, sockets);
+    "Square deck, 6 m and 200 mm deep in 12 mm plate by default, with four inset corner mounts underneath and a central mount on top.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [
+    dim("spanM", "Span", 6, 1.5, 30),
+    dim("depthM", "Depth", 0.2, 0.05, 2),
+    dim("plateM", "Plate thickness", 0.012, 0.003, 0.1),
+  ],
+  shape: (d) => {
+    const span = d["spanM"]!;
+    const depth = d["depthM"]!;
+    const plate = Math.min(d["plateM"]!, depth / 2.5);
+    const corner = span / 2 - Math.min(0.3, span / 10);
+    return {
+      geometry: boxGeometry(vec3(span, depth, span), plate),
+      sockets: [
+        structural("top", vec3(0, depth / 2, 0), UP),
+        structural("bottom-nx-nz", vec3(-corner, -depth / 2, -corner), DOWN),
+        structural("bottom-nx-pz", vec3(-corner, -depth / 2, corner), DOWN),
+        structural("bottom-px-nz", vec3(corner, -depth / 2, -corner), DOWN),
+        structural("bottom-px-pz", vec3(corner, -depth / 2, corner), DOWN),
+      ],
+    };
   },
-};
+  dimensionsOf: (g) =>
+    g.kind === "box"
+      ? { spanM: g.sizeM.x, depthM: g.sizeM.y, plateM: g.wallThicknessM ?? 0.012 }
+      : {},
+  keyProperty: "6 × 6 m deck",
+});
 
-/**
- * Generic Reactor Chamber — a stainless vessel, 3 m tall, 1.5 m radius, 50 mm wall.
- *
- * It is a shell, not a billet: a solid cylinder of this size would weigh about 170 t and
- * every structural result downstream would be wrong by roughly an order of magnitude.
- * `additionalMassKg` is where its contents go until ForgeLab models them.
- */
-export const REACTOR_CHAMBER: ComponentDefinition = {
-  type: "reactor-chamber",
-  name: "Generic Reactor Chamber",
-  description:
-    "Cylindrical pressure vessel shell, 3 m tall and 1.5 m in radius with a 50 mm wall. A generic container; it has no reactor physics yet.",
-  defaultMaterialId: MaterialIds.StainlessSteel,
-  nominalSizeM: vec3(CHAMBER_RADIUS_M * 2, CHAMBER_HEIGHT_M, CHAMBER_RADIUS_M * 2),
-  createSpec(options: PlacementOptions): ComponentSpec {
-    const geometry = cylinderGeometry(CHAMBER_RADIUS_M, CHAMBER_HEIGHT_M, "y", CHAMBER_WALL_M);
-    const materialId = options.materialId ?? MaterialIds.StainlessSteel;
-    const halfHeight = CHAMBER_HEIGHT_M / 2;
-
-    const sockets: SocketTemplate[] = [
-      structural("base", vec3(0, -halfHeight, 0), vec3(0, -1, 0)),
-      structural("top", vec3(0, halfHeight, 0), vec3(0, 1, 0)),
-      mount("port-nx", vec3(-CHAMBER_RADIUS_M, 0, 0), vec3(-1, 0, 0)),
-      mount("port-px", vec3(CHAMBER_RADIUS_M, 0, 0), vec3(1, 0, 0)),
-      mount("port-nz", vec3(0, 0, -CHAMBER_RADIUS_M), vec3(0, 0, -1)),
-      mount("port-pz", vec3(0, 0, CHAMBER_RADIUS_M), vec3(0, 0, 1)),
-    ];
-
-    return spec(options, "reactor-chamber", geometry, materialId, sockets);
-  },
-};
-
-/**
- * Generic Equipment Block — a 1 m aluminium cube standing in for pumps, drives and
- * cabinets until those exist as real components.
- */
-export const EQUIPMENT_BLOCK: ComponentDefinition = {
+/** Equipment Block — a solid aluminium cube standing in for unspecified plant. */
+export const EQUIPMENT_BLOCK = define({
   type: "equipment-block",
-  name: "Generic Equipment Block",
+  name: "Equipment Block",
   description:
-    "1 m cube standing in for an unspecified piece of plant. Has mass and occupies space; nothing else yet.",
-  defaultMaterialId: MaterialIds.Aluminum,
-  nominalSizeM: vec3(EQUIPMENT_SIZE_M, EQUIPMENT_SIZE_M, EQUIPMENT_SIZE_M),
-  createSpec(options: PlacementOptions): ComponentSpec {
-    const geometry = boxGeometry(vec3(EQUIPMENT_SIZE_M, EQUIPMENT_SIZE_M, EQUIPMENT_SIZE_M));
-    const materialId = options.materialId ?? MaterialIds.Aluminum;
-    const half = EQUIPMENT_SIZE_M / 2;
-
-    const sockets: SocketTemplate[] = [
-      structural("bottom", vec3(0, -half, 0), vec3(0, -1, 0)),
-      structural("top", vec3(0, half, 0), vec3(0, 1, 0)),
-      mount("side-nx", vec3(-half, 0, 0), vec3(-1, 0, 0)),
-      mount("side-px", vec3(half, 0, 0), vec3(1, 0, 0)),
-      mount("side-nz", vec3(0, 0, -half), vec3(0, 0, -1)),
-      mount("side-pz", vec3(0, 0, half), vec3(0, 0, 1)),
-    ];
-
-    return spec(options, "equipment-block", geometry, materialId, sockets);
+    "Solid cube (1 m by default) standing in for an unspecified piece of plant. Has mass and occupies space; nothing else.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.Aluminum,
+  dimensions: [dim("sizeM", "Edge length", 1, 0.2, 10)],
+  shape: (d) => {
+    const e = d["sizeM"]!;
+    const h = e / 2;
+    return {
+      geometry: boxGeometry(vec3(e, e, e)),
+      sockets: [
+        structural("bottom", vec3(0, -h, 0), DOWN),
+        structural("top", vec3(0, h, 0), UP),
+        mount("side-nx", vec3(-h, 0, 0), NX),
+        mount("side-px", vec3(h, 0, 0), PX),
+        mount("side-nz", vec3(0, 0, -h), NZ),
+        mount("side-pz", vec3(0, 0, h), PZ),
+      ],
+    };
   },
-};
+  dimensionsOf: (g) => (g.kind === "box" ? { sizeM: g.sizeM.x } : {}),
+  keyProperty: "1 m cube",
+});
 
-/** Catalogue in a fixed order. The workspace palette renders it as given. */
+/* ------------------------------------------------------------------------------------ *
+ * Chambers
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Cylindrical Vacuum Chamber — the Milestone 0 "reactor chamber" (same default geometry
+ * and structural sockets), now a vacuum vessel. With coaxial solenoids around it, it holds
+ * a linear plasma. Linear configurations are always "experimental" in V0.1.
+ */
+export const REACTOR_CHAMBER = define({
+  type: "reactor-chamber",
+  name: "Cylindrical Vacuum Chamber",
+  description:
+    "316L vessel, 3 m tall and 1.5 m in radius with a 50 mm wall by default. Surround it with solenoid coils for a linear (open) plasma — an experimental configuration.",
+  category: "Chambers",
+  role: "vacuum-vessel",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("radiusM", "Radius", 1.5, 0.2, 10),
+    dim("heightM", "Height", 3, 0.5, 40),
+    dim("wallM", "Wall thickness", 0.05, 0.005, 0.5),
+  ],
+  shape: (d) => {
+    const r = d["radiusM"]!;
+    const h = d["heightM"]!;
+    const t = Math.min(d["wallM"]!, r / 3, h / 6);
+    const y = Math.min(0.8, h / 4);
+    return {
+      geometry: cylinderGeometry(r, h, "y", t),
+      sockets: [
+        structural("base", vec3(0, -h / 2, 0), DOWN),
+        structural("top", vec3(0, h / 2, 0), UP),
+        mount("port-nx", vec3(-r, 0, 0), NX),
+        mount("port-px", vec3(r, 0, 0), PX),
+        mount("port-nz", vec3(0, 0, -r), NZ),
+        mount("port-pz", vec3(0, 0, r), PZ),
+        socket("vacuum", "vacuum", vec3(r, -y, 0), PX),
+        socket("fuel", "fuel", vec3(-r, -y, 0), NX),
+        socket("heating", "port", vec3(0, -y, r), PZ),
+        socket("coolant-in", "coolant", vec3(0, y, -r), NZ),
+        socket("coolant-out", "coolant", vec3(0, -y, -r), NZ),
+        socket("sensor", "control", vec3(0, h / 2, r / 2), UP),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder"
+      ? { radiusM: g.radiusM, heightM: g.heightM, wallM: g.wallThicknessM ?? 0.05 }
+      : {},
+  presets: { channelDiameterM: 0.3, channelLengthM: 10 },
+  keyProperty: "Ø3 m · 21 m³",
+});
+
+/** Feet under a torus and cradles in its bore, so nested tori stack on each other. */
+function torusSupports(R: number, a: number, t: number): SocketTemplate[] {
+  const out: SocketTemplate[] = [];
+  const positions: [string, number, number][] = [
+    ["px", R, 0],
+    ["nx", -R, 0],
+    ["pz", 0, R],
+    ["nz", 0, -R],
+  ];
+  for (const [suffix, x, z] of positions) {
+    out.push(structural(`foot-${suffix}`, vec3(x, -a, z), DOWN));
+    out.push(structural(`cradle-${suffix}`, vec3(x, -(a - t), z), UP));
+  }
+  return out;
+}
+
+const torusDims = (g: ComponentGeometry) =>
+  g.kind === "torus"
+    ? { majorRadiusM: g.majorRadiusM, tubeRadiusM: g.minorRadiusM, wallM: g.wallThicknessM ?? 0.1 }
+    : {};
+
+/** Clamps torus dimensions so the tube never reaches the axis and the wall fits the tube. */
+function torusShape(d: Readonly<Record<string, number>>) {
+  const R = d["majorRadiusM"]!;
+  const a = Math.min(d["tubeRadiusM"]!, 0.95 * R);
+  const t = Math.min(d["wallM"]!, 0.9 * a);
+  return { R, a, t, geometry: torusGeometry(R, a, "y", t) };
+}
+
+/**
+ * Tokamak Vacuum Vessel — a 316L torus, default R = 6.2 m, tube radius 2.3 m, 60 mm wall.
+ * The plasma fills 90 % of the tube radius (a ≈ 2.0 m), close to ITER's R 6.2 m, a 2.0 m.
+ */
+export const TOKAMAK_VESSEL = define({
+  type: "tokamak-vessel",
+  name: "Tokamak Vacuum Vessel",
+  description:
+    "Toroidal 316L vessel, major radius 6.2 m, tube radius 2.3 m, 60 mm wall by default. Sets the plasma current, shape and wall; it is also the first wall and must be cooled.",
+  category: "Chambers",
+  role: "vacuum-vessel",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("majorRadiusM", "Major radius R", 6.2, 1, 15),
+    dim("tubeRadiusM", "Tube radius", 2.3, 0.3, 6),
+    dim("wallM", "Wall thickness", 0.06, 0.01, 0.5),
+  ],
+  shape: (d) => {
+    const { R, a, geometry } = torusShape(d);
+    const t = geometry.kind === "torus" ? (geometry.wallThicknessM ?? 0) : 0;
+    const port = Math.min(0.6, a / 3);
+    return {
+      geometry,
+      sockets: [
+        ...torusSupports(R, a, t),
+        socket("vacuum", "vacuum", vec3(R + a, -port, 0), PX),
+        socket("fuel", "fuel", vec3(-(R + a), 0, 0), NX),
+        socket("heating", "port", vec3(0, 0, R + a), PZ),
+        socket("coolant-in", "coolant", vec3(0, port, -(R + a)), NZ),
+        socket("coolant-out", "coolant", vec3(0, -port, -(R + a)), NZ),
+        socket("sensor", "control", vec3(R, a, 0), UP),
+      ],
+    };
+  },
+  dimensionsOf: torusDims,
+  presets: {
+    plasmaCurrentA: 15e6,
+    elongation: 1.7,
+    coolantConductanceWK: 50e6,
+    channelDiameterM: 0.8,
+    channelLengthM: 30,
+  },
+  keyProperty: "R 6.2 m · 15 MA",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Magnets
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Toroidal-Field Coil Set — the TF coils treated as one continuous toroidal winding inside
+ * a 316L casing torus (default R 6.2 m, tube radius 4.35 m, 0.8 m casing). 2412 turns at
+ * 68 kA (ITER: 18 coils × 134 turns × 68 kA) give 5.3 T at the plasma centre.
+ */
+export const TF_COIL_SET = define({
+  type: "tf-coil-set",
+  name: "Toroidal-Field Coil Set",
+  description:
+    "Nb₃Sn toroidal-field winding in a 316L casing that encloses the vessel and blanket. 2412 turns × 68 kA → 5.3 T at R = 6.2 m. Needs a cryoplant (electrical) and shielding from neutrons.",
+  category: "Magnets",
+  role: "magnet-coil",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("majorRadiusM", "Major radius R", 6.2, 1, 15),
+    dim("tubeRadiusM", "Tube radius", 4.35, 0.5, 10),
+    dim("wallM", "Casing thickness", 0.8, 0.05, 3),
+  ],
+  shape: (d) => {
+    const { R, a, geometry } = torusShape(d);
+    const t = geometry.kind === "torus" ? (geometry.wallThicknessM ?? 0) : 0;
+    return {
+      geometry,
+      sockets: [
+        ...torusSupports(R, a, t),
+        socket("power", "electrical", vec3(R + a, 0, 0), PX),
+        socket("coolant-in", "coolant", vec3(0, 0.6, R + a), PZ),
+        socket("coolant-out", "coolant", vec3(0, -0.6, R + a), PZ),
+        socket("sensor", "control", vec3(-R, a, 0), UP),
+      ],
+    };
+  },
+  dimensionsOf: torusDims,
+  presets: { turns: 2412, currentA: 68000, superconducting: true, cryoCapacityW: 30e3 },
+  keyProperty: "5.3 T · SC",
+});
+
+/**
+ * Solenoid Coil — a short copper solenoid (default r = 2.2 m, 0.8 m long) for linear
+ * devices. Resistive by default: it dissipates I²R and needs water cooling.
+ */
+export const SOLENOID_COIL = define({
+  type: "solenoid-coil",
+  name: "Solenoid Coil",
+  description:
+    "Copper solenoid, 2.2 m radius and 0.8 m long by default, 200 turns. Place coaxially around a cylindrical chamber. Resistive by default — cool it.",
+  category: "Magnets",
+  role: "magnet-coil",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("radiusM", "Radius", 2.2, 0.3, 12),
+    dim("lengthM", "Length", 0.8, 0.1, 20),
+    dim("wallM", "Winding thickness", 0.25, 0.02, 2),
+  ],
+  shape: (d) => {
+    const r = d["radiusM"]!;
+    const L = d["lengthM"]!;
+    const t = Math.min(d["wallM"]!, r / 2);
+    return {
+      geometry: cylinderGeometry(r, L, "y", t),
+      sockets: [
+        structural("base", vec3(r - t / 2, -L / 2, 0), DOWN),
+        socket("power", "electrical", vec3(r, 0, 0), PX),
+        socket("coolant-in", "coolant", vec3(0, L / 4, r), PZ),
+        socket("coolant-out", "coolant", vec3(0, -L / 4, r), PZ),
+        socket("sensor", "control", vec3(-r, L / 2, 0), UP),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder"
+      ? { radiusM: g.radiusM, lengthM: g.heightM, wallM: g.wallThicknessM ?? 0.25 }
+      : {},
+  presets: {
+    turns: 200,
+    currentA: 10000,
+    superconducting: false,
+    conductorAreaM2: 1e-3,
+    coolantConductanceWK: 2e5,
+    channelDiameterM: 0.1,
+    channelLengthM: 20,
+  },
+  keyProperty: "200 turns · Cu",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Fuel, heating, vacuum
+ * ------------------------------------------------------------------------------------ */
+
+export const FUEL_INJECTOR = define({
+  type: "fuel-injector",
+  name: "Fuel Injector",
+  description:
+    "Pellet and gas fuelling for a 50:50 D–T mix with a density feedback controller. Link its fuel port to a vessel.",
+  category: "Fuel",
+  role: "fuel-injector",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(1.6, 1.4, 1.2)),
+    sockets: [
+      base(1.4),
+      socket("fuel", "fuel", vec3(0.8, 0, 0), PX),
+      socket("power", "electrical", vec3(-0.8, 0, 0), NX),
+      socket("control", "control", vec3(0, 0.7, 0), UP),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "1.0e20 m⁻³ target",
+});
+
+export const NEUTRAL_BEAM = define({
+  type: "neutral-beam",
+  name: "Neutral Beam Heater",
+  description:
+    "Neutral-beam injector delivering 50 MW into the plasma at 35 % wall-plug efficiency (143 MW drawn). Link its port to a vessel.",
+  category: "Fuel",
+  role: "plasma-heater",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(5, 2.4, 2.4), 0.03),
+    sockets: [
+      base(2.4),
+      socket("port", "port", vec3(2.5, 0, 0), PX),
+      socket("power", "electrical", vec3(-2.5, 0, 0), NX),
+      socket("control", "control", vec3(0, 1.2, 0), UP),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "50 MW heating",
+});
+
+export const VACUUM_PUMP = define({
+  type: "vacuum-pump",
+  name: "Cryopump Bank",
+  description: "80 m³/s of pumping speed at the vessel. Link its vacuum port to a vessel.",
+  category: "Vacuum",
+  role: "vacuum-pump",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: cylinderGeometry(0.8, 2, "y", 0.02),
+    sockets: [
+      base(2),
+      socket("vacuum", "vacuum", vec3(0, 1, 0), UP),
+      socket("power", "electrical", vec3(0.8, 0, 0), PX),
+      socket("control", "control", vec3(-0.8, 0, 0), NX),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  presets: { pumpingSpeedM3PerS: 80 },
+  keyProperty: "80 m³/s",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Electrical
+ * ------------------------------------------------------------------------------------ */
+
+export const GRID_CONNECTION = define({
+  type: "grid-connection",
+  name: "Grid Connection",
+  description:
+    "Regulated 20 kV DC supply from the grid, up to 1 GW. Imports whatever the plant cannot generate itself — and imported power counts against net output.",
+  category: "Electrical",
+  role: "power-supply",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(2.4, 2.4, 2), 0.01),
+    sockets: [base(2.4), socket("power", "electrical", vec3(1.2, 0, 0), PX)],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "20 kV · 1 GW",
+});
+
+export const BUS_BAR = define({
+  type: "bus-bar",
+  name: "Bus Bar",
+  description:
+    "Copper bus bar, 4 m long by default. Resistance R = ρL/A from its length and the conductor cross-section parameter. Undersize it and it overheats.",
+  category: "Electrical",
+  role: "conductor",
+  material: MaterialIds.Copper,
+  dimensions: [dim("lengthM", "Length", 4, 0.5, 100)],
+  shape: (d) => {
+    const L = d["lengthM"]!;
+    return {
+      geometry: boxGeometry(vec3(L, 0.1, 0.3)),
+      sockets: [
+        socket("a", "electrical", vec3(-L / 2, 0, 0), NX),
+        socket("b", "electrical", vec3(L / 2, 0, 0), PX),
+        structural("bottom", vec3(0, -0.05, 0), DOWN),
+      ],
+    };
+  },
+  dimensionsOf: (g) => (g.kind === "box" ? { lengthM: g.sizeM.x } : {}),
+  keyProperty: "2000 mm² Cu",
+});
+
+export const BREAKER = define({
+  type: "breaker",
+  name: "Circuit Breaker",
+  description: "Opens or closes an electrical path. Interlocks can open it automatically.",
+  category: "Electrical",
+  role: "switch",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(1, 1.6, 0.8), 0.005),
+    sockets: [
+      base(1.6),
+      socket("line", "electrical", vec3(-0.5, 0, 0), NX),
+      socket("load", "electrical", vec3(0.5, 0, 0), PX),
+      socket("control", "control", vec3(0, 0.8, 0), UP),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "Closed",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Thermal and fluids
+ * ------------------------------------------------------------------------------------ */
+
+const BLANKET = define({
+  type: "breeding-blanket",
+  name: "Breeding Blanket",
+  description:
+    "Water-cooled blanket and shield torus around the vessel (1.15 m thick by default). Captures neutron energy (×1.18 multiplication) and shields the coils.",
+  category: "Thermal",
+  role: "blanket",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("majorRadiusM", "Major radius R", 6.2, 1, 15),
+    dim("tubeRadiusM", "Tube radius", 3.5, 0.4, 8),
+    dim("wallM", "Thickness", 1.15, 0.05, 3),
+  ],
+  shape: (d) => {
+    const { R, a, geometry } = torusShape(d);
+    const t = geometry.kind === "torus" ? (geometry.wallThicknessM ?? 0) : 0;
+    return {
+      geometry,
+      sockets: [
+        ...torusSupports(R, a, t),
+        socket("coolant-in", "coolant", vec3(0, 0.6, R + a), PZ),
+        socket("coolant-out", "coolant", vec3(0, -0.6, R + a), PZ),
+        socket("sensor", "control", vec3(-R, a, 0), UP),
+      ],
+    };
+  },
+  dimensionsOf: torusDims,
+  presets: { coolantConductanceWK: 50e6, channelDiameterM: 1, channelLengthM: 30 },
+  keyProperty: "1.15 m · ×1.18",
+});
+export const BREEDING_BLANKET = BLANKET;
+
+export const COOLANT_PIPE = define({
+  type: "coolant-pipe",
+  name: "Coolant Pipe",
+  description:
+    "Steel pipe, 4 m long with a 660 mm bore by default. Friction loss follows Darcy–Weisbach; it also holds coolant inventory.",
+  category: "Fluids",
+  role: "coolant-pipe",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [
+    dim("lengthM", "Length", 4, 0.5, 50),
+    dim("outerRadiusM", "Outer radius", 0.35, 0.02, 1.5),
+    dim("wallM", "Wall thickness", 0.02, 0.002, 0.2),
+  ],
+  shape: (d) => {
+    const L = d["lengthM"]!;
+    const r = d["outerRadiusM"]!;
+    const t = Math.min(d["wallM"]!, r / 3);
+    return {
+      geometry: cylinderGeometry(r, L, "x", t),
+      sockets: [
+        socket("a", "coolant", vec3(-L / 2, 0, 0), NX),
+        socket("b", "coolant", vec3(L / 2, 0, 0), PX),
+        structural("bottom", vec3(0, -r, 0), DOWN),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder"
+      ? { lengthM: g.heightM, outerRadiusM: g.radiusM, wallM: g.wallThicknessM ?? 0.02 }
+      : {},
+  keyProperty: "DN650 · 4 m",
+});
+
+export const COOLANT_PUMP = define({
+  type: "coolant-pump",
+  name: "Coolant Pump",
+  description:
+    "Centrifugal pump for pressurised water: 4000 kg/s at 120 m head (5.9 MW electrical). Every closed coolant loop needs one.",
+  category: "Fluids",
+  role: "coolant-pump",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(2, 2, 2), 0.04),
+    sockets: [
+      base(2),
+      socket("inlet", "coolant", vec3(-1, 0, 0), NX),
+      socket("outlet", "coolant", vec3(1, 0, 0), PX),
+      socket("power", "electrical", vec3(0, 0, -1), NZ),
+      socket("control", "control", vec3(0, 1, 0), UP),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  presets: { ratedMassFlowKgS: 4000, ratedHeadM: 120 },
+  keyProperty: "4000 kg/s",
+});
+
+export const STEAM_GENERATOR = define({
+  type: "steam-generator",
+  name: "Steam Generator",
+  description:
+    "Heat exchanger from the primary coolant to boiling secondary water (UA 60 MW/K). Link its steam side to a turbine; without one, heat goes to a cooling tower.",
+  category: "Thermal",
+  role: "heat-exchanger",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: cylinderGeometry(1.6, 8, "y", 0.08),
+    sockets: [
+      base(8),
+      socket("primary-in", "coolant", vec3(1.6, 2, 0), PX),
+      socket("primary-out", "coolant", vec3(1.6, -2, 0), PX),
+      socket("steam", "steam", vec3(0, 4, 0), UP),
+      socket("sensor", "control", vec3(-1.6, 0, 0), NX),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  presets: { secondaryConductanceWK: 60e6, channelDiameterM: 0.8, channelLengthM: 20 },
+  keyProperty: "60 MW/K",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Power conversion
+ * ------------------------------------------------------------------------------------ */
+
+export const STEAM_TURBINE = define({
+  type: "steam-turbine",
+  name: "Steam Turbine",
+  description:
+    "Rankine-cycle turbine at 553 K live steam and 308 K condenser: 0.75 × Carnot ≈ 33 % efficiency. Shaft it to a generator.",
+  category: "Power conversion",
+  role: "turbine",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(10, 4, 4), 0.05),
+    sockets: [
+      base(4),
+      socket("steam", "steam", vec3(-5, 0, 0), NX),
+      socket("shaft", "shaft", vec3(5, 0, 0), PX),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "η ≈ 33 %",
+});
+
+export const GENERATOR = define({
+  type: "generator",
+  name: "Generator",
+  description:
+    "Synchronous generator, 98.5 % efficient, feeding a 20 kV DC bus. Shaft-coupled to a turbine.",
+  category: "Power conversion",
+  role: "generator",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(6, 4, 4), 0.05),
+    sockets: [
+      base(4),
+      socket("shaft", "shaft", vec3(-3, 0, 0), NX),
+      socket("power", "electrical", vec3(3, 0, 0), PX),
+    ],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "η 98.5 %",
+});
+
+/* ------------------------------------------------------------------------------------ *
+ * Sensors and controls
+ * ------------------------------------------------------------------------------------ */
+
+export const SENSOR = define({
+  type: "sensor",
+  name: "Sensor",
+  description:
+    "Reads temperature, coolant flow, pressure, fusion power or field from the component it is linked to, and reports it to controllers.",
+  category: "Sensors",
+  role: "sensor",
+  material: MaterialIds.Aluminum,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(0.3, 0.3, 0.3)),
+    sockets: [base(0.3), socket("signal", "control", vec3(0, 0.15, 0), UP)],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "Temperature",
+});
+
+export const INTERLOCK = define({
+  type: "interlock",
+  name: "Interlock Controller",
+  description:
+    "Trips when a linked sensor crosses its setpoint: shuts the plasma down in a controlled way, or opens linked breakers. Latches until reset.",
+  category: "Controls",
+  role: "controller",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [],
+  shape: () => ({
+    geometry: boxGeometry(vec3(0.8, 1.8, 0.6), 0.003),
+    sockets: [base(1.8), socket("signal", "control", vec3(0, 0.9, 0), UP)],
+  }),
+  dimensionsOf: () => ({}),
+  keyProperty: "Trip at setpoint",
+});
+
+/** Catalogue in a fixed order. The component browser renders it as given. */
 export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.freeze([
   STRUCTURAL_BEAM,
   STRUCTURAL_PLATFORM,
   REACTOR_CHAMBER,
   EQUIPMENT_BLOCK,
+  TOKAMAK_VESSEL,
+  TF_COIL_SET,
+  SOLENOID_COIL,
+  FUEL_INJECTOR,
+  NEUTRAL_BEAM,
+  VACUUM_PUMP,
+  GRID_CONNECTION,
+  BUS_BAR,
+  BREAKER,
+  BREEDING_BLANKET,
+  COOLANT_PIPE,
+  COOLANT_PUMP,
+  STEAM_GENERATOR,
+  STEAM_TURBINE,
+  GENERATOR,
+  SENSOR,
+  INTERLOCK,
 ]);
 
 const BY_TYPE = new Map(COMPONENT_DEFINITIONS.map((definition) => [definition.type, definition]));
@@ -182,34 +874,4 @@ export function getComponentDefinition(type: string): ComponentDefinition {
     throw new Error(`Unknown component type "${type}". Known types: ${known}.`);
   }
   return definition;
-}
-
-function structural(id: string, localPosition: Vec3, localDirection: Vec3): SocketTemplate {
-  return { id, localPosition, localDirection, connectionType: "structural", derivedCapacity: true };
-}
-
-function mount(id: string, localPosition: Vec3, localDirection: Vec3): SocketTemplate {
-  return { id, localPosition, localDirection, connectionType: "mount", derivedCapacity: false };
-}
-
-function spec(
-  options: PlacementOptions,
-  type: string,
-  geometry: ReturnType<typeof boxGeometry> | ReturnType<typeof cylinderGeometry>,
-  materialId: string,
-  sockets: readonly SocketTemplate[],
-): ComponentSpec {
-  return {
-    id: options.id,
-    type,
-    geometry,
-    materialId,
-    connectionPoints: buildConnectionPoints(sockets, geometry, materialId),
-    ...(options.transform === undefined ? {} : { transform: options.transform }),
-    ...(options.label === undefined ? {} : { label: options.label }),
-    ...(options.anchored === undefined ? {} : { anchored: options.anchored }),
-    ...(options.additionalMassKg === undefined
-      ? {}
-      : { additionalMassKg: options.additionalMassKg }),
-  };
 }

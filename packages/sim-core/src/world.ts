@@ -8,8 +8,12 @@ import {
   currentTransform,
   withComponent,
   withPhysical,
+  withPlantState,
   withSolverState,
 } from "./component.js";
+import type { ComponentParameters } from "./plant/roles.js";
+import { PlantSolver } from "./plant/solver.js";
+import { EMPTY_PLANT_METRICS, type PlantSummary } from "./plant/state.js";
 import {
   CONNECTION_SNAP_TOLERANCE_M,
   type ComponentId,
@@ -51,7 +55,16 @@ export interface SimulationSnapshot {
   readonly failures: readonly FailureEvent[];
   /** Problems with the model rather than with the structure. */
   readonly diagnostics: readonly string[];
+  /** Plant-wide results: power balance, networks, loops and model confidence. */
+  readonly plant: PlantSummary;
 }
+
+const EMPTY_PLANT_SUMMARY: PlantSummary = Object.freeze({
+  metrics: EMPTY_PLANT_METRICS,
+  islands: Object.freeze([]),
+  loops: Object.freeze([]),
+  confidence: Object.freeze({ level: "supported", subsystems: Object.freeze([]) }),
+});
 
 export interface WorldOptions {
   readonly name?: string;
@@ -81,6 +94,16 @@ export class SimulationWorld {
   #simulatedTimeSec: Seconds = 0;
   #idCounter = 0;
   #dirty = true;
+  #plant = new PlantSolver();
+  /**
+   * Bumped on every change that can alter a solver's inputs: design edits, settings, and
+   * bodies moving. Solvers whose inputs have not changed are not re-run; their previous
+   * result is exactly what they would compute again.
+   */
+  #revision = 0;
+  #structureSolvedAtRevision = -1;
+  #plantSummary: PlantSummary = EMPTY_PLANT_SUMMARY;
+  #plantDiagnostics: readonly string[] = [];
 
   constructor(options: WorldOptions = {}) {
     this.#name = options.name ?? "Untitled Assembly";
@@ -108,6 +131,16 @@ export class SimulationWorld {
     return this.#simulatedTimeSec;
   }
 
+  /** Increments whenever anything that feeds the solvers changes. */
+  get revision(): number {
+    return this.#revision;
+  }
+
+  #markDirty(): void {
+    this.#dirty = true;
+    this.#revision += 1;
+  }
+
   get dynamicsBackendId(): string {
     return this.#dynamics.id;
   }
@@ -118,7 +151,7 @@ export class SimulationWorld {
    */
   updateSettings(changes: Partial<SimulationSettings>): SimulationSettings {
     this.#settings = makeSettings({ ...this.#settings, ...changes });
-    this.#dirty = true;
+    this.#markDirty();
     return this.#settings;
   }
 
@@ -144,7 +177,7 @@ export class SimulationWorld {
     }
     const component = createComponent(spec);
     this.#components.set(component.id, component);
-    this.#dirty = true;
+    this.#markDirty();
     return component;
   }
 
@@ -170,7 +203,7 @@ export class SimulationWorld {
       }
     }
     this.#failedComponentIds.delete(id);
-    this.#dirty = true;
+    this.#markDirty();
     this.#refreshComponentConnections();
   }
 
@@ -178,35 +211,80 @@ export class SimulationWorld {
   setTransform(id: ComponentId, transform: Transform): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { transform });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setMaterial(id: ComponentId, materialId: MaterialId): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { materialId });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setGeometry(id: ComponentId, geometry: ComponentGeometry): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { geometry });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
+  }
+
+  /**
+   * Replaces a component's geometry and sockets together (a resize). Connections whose
+   * socket no longer exists are removed; mass and socket ratings follow the new geometry.
+   */
+  reshapeComponent(
+    id: ComponentId,
+    geometry: ComponentGeometry,
+    connectionPoints: readonly ConnectionPoint[],
+  ): SimulationComponent {
+    const updated = withComponent(this.requireComponent(id), {
+      geometry,
+      connectionPoints: Object.freeze([...connectionPoints]),
+    });
+    this.#components.set(id, updated);
+    const socketIds = new Set(connectionPoints.map((point) => point.id));
+    for (const [connectionId, connection] of [...this.#connections]) {
+      const end =
+        connection.from.componentId === id
+          ? connection.from
+          : connection.to.componentId === id
+            ? connection.to
+            : undefined;
+      if (end !== undefined && !socketIds.has(end.connectionPointId)) {
+        this.#connections.delete(connectionId);
+      }
+    }
+    this.#refreshComponentConnections();
+    this.#markDirty();
+    return this.#components.get(id)!;
   }
 
   setAdditionalMass(id: ComponentId, additionalMassKg: number): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { additionalMassKg });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setAnchored(id: ComponentId, anchored: boolean): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { anchored });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
+    return updated;
+  }
+
+  /** Replaces operating parameters (merged over the current ones, then validated). */
+  setParameters(
+    id: ComponentId,
+    parameters: Readonly<Record<string, unknown>>,
+  ): SimulationComponent {
+    const current = this.requireComponent(id);
+    const updated = withComponent(current, {
+      parameters: { ...current.parameters, ...parameters } as ComponentParameters,
+    });
+    this.#components.set(id, updated);
+    this.#markDirty();
     return updated;
   }
 
@@ -232,6 +310,8 @@ export class SimulationWorld {
       additionalMassKg: source.additionalMassKg,
       anchored: source.anchored,
       label: source.label,
+      role: source.role,
+      parameters: source.parameters,
     });
   }
 
@@ -267,14 +347,14 @@ export class SimulationWorld {
     });
 
     this.#connections.set(id, connection);
-    this.#dirty = true;
+    this.#markDirty();
     this.#refreshComponentConnections();
     return connection;
   }
 
   disconnect(connectionId: ConnectionId): void {
     if (!this.#connections.delete(connectionId)) return;
-    this.#dirty = true;
+    this.#markDirty();
     this.#refreshComponentConnections();
   }
 
@@ -336,6 +416,17 @@ export class SimulationWorld {
    * are correct the instant a part is placed, before anybody presses play.
    */
   solve(): void {
+    this.#solveStructure();
+    // Nothing has happened yet at tick 0, so the plant starts from fresh initial conditions
+    // that reflect the current design (loop temperatures, vessel pressures...).
+    if (this.#tick === 0) this.#plant.reset();
+    this.#runPlant(0);
+    this.#dirty = false;
+  }
+
+  #solveStructure(): void {
+    const failuresBefore = this.#failures.length;
+    this.#structureSolvedAtRevision = this.#revision;
     const result = solveStructure({
       components: this.listComponents(),
       connections: this.listConnections(),
@@ -352,7 +443,39 @@ export class SimulationWorld {
       if (state.structural.failed) this.#failedComponentIds.add(id);
     }
 
-    for (const failure of result.failures) {
+    this.#recordFailures(result.failures);
+    // In `detach` mode a newly failed member changes what the next solve sees.
+    if (
+      this.#settings.failurePropagation === "detach" &&
+      this.#failures.length !== failuresBefore
+    ) {
+      this.#revision += 1;
+    }
+
+    this.#diagnostics = Object.freeze([...result.diagnostics]);
+  }
+
+  #runPlant(dtSec: number): void {
+    const result = this.#plant.step({
+      components: this.listComponents(),
+      connections: this.listConnections(),
+      settings: this.#settings,
+      dtSec,
+      tick: this.#tick,
+      timeSec: this.#simulatedTimeSec,
+      topologyRevision: this.#revision,
+    });
+    for (const [id, plant] of result.states) {
+      const component = this.#components.get(id);
+      if (component !== undefined) this.#components.set(id, withPlantState(component, plant));
+    }
+    this.#recordFailures(result.events);
+    this.#plantSummary = result.summary;
+    this.#plantDiagnostics = Object.freeze([...result.diagnostics]);
+  }
+
+  #recordFailures(events: readonly FailureEvent[]): void {
+    for (const failure of events) {
       const key = failureKey(failure);
       if (this.#raisedFailureKeys.has(key)) continue;
       this.#raisedFailureKeys.add(key);
@@ -361,9 +484,6 @@ export class SimulationWorld {
     if (this.#failures.length > this.#settings.maxFailureLogEntries) {
       this.#failures = this.#failures.slice(-this.#settings.maxFailureLogEntries);
     }
-
-    this.#diagnostics = Object.freeze([...result.diagnostics]);
-    this.#dirty = false;
   }
 
   /**
@@ -374,7 +494,7 @@ export class SimulationWorld {
    * time, and time only advances once both are done.
    */
   step(): void {
-    this.solve();
+    if (this.#structureSolvedAtRevision !== this.#revision) this.#solveStructure();
 
     const updates = this.#dynamics.step({
       components: this.listComponents(),
@@ -389,9 +509,13 @@ export class SimulationWorld {
       this.#components.set(id, withPhysical(component, physical));
     }
 
+    // Plant physics integrates over the step that is now ending, then time advances.
+    this.#runPlant(this.#settings.fixedTimestepSec);
+
     this.#tick += 1;
     this.#simulatedTimeSec = this.#tick * this.#settings.fixedTimestepSec;
-    if (updates.size > 0) this.#dirty = true;
+    this.#dirty = false;
+    if (updates.size > 0) this.#markDirty();
   }
 
   /** Runs `count` fixed steps. Equivalent to calling `step()` that many times. */
@@ -415,7 +539,8 @@ export class SimulationWorld {
     this.#raisedFailureKeys.clear();
     this.#failedComponentIds.clear();
     this.#diagnostics = Object.freeze([]);
-    this.#dirty = true;
+    this.#plant.reset();
+    this.#markDirty();
     this.solve();
   }
 
@@ -430,7 +555,8 @@ export class SimulationWorld {
       connections: this.listConnections(),
       assembly: computeAssemblyMassProperties(components),
       failures: Object.freeze([...this.#failures]),
-      diagnostics: this.#diagnostics,
+      diagnostics: Object.freeze([...this.#diagnostics, ...this.#plantDiagnostics]),
+      plant: this.#plantSummary,
     });
   }
 
@@ -443,7 +569,7 @@ export class SimulationWorld {
   restorePhysical(id: ComponentId, physical: PhysicalProperties): SimulationComponent {
     const updated = withPhysical(this.requireComponent(id), physical);
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
@@ -452,7 +578,7 @@ export class SimulationWorld {
     this.#tick = state.tick;
     this.#simulatedTimeSec = state.simulatedTimeSec;
     this.#idCounter = Math.max(this.#idCounter, state.idCounter);
-    this.#dirty = true;
+    this.#markDirty();
   }
 
   get idCounter(): number {

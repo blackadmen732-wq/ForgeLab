@@ -70,6 +70,10 @@ export function ComponentMesh({ component, selected, gizmoMode }: Props) {
                 component.geometry.sizeM.z,
               ]}
             />
+          ) : component.geometry.kind === "torus" ? (
+            <torusGeometry
+              args={[component.geometry.majorRadiusM, component.geometry.minorRadiusM, 24, 64]}
+            />
           ) : (
             <cylinderGeometry
               args={[
@@ -128,6 +132,14 @@ export function ComponentMesh({ component, selected, gizmoMode }: Props) {
  * way round.
  */
 function axisRotation(component: SimulationComponent): [number, number, number] {
+  if (component.geometry.kind === "torus") {
+    // Three.js builds tori around +Z.
+    return component.geometry.axis === "y"
+      ? [Math.PI / 2, 0, 0]
+      : component.geometry.axis === "x"
+        ? [0, Math.PI / 2, 0]
+        : [0, 0, 0];
+  }
   if (component.geometry.kind !== "cylinder") return [0, 0, 0];
   switch (component.geometry.axis) {
     case "x":

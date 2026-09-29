@@ -235,7 +235,7 @@ describe("save format", () => {
         connections: [],
         simulationSettings: {},
       }),
-    ).toThrowError(/must be "box" or "cylinder"/);
+    ).toThrowError(/must be "box", "cylinder" or "torus"/);
   });
 
   it("rejects duplicate component ids", () => {

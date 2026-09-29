@@ -9,12 +9,16 @@
 export {
   boxGeometry,
   cylinderGeometry,
+  geometryInteriorSurfaceM2,
+  geometryInteriorVolumeM3,
+  geometryOuterSurfaceM2,
   geometryLocalCenterOfMassM,
   geometryLocalHalfExtentsM,
   geometryVolumeM3,
   dominantLocalAxis,
   loadBearingAreaM2,
   sectionAreaPerpendicularToLocalAxis,
+  torusGeometry,
   worldAabb,
   worldBottomY,
   type Aabb,
@@ -22,6 +26,7 @@ export {
   type ComponentGeometry,
   type CylinderGeometry,
   type GeometryAxis,
+  type TorusGeometry,
 } from "./geometry.js";
 
 export {
@@ -51,6 +56,7 @@ export {
   resolveMassKg,
   withComponent,
   withPhysical,
+  withPlantState,
   withSolverState,
   type ComponentSpec,
   type ComponentState,
@@ -73,6 +79,7 @@ export {
   describeYieldFailure,
   failureKey,
   formatQuantity,
+  type CausalLink,
   type FailureEvent,
   type FailureType,
   type SimulationSystemName,
@@ -86,6 +93,8 @@ export {
   SIMULATION_SPEEDS,
   makeSettings,
   type FailurePropagationMode,
+  type InitialThermalState,
+  type InitialVacuumState,
   type SimulationSettings,
 } from "./settings.js";
 
@@ -141,6 +150,7 @@ export {
   CURRENT_SCHEMA_VERSION,
   type AnyAssemblyFile,
   type AssemblyFileV1,
+  type AssemblyFileV2,
   type SerializedComponent,
   type SerializedConnection,
   type SerializedConnectionPoint,
@@ -164,3 +174,111 @@ export {
   worldFromJson,
   type SerializeOptions,
 } from "./serialization/serialize.js";
+
+/* ------------------------------------------------------------------------------------ *
+ * V0.1 plant physics
+ * ------------------------------------------------------------------------------------ */
+
+export {
+  COOLED_ROLES,
+  PLANT_ROLES,
+  ROLE_PARAMETERS,
+  booleanParameter,
+  isPlantRole,
+  numberParameter,
+  resolveParameters,
+  stringParameter,
+  type BooleanParameterSpec,
+  type ComponentParameters,
+  type EnumParameterSpec,
+  type NumberParameterSpec,
+  type ParameterSpec,
+  type ParameterValue,
+  type PlantRole,
+} from "./plant/roles.js";
+
+export {
+  AMBIENT_TEMPERATURE_K,
+  EMPTY_PLANT_METRICS,
+  ZERO_PLANT_STATE,
+  type ComponentPlantState,
+  type ConfidenceLevel,
+  type CoolantLoopSummary,
+  type CoolantState,
+  type ElectricalIslandSummary,
+  type ElectricalState,
+  type MagnetState,
+  type ModelConfidence,
+  type PlantMetrics,
+  type PlantSummary,
+  type PlasmaConfiguration,
+  type PlasmaPhase,
+  type PlasmaState,
+  type SubsystemConfidence,
+  type ThermalState,
+  type VesselState,
+} from "./plant/state.js";
+
+export { PlantSolver, type PlantStepInput, type PlantStepResult } from "./plant/solver.js";
+export { worstLevel } from "./plant/confidence.js";
+export * as PlantConstants from "./plant/constants.js";
+
+export {
+  BOSCH_HALE_DT_MAX_KEV,
+  BOSCH_HALE_DT_MIN_KEV,
+  DT_ALPHA_FRACTION,
+  DT_FUSION_ENERGY_J,
+  dtFusionPower,
+  dtReactivityM3PerS,
+  isWithinBoschHaleRange,
+  type FusionPower,
+} from "./plant/fusion.js";
+
+export {
+  BREMSSTRAHLUNG_COEFFICIENT,
+  IPB98_ENVELOPE,
+  LOW_Q_KINK_LIMIT,
+  TROYON_BETA_N_LIMIT,
+  bohmConfinementTimeS,
+  bremsstrahlungPowerW,
+  edgeSafetyFactor,
+  greenwaldDensityLimitM3,
+  ipb98y2ConfinementTimeS,
+  normalisedBeta,
+  ohmicHeatingW,
+  plasmaBeta,
+  plasmaTemperatureKeV,
+  plasmaThermalEnergyJ,
+  spitzerResistivityOhmM,
+  toroidalPlasmaVolumeM3,
+  type Ipb98Inputs,
+} from "./plant/plasma.js";
+
+export {
+  magneticHoopStressPa,
+  magneticPressurePa,
+  solenoidOnAxisFieldT,
+  toroidalCoilTensionStressPa,
+  toroidalFieldT,
+  torusEnclosesTorus,
+  cylinderSurroundsCoaxially,
+} from "./plant/magnetics.js";
+
+export {
+  COOLANT_FLUIDS,
+  darcyFrictionFactor,
+  effectivenessUniformTemperature,
+  getCoolantFluid,
+  pumpCurve,
+  seriesPumpOperatingPoint,
+  type CoolantFluid,
+  type CoolantFluidId,
+} from "./plant/fluids.js";
+
+export {
+  findIslands,
+  gaussianSolve,
+  solveIsland,
+  type NetworkEdge,
+  type NetworkNode,
+} from "./plant/electrical.js";
