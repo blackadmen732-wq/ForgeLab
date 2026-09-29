@@ -544,6 +544,17 @@ export class SimulationWorld {
     this.solve();
   }
 
+  /** Plant-wide results of the latest solve, without building a full snapshot. */
+  get plantSummary(): PlantSummary {
+    if (this.#dirty) this.solve();
+    return this.#plantSummary;
+  }
+
+  /** Number of failures raised so far this run (cheaper than a snapshot). */
+  get failureCount(): number {
+    return this.#failures.length;
+  }
+
   getSnapshot(): SimulationSnapshot {
     if (this.#dirty) this.solve();
     const components = this.listComponents();

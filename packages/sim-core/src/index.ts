@@ -6,6 +6,13 @@
  * `docs/ARCHITECTURE.md` for the rules that keeps it that way.
  */
 
+/**
+ * Version of the simulation engine's physics. Stored with every saved version, run record
+ * and leaderboard entry: results computed by different engine versions are not compared.
+ * Bump the minor version whenever any physical result can change.
+ */
+export const SIMULATION_ENGINE_VERSION = "0.1.0";
+
 export {
   boxGeometry,
   cylinderGeometry,

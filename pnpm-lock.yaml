@@ -118,6 +118,22 @@ importers:
         specifier: ^0.20.0
         version: 0.20.0
 
+  packages/sim-runner:
+    dependencies:
+      '@forgelab/materials':
+        specifier: workspace:*
+        version: link:../materials
+      '@forgelab/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@forgelab/sim-core':
+        specifier: workspace:*
+        version: link:../sim-core
+    devDependencies:
+      '@forgelab/reactor-components':
+        specifier: workspace:*
+        version: link:../reactor-components
+
   packages/test-utils:
     dependencies:
       '@forgelab/materials':

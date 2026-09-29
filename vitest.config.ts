@@ -16,6 +16,7 @@ export default defineConfig({
       "@forgelab/sim-core": pkg("sim-core"),
       "@forgelab/reactor-components": pkg("reactor-components"),
       "@forgelab/test-utils": pkg("test-utils"),
+      "@forgelab/sim-runner": pkg("sim-runner"),
     },
   },
   test: {
