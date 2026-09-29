@@ -14,9 +14,12 @@ export const LIMITS = Object.freeze({
   /** Presence tickets are renewed before they expire. */
   ticketTtlSec: 600,
   ticketRenewBeforeSec: 120,
-  presenceHeartbeatMs: 15_000,
-  /** Roster entries not refreshed for this long are dropped, even without a leave event. */
-  presenceExpiryMs: 45_000,
+  presenceHeartbeatMs: 20_000,
+  /**
+   * Roster entries not refreshed for this long are dropped, even without a leave event.
+   * Longer than a minute because browsers throttle timers in hidden tabs to once a minute.
+   */
+  presenceExpiryMs: 90_000,
   /** Envelopes timestamped further than this from the receiver's clock are rejected. */
   clockSkewMs: 120_000,
   inviteMaxUses: 100,
