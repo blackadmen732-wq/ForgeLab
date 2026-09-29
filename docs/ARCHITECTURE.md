@@ -395,17 +395,24 @@ forgelab/
                              leaderboard verification scenario. Shared by browser and server.
     reactor-components/      The parametric part catalogue and reference designs.
     test-utils/              World builders, fingerprinting for determinism tests.
-  api-src/                   Server function source (POST /api/verify).
+    protocol/                Collaboration vocabulary: roles and permissions, ids and
+                             topics, presence/event/message schemas, signed envelopes.
+    multiplayer/             A member's live project session: verified presence roster,
+                             signed collaboration events, pluggable realtime transport.
+    voice/                   Channel voice client state machine + LiveKit adapter.
+  api-src/                   Server functions: /api/verify, /api/comms/ticket,
+                             /api/voice/token, /api/comms/remove-member.
   supabase/
     migrations/              Version-controlled schema, RLS, grants, storage.
     tests/                   RLS tests on PGlite (real Postgres in WASM).
     config.toml              Local stack (supabase start).
   scripts/                   Vercel Build Output generator, local output server.
-  e2e/                       Browser acceptance test (Playwright).
+  e2e/                       Browser acceptance and two-browser collaboration tests.
   docs/
     ARCHITECTURE.md          This file.
     PHYSICS_ROADMAP.md       What exists and what comes next.
-    DEPLOYMENT.md            Supabase + Vercel setup, environment, local end-to-end.
+    DEPLOYMENT.md            Supabase + Vercel + LiveKit setup, environment, local end-to-end.
+    COMMUNICATIONS.md        Channels, voice, chat, presence and shared saves.
     PERFORMANCE.md           Budgets, measurements, known O(N²) paths.
     LAUNCH_REPORT.md         V0.1 launch candidate report.
     material-sources.md      Where every material number came from.
@@ -413,6 +420,9 @@ forgelab/
 
 Dependencies point one way: `shared` → `materials` → `sim-core` → `sim-runner` /
 `reactor-components` → `web` and `api-src`. Nothing in `packages/` depends on `apps/`.
+The communication packages form a separate branch: `protocol` → `multiplayer`, and
+`voice` on its own; the simulation packages never import them, and they never import
+the simulation (`packages/protocol/src/boundaries.test.ts`).
 
 ---
 

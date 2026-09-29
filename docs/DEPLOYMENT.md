@@ -1,15 +1,21 @@
 # Deploying ForgeLab
 
-ForgeLab is a static single-page app plus one server function, backed by Supabase.
+ForgeLab is a static single-page app plus a few server functions, backed by Supabase,
+with a LiveKit SFU for voice.
 
-| Piece             | Where it runs    | What it needs                                        |
-| ----------------- | ---------------- | ---------------------------------------------------- |
-| SPA (`apps/web`)  | Vercel CDN       | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` |
-| `/api/verify`     | Vercel (Node 22) | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (server only)  |
-| Auth, DB, Storage | Supabase         | the migrations in `supabase/migrations`              |
+| Piece                                           | Where it runs    | What it needs                                                                          |
+| ----------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
+| SPA (`apps/web`)                                | Vercel CDN       | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_LIVEKIT_URL` (for the CSP) |
+| `/api/verify`                                   | Vercel (Node 22) | `SUPABASE_URL`, `SUPABASE_SECRET_KEY` (server only)                                    |
+| `/api/comms/ticket`, `/api/comms/remove-member` | Vercel (Node 22) | the above, plus `FORGELAB_PRESENCE_KEY` and the publishable key                        |
+| `/api/voice/token`                              | Vercel (Node 22) | the above, plus `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`                 |
+| Auth, DB, Storage, Realtime                     | Supabase         | the migrations in `supabase/migrations`                                                |
+| Voice (audio only)                              | LiveKit          | LiveKit Cloud or self-hosted `livekit-server`; no egress/recording                     |
 
 Without Supabase variables the site still builds and the builder works in **local-only
-mode** (browser autosave, JSON import/export).
+mode** (browser autosave, JSON import/export). Without LiveKit variables everything but
+voice works; without the presence key everything but live presence works. See
+`docs/COMMUNICATIONS.md` for how the communication layers fit together.
 
 ## 1. Supabase
 
@@ -26,7 +32,12 @@ mode** (browser autosave, JSON import/export).
 
    This creates the tables, triggers, RLS policies, column grants, the `fork_project`,
    `discover_projects` and `leaderboard` functions, and the public `thumbnails` (1 MB) and
-   `avatars` (512 KB) storage buckets with owner-folder policies.
+   `avatars` (512 KB) storage buckets with owner-folder policies; plus project members,
+   channels, messages, invites and the audit trail, and the RLS policies on
+   `realtime.messages` that authorize private Realtime channels.
+
+   **Realtime → Settings**: turn off "Allow public access" so only private (RLS-authorized)
+   channels can be joined.
 
 3. **Authentication → URL configuration**
    - Site URL: `https://<your-domain>`
@@ -52,17 +63,27 @@ mode** (browser autosave, JSON import/export).
      Framework preset: _Other_. No output directory setting is needed.
 2. **Environment variables** (Production and Preview):
 
-   | Name                            | Value                       | Exposure        |
-   | ------------------------------- | --------------------------- | --------------- |
-   | `VITE_SUPABASE_URL`             | `https://<ref>.supabase.co` | browser         |
-   | `VITE_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…`          | browser         |
-   | `VITE_SITE_URL` (optional)      | `https://<your-domain>`     | browser         |
-   | `SUPABASE_URL`                  | `https://<ref>.supabase.co` | server function |
-   | `SUPABASE_SECRET_KEY`           | `sb_secret_…`               | server function |
+   | Name                            | Value                                              | Exposure        |
+   | ------------------------------- | -------------------------------------------------- | --------------- |
+   | `VITE_SUPABASE_URL`             | `https://<ref>.supabase.co`                        | browser         |
+   | `VITE_SUPABASE_PUBLISHABLE_KEY` | `sb_publishable_…`                                 | browser         |
+   | `VITE_SITE_URL` (optional)      | `https://<your-domain>`                            | browser         |
+   | `SUPABASE_URL`                  | `https://<ref>.supabase.co`                        | server function |
+   | `SUPABASE_SECRET_KEY`           | `sb_secret_…`                                      | server function |
+   | `VITE_LIVEKIT_URL`              | `wss://<project>.livekit.cloud`                    | CSP at build    |
+   | `LIVEKIT_URL` (optional)        | `https://<project>.livekit.cloud`                  | server function |
+   | `LIVEKIT_API_KEY`               | LiveKit API key id                                 | server function |
+   | `LIVEKIT_API_SECRET`            | LiveKit API secret                                 | server function |
+   | `FORGELAB_PRESENCE_KEY`         | output of `node scripts/generate-presence-key.mjs` | server function |
 
-   Mark `SUPABASE_SECRET_KEY` as _Sensitive_. **Never** give it a `VITE_` prefix: the
-   build fails if a secret key appears in any `VITE_` variable or in the built JavaScript,
-   and the browser refuses to use one.
+   Mark `SUPABASE_SECRET_KEY`, `LIVEKIT_API_SECRET` and `FORGELAB_PRESENCE_KEY` as
+   _Sensitive_. **Never** give them a `VITE_` prefix: the build fails if a secret appears
+   in any `VITE_` variable or in the built JavaScript, and the browser refuses to use a
+   secret Supabase key.
+
+   **LiveKit**: create a LiveKit Cloud project (or run `livekit-server` behind TLS) and
+   copy its URL and an API key/secret. Leave egress, recording and transcription off —
+   V1 voice is live only.
 
 3. Deploy. `config.json` in the build output adds:
    - `Content-Security-Policy` (scripts from self only; `connect-src` includes the
@@ -109,13 +130,20 @@ node e2e/acceptance.mjs http://localhost:3000
 
 The test drives Chromium through the whole loop: guest build → simulate → fail → fix →
 sign up → cloud save → autosave → reload → publish → server verification → leaderboard →
-second user forks → lineage → discover → private project hidden from guests. CI runs the
-same steps (`.github/workflows/ci.yml`, job `e2e`).
+second user forks → lineage → discover → private project hidden from guests.
+
+`e2e/collaboration.mjs` drives two browsers through invites, presence, chat, channels,
+voice, shared saves and removal; it additionally needs a local LiveKit server (see
+`docs/COMMUNICATIONS.md` §13). CI runs both (`.github/workflows/ci.yml`, job `e2e`) with
+throwaway keys generated per run.
 
 ## 5. Security checklist
 
 - [ ] Dedicated Supabase project; migrations applied with `db push`, not by hand.
 - [ ] Only the publishable key in `VITE_*`; secret key only in `SUPABASE_SECRET_KEY`.
+- [ ] `LIVEKIT_API_SECRET` and `FORGELAB_PRESENCE_KEY` only in server variables; the
+      presence key generated fresh for each environment.
+- [ ] Realtime "Allow public access" off; LiveKit egress/recording off.
 - [ ] Auth redirect URLs restricted to your domains.
 - [ ] Email confirmation, leaked-password protection and CAPTCHA considered for sign-up.
 - [ ] `pnpm test` passes — includes the RLS suite proving browsers cannot write

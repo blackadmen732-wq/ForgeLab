@@ -20,6 +20,7 @@ import {
   verifyTicket,
   voiceRoomName,
   type TicketClaims,
+  parseChatRow,
 } from "./index.js";
 
 const P = "11111111-1111-4111-8111-111111111111";
@@ -219,5 +220,41 @@ describe("signed envelopes", () => {
     expect(
       await verifyTicket(`${ticket}x`, server.publicKey, { projectId: P, nowMs: NOW }),
     ).toBeNull();
+  });
+});
+
+describe("stored messages and team notices", () => {
+  const row = {
+    id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    project_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    channel_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    user_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    content: "Look at @pump now",
+    refs: [
+      { kind: "component", id: "pump", start: 8, end: 13 },
+      { kind: "component", id: "x", start: 90, end: 99 },
+      { kind: "script", id: "pump", start: 0, end: 4 },
+    ],
+    created_at: "2026-09-30T12:00:00Z",
+  };
+
+  it("validates rows and keeps only references that index the content", () => {
+    const message = parseChatRow(row);
+    expect(message).toMatchObject({ userId: row.user_id, channelId: row.channel_id });
+    expect(message?.refs).toEqual([{ kind: "component", id: "pump", start: 8, end: 13 }]);
+  });
+
+  it("rejects malformed rows", () => {
+    expect(parseChatRow({ ...row, user_id: "someone" })).toBeNull();
+    expect(parseChatRow({ ...row, content: "" })).toBeNull();
+    expect(parseChatRow({ ...row, content: "x".repeat(2001) })).toBeNull();
+    expect(parseChatRow({ ...row, created_at: "yesterday" })).toBeNull();
+    expect(parseChatRow(null)).toBeNull();
+  });
+
+  it("parses the data-free team notice and nothing smuggled with it", () => {
+    expect(parseCollabEvent({ type: "team.changed", role: "owner" })).toEqual({
+      type: "team.changed",
+    });
   });
 });

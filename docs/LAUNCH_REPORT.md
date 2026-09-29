@@ -4,6 +4,33 @@
 against a real Supabase stack and the production build. **Not yet deployed:** no
 production Supabase project or Vercel project has been provisioned (see _Blockers_).
 
+## Addendum: teams, channels and voice
+
+Added after the V0.1 candidate; details in `docs/COMMUNICATIONS.md`. Projects now have
+members (owner, admin, member, viewer) invited by link; every project has channels
+(General plus any the admins create), each with its own text chat and its own voice
+room. Voice is **channel-based**: you hear exactly the people in the same voice channel,
+wherever they are in the design. Audio goes browser → LiveKit SFU → browser only; the
+server hands out five-minute single-room tokens after asking Postgres, as the caller,
+whether they may join. Presence (online, voice channel, mic, activity) is signed with a
+server-certified per-tab key so nobody can appear as someone else. Shared saves carry
+their parent version, so a teammate's save can never be silently overwritten.
+
+`e2e/collaboration.mjs` passes **15/15** against local Supabase (Auth, Postgres,
+Realtime) and a local LiveKit server, with two Chromium instances using synthetic
+microphones: invite and join, presence, live chat with a component link, markup shown as
+text, a new channel reaching everyone, both in General voice with speaking indicators,
+mute and deafen seen by the other side, switching channels changing who hears whom, a
+teammate's save announced and loaded, a stale save caught as a conflict and resolved
+without loss, removal ending voice and access, and presence clearing when a tab closes.
+The original 17-step acceptance test still passes.
+
+The run found and fixed real problems before passing: Supabase Realtime closes a
+client's channel after 5 presence updates in 30 s (voice state changes exceeded it — now
+budgeted, with signed broadcasts for immediate updates and automatic resubscription);
+new members were missing from others' member lists; members' saves tried to update the
+owner-only project row; LiveKit logged routine disconnects as console errors.
+
 ## Acceptance test
 
 `e2e/acceptance.mjs` drives Chromium through the full loop against local Supabase
@@ -95,10 +122,11 @@ test against `supabase start`. Both jobs pass on GitHub (run #1, commit `49e84ef
 - **OAuth** is wired but untested end to end: providers must be enabled with client
   credentials in Supabase. **Password reset** is implemented but not e2e-tested (needs an
   email inbox; the local mail catcher was not started).
-- **Deferred by the design brief:** multiplayer (sessions, roles, soft locks), destruction
-  spectacle, replay, avatars in the world. Out of scope for V0.1: chat, comments,
-  payments, scripting, custom component creator, mobile editor, MHD, Monte Carlo, CFD,
-  particle simulation.
+- **Deferred by the design brief:** real-time co-editing (component-level sync, soft
+  locks), Share View / Follow UI, destruction spectacle, replay, avatars in the world.
+  Out of scope: comments, payments, scripting, custom component creator, mobile editor,
+  MHD, Monte Carlo, CFD, particle simulation. (Roles, channels, chat, voice and shared
+  saves were added after V0.1 — see the addendum.)
 - **Moderation UI** for reports does not exist (reports are stored).
 - **GPU performance** was not measured on real hardware (container renders in software).
 - **Instancing** of identical parts in the viewport (next step for very large designs).
@@ -111,13 +139,14 @@ test against `supabase start`. Both jobs pass on GitHub (run #1, commit `49e84ef
 | `20260929000200_rls_and_grants.sql` | RLS on every table; per-column grants; no browser writes to verified runs or leaderboard entries                                                                                                                                                                          |
 | `20260929000300_storage.sql`        | public `thumbnails` (1 MB) and `avatars` (512 KB) buckets, image types only, owner-folder write policies                                                                                                                                                                  |
 | `20260929000400_hardening.sql`      | revoke EXECUTE on trigger functions from clients                                                                                                                                                                                                                          |
+| `20260930000100_collaboration.sql`  | project members and roles, channels, channel members, messages (with realtime delivery), invites, audit events, rate events; the permission matrix in SQL; parent-version check on saves; RLS for all of it and for private Realtime topics                               |
 
-All four apply cleanly to Supabase Postgres 17 (`supabase start`) and to PGlite; `supabase
+All five apply cleanly to Supabase Postgres 17 (`supabase start`) and to PGlite; `supabase
 db lint` reports no issues.
 
 ## Tests
 
-**228 automated tests, all passing**, plus the 17-step browser acceptance test.
+**310 automated tests, all passing** (228 at the V0.1 candidate; the rest cover the collaboration layers — see `docs/COMMUNICATIONS.md` §13), plus the 17-step acceptance test and the 15-step collaboration test.
 
 | Suite                                                |       Tests |
 | ---------------------------------------------------- | ----------: |
@@ -179,29 +208,36 @@ Experimental and never ranked. **ForgeLab does not validate real reactor designs
 
 See `docs/DEPLOYMENT.md` for step-by-step Supabase and Vercel setup.
 
-| Variable                        | Where           | Purpose                             |
-| ------------------------------- | --------------- | ----------------------------------- |
-| `VITE_SUPABASE_URL`             | browser (build) | Supabase project URL                |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | browser (build) | publishable key (RLS-constrained)   |
-| `VITE_SITE_URL` (optional)      | browser (build) | canonical origin for auth redirects |
-| `SUPABASE_URL`                  | server function | Supabase project URL                |
-| `SUPABASE_SECRET_KEY`           | server function | secret key for verification writes  |
+| Variable                                               | Where           | Purpose                             |
+| ------------------------------------------------------ | --------------- | ----------------------------------- |
+| `VITE_SUPABASE_URL`                                    | browser (build) | Supabase project URL                |
+| `VITE_SUPABASE_PUBLISHABLE_KEY`                        | browser (build) | publishable key (RLS-constrained)   |
+| `VITE_SITE_URL` (optional)                             | browser (build) | canonical origin for auth redirects |
+| `SUPABASE_URL`                                         | server function | Supabase project URL                |
+| `SUPABASE_SECRET_KEY`                                  | server function | secret key for verification writes  |
+| `VITE_LIVEKIT_URL`                                     | build (CSP)     | LiveKit server for voice            |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | server function | voice tokens and evictions          |
+| `FORGELAB_PRESENCE_KEY`                                | server function | signs presence tickets              |
 
 ## Routes
 
-| Route                | Page                                            |
-| -------------------- | ----------------------------------------------- |
-| `/`                  | Landing                                         |
-| `/app`               | Builder (new, draft or start dialog)            |
-| `/app/:projectId`    | Builder with a cloud project (own or read-only) |
-| `/projects`          | My projects + local draft                       |
-| `/discover`          | Published designs                               |
-| `/leaderboards`      | Verified leaderboards                           |
-| `/project/:id`       | Public project page                             |
-| `/profile/:username` | Public profile                                  |
-| `/settings`          | Account settings                                |
-| `/auth/callback`     | OAuth / email-link landing                      |
-| `POST /api/verify`   | Server verification                             |
+| Route                           | Page                                            |
+| ------------------------------- | ----------------------------------------------- |
+| `/`                             | Landing                                         |
+| `/app`                          | Builder (new, draft or start dialog)            |
+| `/app/:projectId`               | Builder with a cloud project (own or read-only) |
+| `/projects`                     | My projects + local draft                       |
+| `/discover`                     | Published designs                               |
+| `/leaderboards`                 | Verified leaderboards                           |
+| `/project/:id`                  | Public project page                             |
+| `/profile/:username`            | Public profile                                  |
+| `/settings`                     | Account settings                                |
+| `/auth/callback`                | OAuth / email-link landing                      |
+| `/invite#<code>`                | Accept a project invite                         |
+| `POST /api/verify`              | Server verification                             |
+| `POST /api/comms/ticket`        | Presence ticket for a project member            |
+| `POST /api/voice/token`         | Five-minute token for one voice room            |
+| `POST /api/comms/remove-member` | Remove a member and evict from voice            |
 
 ## Known bugs and rough edges
 

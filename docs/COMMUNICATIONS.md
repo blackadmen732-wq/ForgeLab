@@ -29,7 +29,7 @@ members' saves overwriting each other.
 
 ```
 CLIENT (apps/web)
-  builder / multiplayer engine ── design saves, revision notices, share view
+  builder / multiplayer engine ── design saves, conflict handling, revision notices
   voice client                 ── @forgelab/voice → livekit-client (WebRTC)
   text chat                    ── Postgres rows, delivered by Realtime broadcast
   presence                     ── @forgelab/multiplayer over Supabase Realtime presence
@@ -57,14 +57,21 @@ presence rebuilds on reconnect.
 
 ## 3. Packages
 
-| Package                 | Contents                                                                                                                                                                                                          | Depends on                   |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
-| `@forgelab/protocol`    | roles and the permission matrix; id/topic/room helpers; presence and event schemas with validators; message model with object references; signed envelopes (WebCrypto ECDSA P-256, identical in browser and Node) | nothing                      |
-| `@forgelab/multiplayer` | presence roster (verify, dedupe, expire), collaboration bus, `RealtimeTransport` interface, in-memory transport for tests                                                                                         | `protocol`                   |
-| `@forgelab/voice`       | `VoiceClient` state machine (join/leave, mute, deafen, push-to-talk, devices, speaking, listen-only), `VoiceTransport` interface, LiveKit adapter (loaded on demand)                                              | `protocol`, `livekit-client` |
+| Package                 | Contents                                                                                                                                                                                                          | Depends on            |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------- |
+| `@forgelab/protocol`    | roles and the permission matrix; id/topic/room helpers; presence and event schemas with validators; message model with object references; signed envelopes (WebCrypto ECDSA P-256, identical in browser and Node) | nothing               |
+| `@forgelab/multiplayer` | `ProjectSession` (signed presence, ticket renewal, rate budget, signed collaboration events), `PresenceRoster` (verify, dedupe, expire), `RealtimeTransport` interface, in-memory transport for tests             | `protocol`            |
+| `@forgelab/voice`       | `VoiceClient` state machine (join/leave, mute, deafen, push-to-talk, devices, speaking, listen-only, rejoin), `VoiceTransport` interface, LiveKit adapter (loaded on demand)                                      | `livekit-client` only |
 
-`apps/web` supplies the Supabase Realtime adapter and the UI. `api-src` holds the server
-endpoints. Nothing in `sim-core` knows any of this exists.
+`apps/web/src/collab` holds the Supabase Realtime adapter, the `CollabController` that
+ties the layers together for one open project, and the UI (team panel, voice panel,
+manage dialog, shared-save banners); `apps/web/src/lib/collab.ts` is the data access.
+`api-src` holds the server endpoints. `packages/protocol/src/boundaries.test.ts` enforces
+the dependency rules: protocol depends on nothing, multiplayer and voice never import each
+other, and no simulation package imports any of them.
+
+`livekit-client` 2.22.3 is the only dependency this work added. It is a separate
+~145 kB (gzip) chunk that downloads the first time someone joins voice.
 
 ## 4. Data model (migration `20260930000100_collaboration.sql`)
 
@@ -140,11 +147,29 @@ Microphone → browser processing (echo cancellation, noise suppression, AGC)
 Removing a member deletes their row (so no new token can be issued) and the
 `/api/comms/remove-member` endpoint evicts them from every voice room of the project.
 
-**Listen-only.** If microphone permission is denied or no input device exists, the user
-joins listen-only and the panel says why. Viewers are listen-only by role.
+Deleting a channel prevents new tokens for its room; people already in it stay connected
+until they leave (moderation-grade eviction is later work).
 
-**Push-to-talk** gates the published track (hold a key; default `` ` ``). **Deafen**
-stops playback of all remote audio and mutes the microphone.
+**The microphone is never opened while muted.** It is acquired the first time it should
+go live; after that, muting silences the published track, so push-to-talk responds
+instantly.
+
+**Listen-only.** If microphone permission is denied or no input device exists, the user
+stays connected to listen and the panel says why. Viewers are listen-only by role.
+
+**Push-to-talk** gates the published track (hold `` ` ``, the key below Escape; ignored
+while typing). **Deafen** stops playback of all remote audio, asks the SFU to stop
+sending it, and mutes the microphone; unmuting also undeafens.
+
+**Reconnects.** LiveKit resumes brief network drops itself. If the session is lost, the
+client asks for a _fresh_ token (so the server re-checks access) and rejoins, with
+backoff; it does not rejoin after being removed, after the room is closed, or after the
+same user joins voice from another tab.
+
+**The voice panel** (top-left of the workspace while connected) shows the channel,
+"N connected", each participant with a speaking ring and muted badge, and Mute, Deafen,
+settings (microphone, speaker where `setSinkId` is supported, open mic or push-to-talk)
+and Leave. If the browser blocks audio autoplay it offers a one-click "hear the channel".
 
 ## 7. Presence
 
@@ -164,8 +189,25 @@ so presence is signed:
    Copying someone's ticket is useless without their session private key.
 
 The roster is keyed by verified user id, so reconnects and multiple tabs collapse into
-one entry (the newest state wins), and entries that stop refreshing expire after 45 s
-even if Realtime never delivers a leave. Tickets are renewed before expiry.
+one entry (the tab in voice wins, then the newest state), and entries that stop
+refreshing expire after 90 s even if Realtime never delivers a leave (long enough for
+browsers' once-a-minute timer throttling in background tabs). Tickets are renewed before
+expiry; if the server refuses a renewal the session ends.
+
+**Rate budget.** Supabase Realtime closes a client's channel after 5 presence updates in
+30 s. The session therefore heartbeats every 20 s, sends at most 4 presence updates per
+30 s window, and coalesces bursts (300 ms). So that mute, deafen and channel changes
+still show up immediately, each change is _also_ sent as a signed broadcast. A broadcast
+only refreshes the state of someone the presence set already lists; it can never make
+anyone appear online. Members who arrive later see the latest state once the next
+presence update goes out (within 30 s). If the server closes the channel anyway, the
+adapter resubscribes with backoff.
+
+The member list is re-read when a verified stranger appears in presence (someone just
+accepted an invite) and when an owner or admin broadcasts a signed `team.changed`
+after changing roles, members or channels. Role changes apply to an open project
+immediately: a demoted member's editor becomes read-only, and a removed member loses the
+team panel and voice.
 
 ```
 { userId, projectId, name, role, voiceChannelId, mic: "muted" | "unmuted" | "unavailable",
@@ -182,21 +224,30 @@ Messages are inserted directly with the user's JWT; RLS requires `can_send_messa
 the channel, a trigger enforces 8 messages / 10 s per user per project, length and
 character rules, and sets `user_id = auth.uid()` (the client cannot set it). An
 `AFTER INSERT` trigger publishes the new row with `realtime.send` to the private topic
-`chat:<channel id>`, whose Realtime policy requires `can_view`. History is a paginated
-select. Content is rendered as text, never as HTML.
+`chat:<channel id>`, whose Realtime policy requires `can_view`. The client subscribes
+before loading the last 50 messages, de-duplicates by id, and validates every row
+(`parseChatRow`) before rendering. Content is rendered as React text nodes, never as
+HTML.
+
+**Object references.** When a message is sent, `@id` handles that name a component in
+the sender's current design are stored in `refs`; readers see them as links that select
+the component and fly the camera to it. The other reference kinds (`run`, `failure`,
+`workspace`, `version`) are in the schema but not produced yet.
 
 ## 9. Shared project integration (multiplayer engine V1)
 
 - Members with `can_edit_design` open the shared project read-write; viewers read-only.
+  Publishing and score submission stay with the owner, and the project row's name and
+  listing stats are maintained by the owner's saves; teammates' saves are versions.
 - **No silent overwrites.** Every save names the version it was based on
   (`parent_version_id`); the database rejects a save whose parent is no longer the latest
-  (`409`-style `P0001: stale_version`). The saver sees who saved last and chooses to load
-  theirs, keep editing a copy, or overwrite deliberately.
+  (`P0001: stale_version`). Autosave pauses and the editor offers **Load theirs**
+  (discard local changes, after confirmation) or **Keep mine** (save on top of theirs —
+  their version stays in the history). Nothing is lost either way.
 - After a save, the client broadcasts a signed `design.revision` event; collaborators
-  see "Andre saved v12 — Load".
-- **Share View**: a signed `view.share` event carries the sender's camera pose and
-  focused components. Recipients get a notice; _View_ moves their own camera. Nothing
-  is controlled remotely.
+  see "Andre saved version 12 — Load it". Loading is always the reader's choice.
+- **Share View** (`view.share`, the sender's camera pose and focused components) is
+  specified, signed and permission-checked in the protocol, but has no UI yet.
 
 Real-time, component-level co-editing (`component_updated { project_id, component_id,
 user_id, operation, revision, timestamp }`) is specified in `@forgelab/protocol` but not
@@ -211,26 +262,73 @@ explicit product and privacy design, visible consent and a separate storage poli
 
 ## 11. Configuration
 
-| Variable                | Where   | Purpose                                                   |
-| ----------------------- | ------- | --------------------------------------------------------- |
-| `VITE_LIVEKIT_URL`      | browser | `wss://…` of the LiveKit deployment (public)              |
-| `LIVEKIT_API_KEY`       | server  | LiveKit key id                                            |
-| `LIVEKIT_API_SECRET`    | server  | signs room tokens; derives opaque room names              |
-| `LIVEKIT_URL`           | server  | `https://…` for room administration (evictions)           |
-| `FORGELAB_PRESENCE_KEY` | server  | ECDSA P-256 private key (PKCS#8 PEM) for presence tickets |
+| Variable                   | Where  | Purpose                                                                                                           |
+| -------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------- |
+| `VITE_LIVEKIT_URL`         | build  | `wss://…` of the LiveKit deployment; added to the CSP `connect-src` (clients get the URL from the token response) |
+| `LIVEKIT_URL`              | server | `https://…` for room administration (evictions); defaults to `VITE_LIVEKIT_URL`                                   |
+| `LIVEKIT_API_KEY`          | server | LiveKit key id                                                                                                    |
+| `LIVEKIT_API_SECRET`       | server | signs room tokens and derives opaque room names (≥ 32 characters)                                                 |
+| `FORGELAB_PRESENCE_KEY`    | server | ECDSA P-256 private key (PKCS#8 PEM; `\n` escapes allowed) — `node scripts/generate-presence-key.mjs`             |
+| `SUPABASE_PUBLISHABLE_KEY` | server | lets the endpoints query Postgres _as the caller_; falls back to `VITE_SUPABASE_PUBLISHABLE_KEY`                  |
 
-Without LiveKit variables the voice controls explain that voice is not configured; chat,
-presence and editing work regardless.
+The build fails if a `VITE_` variable holds the LiveKit secret or a private key, or if
+either appears in the browser bundle.
+
+Without LiveKit variables the Join buttons explain that voice isn't configured; without
+the presence key the team panel says live presence is unavailable. Chat, saving and
+editing work regardless.
 
 ## 12. Scope
 
-**V1 (this work):** membership and roles, invites, General + custom channels, join/leave
-voice, mute, deafen, push-to-talk and open mic, device selection, speaking indicator,
-member list, text messages, online/channel presence, server authorization, shared
-project saves with conflict protection, revision notices, Share View, clean
+**V1 (this work):** membership and roles, invite links, General + custom channels,
+join/leave voice, mute, deafen, push-to-talk and open mic, device selection, speaking
+indicator, member list with activity, text chat with component links, online/channel
+presence, server authorization, shared project saves with conflict protection, revision
+notices, live role changes and removal (including voice eviction), clean
 reconnect/disconnect.
 
-**Later:** private-channel member management UI, moderation (server mute, kick from
-voice), object references rendered from `refs`, voice quality settings, large-room
-optimizations, mobile voice, real-time co-editing, follow-user, recording or
+**Later:** Share View / Follow / Jump UI, private-channel member management UI,
+moderation (server mute, kick from voice, evict on channel deletion), the remaining
+object-reference kinds, message history paging and unread counts, voice quality
+settings, large-room optimizations, mobile voice, real-time co-editing, recording or
 transcription (only with explicit privacy design).
+
+## 13. Testing
+
+| Suite                                       | What it proves                                                                                                                                                                          |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/protocol` (20)                    | permission matrix, validators, forged / stolen / foreign-project tickets rejected, package boundaries                                                                                   |
+| `packages/multiplayer` (12)                 | roster identity from tickets, tamper and replay handling, expiry, ticket renewal, the presence rate budget, broadcast fast path, event permissions and flood limits                     |
+| `packages/voice` (14)                       | join/leave, one channel at a time, mic never opened while muted, viewers and blocked mics listen-only, deafen, push-to-talk, speaking, rejoin with fresh token, no rejoin after removal |
+| `supabase/tests/collaboration.test.ts` (25) | membership, invites, channels, message rules and rate limit, Realtime topic authorization, stale-save rejection, roles, removal, audit                                                  |
+| `api-src/comms.test.ts` (11)                | identity from the session only, token grants and lifetime, listen-only viewers, cross-project refusal, removal before eviction                                                          |
+| `e2e/collaboration.mjs` (15 steps)          | two real browsers, real Supabase (Auth, Postgres, Realtime) and a real LiveKit SFU with synthetic microphones: every V1 flow end to end                                                 |
+
+### Local end-to-end
+
+With the acceptance-test setup from `docs/DEPLOYMENT.md` §4, also run LiveKit and give
+the build and server its keys:
+
+```bash
+export LIVEKIT_API_KEY=forgelab LIVEKIT_API_SECRET=$(openssl rand -hex 32)
+export VITE_LIVEKIT_URL=ws://localhost:7880 LIVEKIT_URL=http://localhost:7880
+export FORGELAB_PRESENCE_KEY="$(node scripts/generate-presence-key.mjs)"
+docker run -d --name livekit --network host -e LIVEKIT_KEYS="forgelab: $LIVEKIT_API_SECRET" \
+  livekit/livekit-server:v1.13.7 --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+pnpm vercel-build && node scripts/serve-output.mjs 3000 &
+node e2e/collaboration.mjs http://localhost:3000
+```
+
+## 14. Known limitations
+
+- Late joiners can see someone's mute/channel state up to 30 s stale (the Realtime
+  presence budget); people already in the project see changes immediately.
+- New channels, role changes and removals reach other members through a signed
+  `team.changed` notice; a member who misses it (offline at the time) sees the change on
+  their next load or when their presence ticket renews.
+- Removal takes effect at once in Postgres (no chat, no saves, no new voice or presence
+  tokens) and in voice (eviction). A removed member's presence ticket, however, stays
+  valid until it expires (at most 10 minutes), so a removed member who deliberately keeps
+  a modified client open could still appear in the online list until then.
+- LiveKit's own console logging is off by default (it reports routine disconnects as
+  errors). Set `localStorage["forgelab.debugVoice"] = "1"` to turn it on.

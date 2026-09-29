@@ -36,7 +36,7 @@ jobs:
       - run: pnpm vercel-build
 
   e2e:
-    name: Acceptance test (local Supabase + production build)
+    name: Acceptance and collaboration tests (local Supabase + LiveKit + production build)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: checks
@@ -58,6 +58,24 @@ jobs:
           supabase status -o env \
             | sed -n -e 's/^API_URL=/SUPABASE_URL=/p' -e 's/^PUBLISHABLE_KEY=/VITE_SUPABASE_PUBLISHABLE_KEY=/p' -e 's/^SECRET_KEY=/SUPABASE_SECRET_KEY=/p' \
             | tr -d '"' >> "$GITHUB_ENV"
+      - name: Throwaway voice and presence keys for this run
+        run: |
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::$secret"
+          {
+            echo "LIVEKIT_API_KEY=forgelab"
+            echo "LIVEKIT_API_SECRET=$secret"
+            echo "LIVEKIT_URL=http://localhost:7880"
+            echo "VITE_LIVEKIT_URL=ws://localhost:7880"
+            # One line with literal \n; the server unescapes it.
+            echo "FORGELAB_PRESENCE_KEY=$(node scripts/generate-presence-key.mjs | awk '{printf "%s\\n", $0}')"
+          } >> "$GITHUB_ENV"
+      - name: Start LiveKit (SFU for voice)
+        run: |
+          docker run -d --name livekit --network host \
+            -e LIVEKIT_KEYS="forgelab: $LIVEKIT_API_SECRET" \
+            livekit/livekit-server:v1.13.7 --dev --bind 0.0.0.0 --node-ip 127.0.0.1
+          for i in $(seq 1 30); do curl -sf http://localhost:7880/ >/dev/null && break; sleep 1; done
       - name: Build against it
         run: |
           echo "VITE_SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
@@ -69,6 +87,7 @@ jobs:
           sleep 2
           mkdir -p e2e-shots
           E2E_SHOTS=e2e-shots node e2e/acceptance.mjs http://localhost:3000
+          E2E_SHOTS=e2e-shots node e2e/collaboration.mjs http://localhost:3000
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
