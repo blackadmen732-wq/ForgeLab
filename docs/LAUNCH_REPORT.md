@@ -84,7 +84,7 @@ keyboard operation of every panel. Dark graphite UI with colour reserved for phy
 **Build and CI.** Vercel Build Output API (SPA + function + headers + SPA fallback);
 secret-key scan of the browser bundle; `.env.example`; GitHub Actions: frozen install,
 typecheck, lint, format check, tests, Vercel build, and an e2e job running the acceptance
-test against `supabase start`.
+test against `supabase start`. Both jobs pass on GitHub (run #1, commit `49e84ef`).
 
 ## Incomplete or deferred
 
@@ -221,8 +221,6 @@ See `docs/DEPLOYMENT.md` for step-by-step Supabase and Vercel setup.
   connected account belongs to a different app (it already has a `profiles` table), so
   ForgeLab's migrations were deliberately not applied there. There are no Vercel projects
   yet. Creating either is an account-level action with possible billing implications.
-- **CI e2e job** must be observed green on GitHub (it needs Docker on the runner, which
-  `ubuntu-latest` provides).
 
 ## Next tasks
 
