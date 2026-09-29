@@ -516,4 +516,14 @@ describe("grants", () => {
     expect(rows.length).toBeGreaterThanOrEqual(8);
     for (const row of rows) expect(row.relrowsecurity, row.relname).toBe(true);
   });
+
+  it("lets anonymous clients execute only the public read functions", async () => {
+    await t.db.exec("reset role");
+    const { rows } = await t.db.query<{ proname: string }>(
+      `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')
+       order by 1`,
+    );
+    expect(rows.map((r) => r.proname)).toEqual(["discover_projects", "leaderboard"]);
+  });
 });

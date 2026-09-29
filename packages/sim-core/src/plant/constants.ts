@@ -3,7 +3,7 @@
  *
  * Nothing here is tuned to make a design succeed or fail. Where a value is a physical
  * constant or a published figure the source is given; where it is a modelling choice it
- * is labelled as one, and docs/ARCHITECTURE.md §13 repeats it.
+ * is labelled as one, and docs/ARCHITECTURE.md §12 repeats it.
  */
 
 /** Natural-convection coefficient to still air, W/(m²·K). Typical range 2–25 (Incropera). */

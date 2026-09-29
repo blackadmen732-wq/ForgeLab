@@ -195,7 +195,7 @@ interface Work {
 
 /**
  * The V0.1 plant solver: electrical, vacuum, magnetics, plasma, neutronics, coolant,
- * thermal, power conversion and controls. See docs/ARCHITECTURE.md §13 for the model and
+ * thermal, power conversion and controls. See docs/ARCHITECTURE.md §12 for the model and
  * every approximation it makes.
  *
  * It is deterministic: every collection is walked in id order and there is no randomness.

@@ -8,7 +8,7 @@ export type ConnectionPointId = string;
  * Kinds of connection ForgeLab understands.
  *
  * `structural` and `mount` carry mechanical load. The rest are plant networks read by the
- * V0.1 plant solver (see docs/ARCHITECTURE.md §13):
+ * V0.1 plant solver (see docs/ARCHITECTURE.md §12):
  *   electrical — DC power network
  *   coolant    — primary coolant loop
  *   steam      — heat exchanger secondary side to a turbine

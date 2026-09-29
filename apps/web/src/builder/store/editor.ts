@@ -42,6 +42,7 @@ import {
 } from "@forgelab/sim-runner";
 import { toast } from "../../lib/toast.js";
 import { SimulationClient } from "../sim/client.js";
+import { SocketIndex } from "./socketIndex.js";
 import { CloudSync, type CloudBinding, type SaveState, writeLocalDraft } from "./persistence.js";
 
 /* ------------------------------------------------------------------------------------ *
@@ -896,31 +897,25 @@ export class EditorStore {
 
   /**
    * Moves the dragged group so its closest socket lands exactly on a compatible socket of
-   * another part, when one is within SOCKET_SNAP_RADIUS_M. O(sockets moved × sockets in
-   * the scene): fine for hundreds of parts; see docs/PERFORMANCE.md.
+   * another part, when one is within SOCKET_SNAP_RADIUS_M. Uses a spatial hash, so the
+   * cost is linear in the sockets involved (docs/PERFORMANCE.md).
    */
   #snapToSockets(world: SimulationWorld, ids: readonly string[], override: boolean): void {
     if (override || !this.#socketSnap || !this.#snapEnabled) return;
     const moving = new Set(ids);
+    const index = SocketIndex.of(
+      world.listComponents().filter((c) => !moving.has(c.id) && !this.#hidden.has(c.id)),
+      SOCKET_SNAP_RADIUS_M,
+    );
     let best: { distance: number; delta: Vec3 } | null = null;
-    const others = world
-      .listComponents()
-      .filter((c) => !moving.has(c.id) && !this.#hidden.has(c.id));
     for (const id of ids) {
       const m = world.requireComponent(id);
       const mt = currentTransform(m);
       for (const socket of m.connectionPoints) {
         const p = localPointToWorld(mt, socket.localPosition);
-        for (const other of others) {
-          const ot = currentTransform(other);
-          for (const target of other.connectionPoints) {
-            if (target.connectionType !== socket.connectionType) continue;
-            const q = localPointToWorld(ot, target.localPosition);
-            const distance = Vec3Math.distance(p, q);
-            if (distance <= SOCKET_SNAP_RADIUS_M && (best === null || distance < best.distance)) {
-              best = { distance, delta: Vec3Math.subtract(q, p) };
-            }
-          }
+        const hit = index.near(p, SOCKET_SNAP_RADIUS_M, socket.connectionType)[0];
+        if (hit !== undefined && (best === null || hit.distance < best.distance)) {
+          best = { distance: hit.distance, delta: Vec3Math.subtract(hit.socket.position, p) };
         }
       }
     }
@@ -948,13 +943,40 @@ export class EditorStore {
         if (isLoadBearing(connection.type) && !socketsTouch(world, connection))
           world.disconnect(connection.id);
       }
-      if (override || !this.#snapEnabled) continue;
-      for (const candidate of world.findConnectionCandidates(id)) {
-        if (this.#hidden.has(candidate.to.componentId)) continue;
-        try {
-          world.connect(candidate.from, candidate.to);
-        } catch {
-          // A socket already carrying this exact link, or an incompatible pair: skip it.
+    }
+    if (override || !this.#snapEnabled) return;
+    const tolerance = CONNECTION_SNAP_TOLERANCE_M;
+    const index = SocketIndex.of(
+      world.listComponents().filter((c) => !this.#hidden.has(c.id)),
+      Math.max(tolerance, 0.05),
+    );
+    const end = (componentId: string, socketId: string) => `${componentId}\u0000${socketId}`;
+    const linked = new Set<string>();
+    for (const c of world.listConnections()) {
+      const a = end(c.from.componentId, c.from.connectionPointId);
+      const b = end(c.to.componentId, c.to.connectionPointId);
+      linked.add(`${a}|${b}`).add(`${b}|${a}`);
+    }
+    for (const id of ids) {
+      const component = world.getComponent(id);
+      if (component === undefined) continue;
+      const t = currentTransform(component);
+      for (const socket of component.connectionPoints) {
+        const p = localPointToWorld(t, socket.localPosition);
+        for (const { socket: other } of index.near(p, tolerance, socket.connectionType)) {
+          if (other.componentId === id) continue;
+          const a = end(id, socket.id);
+          const b = end(other.componentId, other.socketId);
+          if (linked.has(`${a}|${b}`)) continue;
+          try {
+            world.connect(
+              { componentId: id, connectionPointId: socket.id },
+              { componentId: other.componentId, connectionPointId: other.socketId },
+            );
+            linked.add(`${a}|${b}`).add(`${b}|${a}`);
+          } catch {
+            // An incompatible pair the engine refuses: skip it.
+          }
         }
       }
     }

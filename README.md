@@ -1,110 +1,91 @@
 # ForgeLab
 
-A browser-based 3D reactor and energy-system construction sandbox.
+**Build anything. Physics decides.**
 
-> We provide the components and physics. The player decides what to build.
-> Reality decides whether it works.
+ForgeLab is a browser-based 3D engineering sandbox for designing, simulating, breaking and
+improving fusion power plants and the machines around them. You place parametric parts in
+an open workspace, connect power, coolant, steam and control, and run the design. A
+deterministic, real-units simulation decides whether it stands up, makes power, or fails —
+and explains the chain of causes when it does.
 
-ForgeLab is an engineering sandbox, not a game about engineering. There is no campaign, no
-character, no tech tree and no balanced stats. You build things out of real components with
-real material properties, run the simulation, and find out whether your design stands up.
-When it does not, ForgeLab explains the physical chain that broke it.
+ForgeLab is a sandbox built on documented, reduced models. **It does not validate real
+reactor designs**, and nothing in it should be described as research-grade.
 
-**This repository is at Milestone 0: Simulation Foundation.** Gravity and structure work.
-Fusion physics does not exist yet, and neither do accounts, cloud saves, leaderboards or
-multiplayer. See [`docs/PHYSICS_ROADMAP.md`](docs/PHYSICS_ROADMAP.md) for what comes next.
+**Status: V0.1 launch candidate.** See [`docs/LAUNCH_REPORT.md`](docs/LAUNCH_REPORT.md).
 
 ---
 
-## What works today
+## What it does
 
-- A deterministic, fixed-timestep simulation engine that runs entirely in your browser.
-- Earth gravity, `g = 9.80665 m/s²`, with unsupported components falling and supported
-  components transferring load into their supports.
-- A structural load system: support resolution, load propagation, lever-rule reaction
-  splitting, stress utilization against real material yield strengths, and failure events
-  that explain themselves.
-- A material database of five metals with sourced, grade-specific properties.
-- Four components — structural beam, structural platform, generic reactor chamber, generic
-  equipment block — that you can place, move, rotate, duplicate, delete and snap together.
-- Assembly mass and centre of mass, with an optional marker in the workspace.
-- A versioned save format with local save/load and JSON export/import.
+- **Open 3D builder.** Empty workspace by default; 21 parametric parts (vessels, TF coils,
+  solenoids, blankets, heaters, fuelling, pumps, pipes, heat exchangers, turbines,
+  generators, grid, bus bars, breakers, sensors, interlocks, structure). Move/rotate
+  gizmos, grid/angle/socket snapping (Alt overrides), multi-select and box select,
+  duplicate, hide/isolate, cutaway and x-ray, perspective/orthographic, standard views,
+  undo/redo, command palette (Ctrl K) and a shortcut overlay (?).
+- **Physics that decides.** Structural 0.1 (axial, Euler/Johnson buckling, beam bending),
+  DC electrical networks, lumped thermal, coolant loops, vacuum, magnetics, a 0D plasma,
+  D-T fusion, blanket heat, steam cycle and **net electric = gross − house load** — all in
+  `@forgelab/sim-core`, the only authority on physical truth.
+- **Simulate mode** runs the plant in a Web Worker at 1–10× or flat out, with overlays for
+  stress, temperature, power, coolant, magnetic field, plasma and failures, live
+  sparklines, and failures you can click to fly to, each with its causal chain.
+- **Model confidence** on every result: Supported, Approximate or Experimental.
+- **Cloud (optional):** accounts, autosave with version history, publish, fork with
+  lineage, likes, discover, public profiles, thumbnails and avatars.
+- **Server-verified leaderboards:** the server reruns a fixed 10-minute scenario on the
+  saved design; numbers reported by a browser are never ranked.
+- **Guest friendly:** no account needed to build and simulate; designs autosave locally.
 
-## Getting started
+## Quick start
 
 ```bash
 pnpm install
-pnpm dev        # http://localhost:5173
+pnpm dev          # http://localhost:5173 — local-only mode without Supabase variables
 ```
 
-Other scripts:
+Open **Start Building → Interactive starter**: a fusion plant with one problem. Run it,
+read the failure chain, fix it, run it again.
 
-```bash
-pnpm test       # simulation test suite (Vitest, Node - no DOM)
-pnpm typecheck  # TypeScript across every package and the app
-pnpm lint       # ESLint
-pnpm build      # production build of the web workspace
-pnpm verify     # all of the above, in order
-```
+| Script              | What it does                                                      |
+| ------------------- | ----------------------------------------------------------------- |
+| `pnpm test`         | engine, components, runner, verification, RLS and web-store tests |
+| `pnpm typecheck`    | TypeScript across packages, server function and app               |
+| `pnpm lint`         | ESLint (incl. React Compiler rules)                               |
+| `pnpm build`        | production SPA                                                    |
+| `pnpm vercel-build` | SPA + `/api/verify` as a Vercel Build Output, with a secret scan  |
+| `pnpm verify`       | typecheck, lint, test, build                                      |
 
-Requires Node 20+ and pnpm 10+.
+Cloud setup, deployment and the end-to-end acceptance test are in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). Requires Node 20+ (22 recommended) and pnpm 10.
 
-## Trying it out
-
-The workspace opens on a starter assembly: a steel platform on four legs with a reactor
-chamber on the deck. Everything is comfortably within capacity.
-
-To make something fail:
-
-1. Click the reactor chamber to select it.
-2. In the inspector, raise **Contents (kg)** — this is mass the geometry does not model,
-   such as inventory or internals.
-3. Watch utilization climb through `stressed` at 0.70 and `failed` past 1.00. The legs turn
-   red and the failure log explains exactly how much load arrived, through what section,
-   and which material limit it crossed.
-
-Or swap the legs to **Copper** and watch a far smaller load do the same thing — copper's
-69 MPa annealed yield is simply the wrong material for a structural column, and the solver
-works that out on its own.
-
-The **Overload demo** button in the Scenes panel loads that case directly.
-
-## How it is put together
+## Layout
 
 ```
-apps/web/                  React + React Three Fiber workspace. Draws simulation
-                           snapshots and issues commands. Contains no physics.
-packages/shared/           SI units, conversions, Vec3/Quaternion/Transform maths.
-packages/materials/        Material database. One place, cited values.
-packages/sim-core/         THE AUTHORITY. Components, solvers, fixed-timestep clock,
-                           failure events, save format. No React, no Three.js, no DOM.
-packages/reactor-components/  The four built-in components.
-packages/test-utils/       World builders and deterministic fingerprinting for tests.
-docs/                      Architecture, physics roadmap, material sources.
+apps/web/                    Vite + React + React Three Fiber SPA (site + builder)
+packages/shared/             SI units and vector maths
+packages/materials/          Sourced material data
+packages/sim-core/           THE AUTHORITY: structure, plant physics, save format
+packages/sim-runner/         Worker session protocol and leaderboard verification
+packages/reactor-components/ Parametric part catalogue and reference designs
+api-src/                     POST /api/verify (server recomputation)
+supabase/                    Migrations (schema, RLS, grants, storage) and RLS tests
+scripts/, e2e/               Vercel build output, local server, acceptance test
+docs/                        Architecture, physics roadmap, deployment, performance
 ```
 
-The rule that matters: **`sim-core` decides what is physically true, and everything else
-reads from it.** Rendering never contains reactor physics, and UI state never determines
-physical truth. This is enforced by a test that scans the source of every simulation
-package and fails the build if any of them imports a renderer, touches the DOM, or uses a
-non-deterministic source.
-
-Read [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before changing anything in
-`packages/`.
+The rule that matters: **`sim-core` decides what is physically true; everything else reads
+from it.** An architecture test fails the build if a simulation package imports a
+renderer, touches the DOM, or uses a non-deterministic source. Read
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) before changing `packages/`.
 
 ## Honesty about the model
 
-ForgeLab is **not research-grade** and should never be described as such.
-
-The structural model treats every member as a short column in pure compression. It does not
-compute bending, shear, torsion or buckling — which means a slender steel column reads far
-stronger than it really is, because real slender members buckle long before they yield.
-That is the largest gap in the current model and the first thing the next phase should
-close. The full list of approximations is in §6 of `docs/ARCHITECTURE.md`, and every
-material number is sourced with its caveats in `docs/material-sources.md`.
-
-What ForgeLab does promise is that the simplifications are written down, the material data
-is cited, and a failure always explains itself instead of asserting a verdict.
+Every model is reduced and documented: lumped temperatures, 0D plasma with empirical
+scaling laws, exponential neutron attenuation, ideal coil fields, single-phase coolant.
+Approximations are listed in `docs/ARCHITECTURE.md` (§6, §12), sources for every material
+number in `docs/material-sources.md`, and the model-confidence label on each run says how
+far a design is from the models' comfort zone.
 
 ## Licence
 
