@@ -17,6 +17,9 @@ export default defineConfig({
       "@forgelab/reactor-components": pkg("reactor-components"),
       "@forgelab/test-utils": pkg("test-utils"),
       "@forgelab/sim-runner": pkg("sim-runner"),
+      "@forgelab/protocol": pkg("protocol"),
+      "@forgelab/multiplayer": pkg("multiplayer"),
+      "@forgelab/voice": pkg("voice"),
     },
   },
   test: {

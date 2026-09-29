@@ -124,7 +124,7 @@ await build({
   },
   logLevel: "warning",
   alias: Object.fromEntries(
-    ["shared", "materials", "sim-core", "sim-runner", "reactor-components"].map((name) => [
+    ["shared", "materials", "sim-core", "sim-runner", "reactor-components", "protocol"].map((name) => [
       `@forgelab/${name}`,
       join(root, "packages", name, "src", "index.ts"),
     ]),

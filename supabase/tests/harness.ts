@@ -69,6 +69,34 @@ const PLATFORM = `
   end
   $$;
   grant execute on function storage.foldername(text) to anon, authenticated, service_role;
+
+  -- Supabase Realtime's authorization surface: policies on realtime.messages decide who
+  -- may join, receive and publish on a topic; realtime.topic() is the topic being checked.
+  -- realtime.send() is recorded in realtime.sent so tests can assert what was delivered.
+  create schema realtime;
+  grant usage on schema realtime to anon, authenticated, service_role;
+  create table realtime.messages (
+    id bigserial primary key,
+    topic text not null,
+    extension text not null,
+    payload jsonb,
+    event text,
+    private boolean default true,
+    inserted_at timestamptz not null default now()
+  );
+  alter table realtime.messages enable row level security;
+  grant select, insert on realtime.messages to anon, authenticated, service_role;
+  grant usage on sequence realtime.messages_id_seq to anon, authenticated, service_role;
+  create function realtime.topic() returns text language sql stable as $$
+    select nullif(current_setting('realtime.topic', true), '')
+  $$;
+  grant execute on function realtime.topic() to anon, authenticated, service_role;
+  create table realtime.sent (id bigserial primary key, topic text, event text, payload jsonb, private boolean);
+  grant select on realtime.sent to service_role;
+  create function realtime.send(payload jsonb, event text, topic text, private boolean default true)
+  returns void language sql security definer as $$
+    insert into realtime.sent (topic, event, payload, private) values (topic, event, payload, private)
+  $$;
 `;
 
 export interface TestDatabase {

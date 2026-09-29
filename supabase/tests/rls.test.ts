@@ -29,11 +29,17 @@ async function saveVersion(
   autosave = true,
   label: string | null = null,
 ) {
+  // Saves name the version they build on (conflict protection, see the collaboration migration).
+  const [latest] = await t.as<{ latest_version_id: string | null }>(
+    "service",
+    `select latest_version_id from public.projects where id = $1`,
+    [projectId],
+  );
   const [row] = await t.as<{ id: string; version_number: number }>(
     owner,
-    `insert into public.project_versions (project_id, schema_version, engine_version, design, design_hash, is_autosave, label)
-     values ($1, 2, '0.1.0', $2::jsonb, $3, $4, $5) returning id, version_number`,
-    [projectId, DESIGN, HASH, autosave, label],
+    `insert into public.project_versions (project_id, schema_version, engine_version, design, design_hash, is_autosave, label, parent_version_id)
+     values ($1, 2, '0.1.0', $2::jsonb, $3, $4, $5, $6) returning id, version_number`,
+    [projectId, DESIGN, HASH, autosave, label, latest?.latest_version_id ?? null],
   );
   return row!;
 }
@@ -517,13 +523,18 @@ describe("grants", () => {
     for (const row of rows) expect(row.relrowsecurity, row.relname).toBe(true);
   });
 
-  it("lets anonymous clients execute only the public read functions", async () => {
+  it("lets anonymous clients execute only the public read functions and their own role lookup", async () => {
     await t.db.exec("reset role");
     const { rows } = await t.db.query<{ proname: string }>(
       `select p.proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace
        where n.nspname = 'public' and has_function_privilege('anon', p.oid, 'execute')
        order by 1`,
     );
-    expect(rows.map((r) => r.proname)).toEqual(["discover_projects", "leaderboard"]);
+    // project_role() only reports the caller's own role (always null for anonymous callers).
+    expect(rows.map((r) => r.proname)).toEqual([
+      "discover_projects",
+      "leaderboard",
+      "project_role",
+    ]);
   });
 });
