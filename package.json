@@ -2,7 +2,7 @@
   "name": "forgelab",
   "version": "0.0.0",
   "private": true,
-  "description": "ForgeLab \u2014 a browser-based 3D reactor and energy-system construction sandbox.",
+  "description": "ForgeLab — a browser-based 3D reactor and energy-system construction sandbox.",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -22,6 +22,7 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.10.1",
     "eslint": "^10.11.0",

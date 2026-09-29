@@ -21,7 +21,7 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["packages/*/src/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "supabase/tests/**/*.test.ts", "api-src/**/*.test.ts"],
     reporters: ["default"],
   },
 });
