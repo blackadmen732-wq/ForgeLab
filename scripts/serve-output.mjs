@@ -33,6 +33,7 @@ const types = {
 };
 const functions = new Map();
 async function fn(name) {
+  if (!/^[a-z0-9-]+(\/[a-z0-9-]+)*$/.test(name)) return null;
   if (!functions.has(name)) {
     const dir = join(root, "functions", "api", `${name}.func`);
     if (!existsSync(dir)) return null;
@@ -56,7 +57,7 @@ createServer(async (req, res) => {
   for (const route of config.routes) {
     if (route.handle === "filesystem") {
       phase = "fs";
-      const api = /^\/api\/([\w-]+)$/.exec(dest);
+      const api = /^\/api\/([\w/-]+)$/.exec(dest);
       if (staticFile(dest) || (api && (await fn(api[1])))) break;
       continue;
     }
@@ -67,7 +68,7 @@ createServer(async (req, res) => {
     if (route.dest) dest = route.dest;
     if (!route.continue && phase === "fs") break;
   }
-  const api = /^\/api\/([\w-]+)$/.exec(dest);
+  const api = /^\/api\/([\w/-]+)$/.exec(dest);
   if (api && status === 200) {
     const handler = await fn(api[1]);
     if (handler) return handler(req, res);

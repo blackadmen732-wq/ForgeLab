@@ -56,6 +56,19 @@ for (const [name, value] of Object.entries(process.env)) {
   }
 }
 
+// Other server secrets must never be copied into browser variables either.
+const serverSecrets = [process.env.LIVEKIT_API_SECRET, process.env.FORGELAB_PRESENCE_KEY]
+  .map((v) => (v ?? "").trim())
+  .filter((v) => v.length >= 16);
+for (const [name, value] of Object.entries(process.env)) {
+  if (
+    name.startsWith("VITE_") &&
+    (serverSecrets.includes((value ?? "").trim()) || /BEGIN (EC )?PRIVATE KEY/.test(value ?? ""))
+  ) {
+    fail(`${name} holds a server secret (LiveKit secret or presence private key).`);
+  }
+}
+
 const supabaseUrl = (process.env.VITE_SUPABASE_URL ?? "").trim();
 const publishable = (
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
@@ -96,6 +109,9 @@ for (const file of files(dist)) {
   if (!/\.(js|html|css|json)$/.test(file)) continue;
   const text = readFileSync(file, "utf8");
   if (secretPatterns[0].test(text)) fail(`A secret key was found in ${file}.`);
+  if (/BEGIN (EC )?PRIVATE KEY/.test(text)) fail(`A private key was found in ${file}.`);
+  for (const secret of serverSecrets)
+    if (text.includes(secret)) fail(`A server secret was found in ${file}.`);
   for (const jwt of text.match(secretPatterns[1]) ?? []) {
     if (isSecretKey(jwt)) fail(`A service_role JWT was found in ${file}.`);
   }
@@ -107,48 +123,65 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(join(out, "static"), { recursive: true });
 cpSync(dist, join(out, "static"), { recursive: true, filter: (src) => !src.endsWith(".map") });
 
-const fn = join(out, "functions", "api", "verify.func");
-mkdirSync(fn, { recursive: true });
-await build({
-  entryPoints: [join(root, "api-src", "handler.ts")],
-  outfile: join(fn, "index.mjs"),
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node22",
-  sourcemap: "linked",
-  legalComments: "none",
-  // Some dependencies still call require(); give the ESM bundle one.
-  banner: {
-    js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
+/** Route (under /api) → entry file. Each becomes its own Node function. */
+const FUNCTIONS = {
+  verify: { entry: "api-src/functions/verify.ts", maxDuration: 60, memory: 1024 },
+  "comms/ticket": { entry: "api-src/functions/comms-ticket.ts", maxDuration: 10, memory: 256 },
+  "voice/token": { entry: "api-src/functions/voice-token.ts", maxDuration: 10, memory: 256 },
+  "comms/remove-member": {
+    entry: "api-src/functions/comms-remove-member.ts",
+    maxDuration: 20,
+    memory: 256,
   },
-  logLevel: "warning",
-  alias: Object.fromEntries(
-    ["shared", "materials", "sim-core", "sim-runner", "reactor-components", "protocol"].map((name) => [
-      `@forgelab/${name}`,
-      join(root, "packages", name, "src", "index.ts"),
-    ]),
-  ),
-});
-writeFileSync(
-  join(fn, ".vc-config.json"),
-  JSON.stringify(
-    {
-      runtime: "nodejs22.x",
-      handler: "index.mjs",
-      launcherType: "Nodejs",
-      shouldAddHelpers: false,
-      shouldAddSourcemapSupport: true,
-      maxDuration: 60,
-      memory: 1024,
+};
+
+for (const [route, spec] of Object.entries(FUNCTIONS)) {
+  const fn = join(out, "functions", "api", `${route}.func`);
+  mkdirSync(fn, { recursive: true });
+  await build({
+    entryPoints: [join(root, spec.entry)],
+    outfile: join(fn, "index.mjs"),
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node22",
+    sourcemap: "linked",
+    legalComments: "none",
+    // Some dependencies still call require(); give the ESM bundle one.
+    banner: {
+      js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);",
     },
-    null,
-    2,
-  ),
-);
+    logLevel: "warning",
+    alias: Object.fromEntries(
+      ["shared", "materials", "sim-core", "sim-runner", "reactor-components", "protocol"].map(
+        (name) => [`@forgelab/${name}`, join(root, "packages", name, "src", "index.ts")],
+      ),
+    ),
+  });
+  writeFileSync(
+    join(fn, ".vc-config.json"),
+    JSON.stringify(
+      {
+        runtime: "nodejs22.x",
+        handler: "index.mjs",
+        launcherType: "Nodejs",
+        shouldAddHelpers: false,
+        shouldAddSourcemapSupport: true,
+        maxDuration: spec.maxDuration,
+        memory: spec.memory,
+      },
+      null,
+      2,
+    ),
+  );
+}
 
 const supabaseOrigin = supabaseUrl === "" ? "" : new URL(supabaseUrl).origin;
 const supabaseWs = supabaseOrigin.replace(/^http/, "ws");
+// Voice signalling (WebRTC media itself is not governed by connect-src).
+const livekitUrl = (process.env.VITE_LIVEKIT_URL ?? "").trim();
+const livekitOrigin = livekitUrl === "" ? "" : new URL(livekitUrl).origin;
+const livekitHttp = livekitOrigin.replace(/^ws/, "http");
 const csp = [
   "default-src 'self'",
   "script-src 'self'",
@@ -156,7 +189,7 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${supabaseOrigin} https://*.supabase.co`.trim(),
   "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://*.supabase.co wss://*.supabase.co`
+  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://*.supabase.co wss://*.supabase.co ${livekitOrigin} ${livekitHttp}`
     .replace(/\s+/g, " ")
     .trim(),
   "frame-ancestors 'none'",
@@ -171,7 +204,8 @@ const securityHeaders = {
   "X-Content-Type-Options": "nosniff",
   "X-Frame-Options": "DENY",
   "Referrer-Policy": "strict-origin-when-cross-origin",
-  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
+  // The microphone is allowed for this origin only (voice channels); nothing else.
+  "Permissions-Policy": "camera=(), microphone=(self), geolocation=(), payment=(), usb=()",
   "Cross-Origin-Opener-Policy": "same-origin",
 };
 
