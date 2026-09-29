@@ -1,14 +1,16 @@
-import { FolderPlus, HardDrive, MoreHorizontal, Trash2 } from "lucide-react";
+import { FolderPlus, HardDrive, LogOut, MoreHorizontal, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { ProjectCard } from "../components/ProjectCard.js";
 import { CloudGate, Empty, ErrorState, Loading } from "../components/States.js";
-import { deleteProject, listMyProjects, type Project } from "../lib/api.js";
+import { ROLE_LABELS } from "@forgelab/protocol";
+import { deleteProject, listMyProjects, type MyProject } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
 import { confirmDialog } from "../lib/confirm.js";
 import { env } from "../lib/env.js";
 import { relativeTime } from "../lib/format.js";
 import { safeStorage } from "../lib/storage.js";
+import { removeMember } from "../lib/collab.js";
 import { errorMessage, toast } from "../lib/toast.js";
 import { useAsync } from "../lib/useAsync.js";
 import { LOCAL_DRAFT_KEY, type LocalDraft } from "../builder/store/persistence.js";
@@ -40,7 +42,25 @@ function ProjectList() {
   const projects = useAsync(() => listMyProjects(userId), [userId]);
   const [menu, setMenu] = useState<string | null>(null);
 
-  const remove = async (project: Project) => {
+  const leave = async (project: MyProject) => {
+    setMenu(null);
+    const ok = await confirmDialog({
+      title: `Leave "${project.name}"?`,
+      body: "You'll lose access to its design, channels and voice until someone invites you again.",
+      confirmLabel: "Leave project",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await removeMember(project.id, userId);
+      toast("success", "You left the project");
+      projects.reload();
+    } catch (error) {
+      toast("error", "Couldn't leave the project", errorMessage(error));
+    }
+  };
+
+  const remove = async (project: MyProject) => {
     setMenu(null);
     const ok = await confirmDialog({
       title: `Delete "${project.name}"?`,
@@ -77,7 +97,15 @@ function ProjectList() {
         <div key={project.id} className="card-wrap">
           <ProjectCard
             to={`/app/${project.id}`}
-            project={{ ...project, badge: project.visibility === "public" ? "Public" : "Private" }}
+            project={{
+              ...project,
+              badge:
+                project.role === "owner"
+                  ? project.visibility === "public"
+                    ? "Public"
+                    : "Private"
+                  : `Shared · ${ROLE_LABELS[project.role]}`,
+            }}
           />
           <div className="card-actions">
             <button
@@ -95,14 +123,25 @@ function ProjectList() {
                     View public page
                   </Link>
                 )}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className="menu__item menu__item--danger"
-                  onClick={() => void remove(project)}
-                >
-                  <Trash2 /> Delete
-                </button>
+                {project.role === "owner" ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu__item menu__item--danger"
+                    onClick={() => void remove(project)}
+                  >
+                    <Trash2 /> Delete
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="menu__item menu__item--danger"
+                    onClick={() => void leave(project)}
+                  >
+                    <LogOut /> Leave project
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -120,7 +159,8 @@ export function Projects() {
         <div>
           <h1>My projects</h1>
           <p className="dim">
-            Cloud projects autosave while you work. Every named version is kept.
+            Your projects and the ones you've been invited to. Cloud projects autosave while you
+            work, and every named version is kept.
           </p>
         </div>
         <button

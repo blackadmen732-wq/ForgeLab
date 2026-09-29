@@ -22,7 +22,9 @@ export type CollabEvent =
       readonly camera: CameraPose;
       readonly focus: readonly string[];
       readonly note: string | null;
-    };
+    }
+  /** Members, roles or channels changed: re-read them from the database. Carries no data. */
+  | { readonly type: "team.changed" };
 
 /**
  * Specified for the next milestone (real-time co-editing); not produced in V1.
@@ -51,6 +53,8 @@ export function parseCollabEvent(input: unknown): CollabEvent | null {
   if (typeof input !== "object" || input === null) return null;
   const r = input as Record<string, unknown>;
   switch (r["type"]) {
+    case "team.changed":
+      return { type: "team.changed" };
     case "design.revision":
       if (typeof r["versionId"] !== "string" || !UUID.test(r["versionId"])) return null;
       if (!Number.isInteger(r["versionNumber"]) || (r["versionNumber"] as number) < 1) return null;

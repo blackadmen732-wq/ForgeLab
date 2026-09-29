@@ -8,6 +8,7 @@ import {
   FilePlus2,
   FolderOpen,
   GitFork,
+  Headphones,
   History,
   LayoutTemplate,
   Loader2,
@@ -19,6 +20,7 @@ import {
   Trophy,
   Undo2,
   Upload,
+  Users,
   Zap,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -27,6 +29,7 @@ import { AccountMenu } from "../../components/AccountMenu.js";
 import { LogoMark } from "../../components/Logo.js";
 import { relativeTime } from "../../lib/format.js";
 import { MOD } from "../../lib/platform.js";
+import { useCollab } from "../../collab/context.js";
 import type { CommandContext } from "../commands.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 
@@ -75,9 +78,18 @@ function SaveStatus() {
       tone: "bad",
       tip: save.error ?? "The last save failed.",
     },
+    conflict: {
+      icon: <AlertTriangle />,
+      text: "Newer version saved by a teammate",
+      tone: "bad",
+      tip: "Autosave is paused so nobody's work is overwritten. Choose what to keep.",
+    },
     readonly: {
       icon: <Eye />,
-      text: `Viewing${cloud?.ownerUsername ? ` @${cloud.ownerUsername}'s design` : ""}`,
+      text:
+        cloud?.role === "viewer"
+          ? "Viewer — read only"
+          : `Viewing${cloud?.ownerUsername ? ` @${cloud.ownerUsername}'s design` : ""}`,
       tone: "dim",
       tip: "Fork this design to save your own changes.",
     },
@@ -93,6 +105,23 @@ function SaveStatus() {
       {s.icon}
       <span>{s.text}</span>
     </span>
+  );
+}
+
+/** Team panel toggle: who's online, and whether you're in voice. */
+function TeamButton({ onClick }: { onClick: () => void }) {
+  const online = useCollab((s) => s.session.roster.length) ?? 0;
+  const inVoice = useCollab((s) => s.voice.phase !== "idle") ?? false;
+  return (
+    <button
+      type="button"
+      className={`btn btn--sm${inVoice ? " team-button--voice" : ""}`}
+      onClick={onClick}
+      data-tip="Team: channels, chat and voice"
+    >
+      {inVoice ? <Headphones /> : <Users />} Team
+      {online > 0 && <span className="team-button__count">{online}</span>}
+    </button>
   );
 }
 
@@ -276,11 +305,12 @@ export function TopBar({ context }: { context: CommandContext }) {
             <Save /> Save
           </button>
         )}
-        {!cloud?.readOnly && (
+        {(cloud === null || cloud.role === "owner") && (
           <button type="button" className="btn btn--sm" onClick={context.publish}>
             <Send /> {cloud?.visibility === "public" ? "Published" : "Publish"}
           </button>
         )}
+        {context.toggleTeam !== undefined && <TeamButton onClick={context.toggleTeam} />}
         <MoreMenu context={context} />
         <AccountMenu />
       </div>

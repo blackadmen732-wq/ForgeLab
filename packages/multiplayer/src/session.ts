@@ -80,6 +80,12 @@ export class ProjectSession {
   private publishing: Promise<void> = Promise.resolve();
   private stopped = false;
   private lastPublished = 0;
+  /** When recent presence updates were sent, for the per-client rate limit. */
+  private sent: number[] = [];
+  /** A coalesced state change waiting to go out. */
+  private pendingChange: ReturnType<typeof setTimeout> | null = null;
+  /** A presence update held back by the rate limit. */
+  private pendingTrack: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly options: ProjectSessionOptions) {
     this.now = options.now ?? Date.now;
@@ -87,11 +93,15 @@ export class ProjectSession {
   }
 
   snapshot(): SessionSnapshot {
+    const me = this.userId;
     return {
       status: this.status,
       role: this.ticket?.claims.role ?? null,
       self: this.self,
-      roster: this.roster?.list() ?? [],
+      // Our own entry always shows our current state, not what the network last carried.
+      roster: (this.roster?.list() ?? []).map((e) =>
+        e.userId === me ? { ...e, ...this.self } : e,
+      ),
     };
   }
 
@@ -131,7 +141,12 @@ export class ProjectSession {
       return;
     this.self = next;
     this.emit();
-    void this.publish();
+    if (this.pendingChange === null && !this.stopped) {
+      this.pendingChange = setTimeout(() => {
+        this.pendingChange = null;
+        void this.publish(true);
+      }, LIMITS.presenceCoalesceMs);
+    }
   }
 
   /** Sends a collaboration event to everyone else in the project. */
@@ -151,6 +166,10 @@ export class ProjectSession {
     this.stopped = true;
     if (this.timer !== null) clearInterval(this.timer);
     this.timer = null;
+    for (const timer of [this.pendingChange, this.pendingTrack])
+      if (timer !== null) clearTimeout(timer);
+    this.pendingChange = null;
+    this.pendingTrack = null;
     const channel = this.channel;
     this.channel = null;
     if (channel !== null) {
@@ -210,7 +229,31 @@ export class ProjectSession {
     if (this.now() - this.lastPublished >= LIMITS.presenceHeartbeatMs - 1000) await this.publish();
   }
 
-  private publish(): Promise<void> {
+  /**
+   * Sends our state. A change is broadcast at once (so the channel list and mute icons
+   * update immediately) and tracked as presence (so members who arrive later see it) as
+   * the realtime service's per-client presence budget allows; a held-back presence update
+   * carries whatever the state is by the time it goes out.
+   */
+  private publish(broadcast = false): Promise<void> {
+    const now = this.now();
+    this.sent = this.sent.filter((t) => now - t < LIMITS.presenceWindowMs);
+    const track = this.sent.length < LIMITS.presenceMaxUpdates;
+    if (track) {
+      if (this.pendingTrack !== null) clearTimeout(this.pendingTrack);
+      this.pendingTrack = null;
+      this.sent.push(now);
+    } else if (this.pendingTrack === null && !this.stopped) {
+      this.pendingTrack = setTimeout(
+        () => {
+          this.pendingTrack = null;
+          void this.publish(false);
+        },
+        LIMITS.presenceWindowMs - (now - this.sent[0]!) + 50,
+      );
+    }
+    if (!track && !broadcast) return this.publishing;
+
     this.publishing = this.publishing.then(async () => {
       const { channel, ticket, keys } = this;
       if (channel === null || ticket === null || keys === null || this.status !== "connected")
@@ -225,8 +268,11 @@ export class ProjectSession {
         },
         keys.privateKey,
       );
-      this.lastPublished = this.now();
-      await channel.track(envelope).catch(() => undefined);
+      if (broadcast) await channel.broadcast(envelope).catch(() => undefined);
+      if (track) {
+        this.lastPublished = this.now();
+        await channel.track(envelope).catch(() => undefined);
+      }
     });
     return this.publishing;
   }
@@ -244,7 +290,11 @@ export class ProjectSession {
   }
 
   private async onBroadcast(payload: unknown): Promise<void> {
-    if (this.serverKey === null) return;
+    if (this.serverKey === null || this.roster === null) return;
+    if ((payload as { kind?: unknown } | null)?.kind === PRESENCE_KIND) {
+      if (await this.roster.update(payload)) this.emit();
+      return;
+    }
     const verified = await verifyEnvelope(payload, {
       serverKey: this.serverKey,
       projectId: this.options.projectId,
@@ -278,10 +328,18 @@ export class ProjectSession {
   }
 }
 
-/** Who may send what: a revision notice needs edit rights; anyone who can view may share a view. */
+/**
+ * Who may send what: a revision notice needs edit rights, a team-change notice needs
+ * rights to manage the team, and anyone who can view may share a view.
+ */
 export function allowedToSend(role: ProjectRole, event: CollabEvent): boolean {
   const permissions = permissionsFor(role);
-  return event.type === "design.revision"
-    ? permissions.has("can_edit_design")
-    : permissions.has("can_view");
+  switch (event.type) {
+    case "design.revision":
+      return permissions.has("can_edit_design");
+    case "team.changed":
+      return permissions.has("can_invite") || permissions.has("can_manage_channel");
+    case "view.share":
+      return permissions.has("can_view");
+  }
 }

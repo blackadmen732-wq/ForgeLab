@@ -30,8 +30,17 @@ interface Candidate {
  * One entry per user: when the same person has several tabs open, the one in voice wins,
  * then the most recent.
  */
+type Stored = PresenceEntry & { readonly sig: string; readonly at: number };
+
 export class PresenceRoster {
-  private entries = new Map<string, PresenceEntry & { readonly sig: string }>();
+  private entries = new Map<string, Stored>();
+  /**
+   * Newer states members broadcast between presence updates (the realtime service allows
+   * only a few presence updates per client per half minute). Applied only to members the
+   * presence set already lists: a broadcast can refresh someone's state, never make
+   * them appear online.
+   */
+  private readonly updates = new Map<string, Candidate>();
   /** Signature → verified envelope and its signed text. Only successes are cached. */
   private readonly verified = new Map<
     string,
@@ -49,7 +58,7 @@ export class PresenceRoster {
 
   list(): readonly PresenceEntry[] {
     return [...this.entries.values()]
-      .map(({ sig: _sig, ...entry }) => entry)
+      .map(({ sig: _sig, at: _at, ...entry }) => entry)
       .sort((a, b) => a.name.localeCompare(b.name) || a.userId.localeCompare(b.userId));
   }
 
@@ -69,23 +78,31 @@ export class PresenceRoster {
         best.set(candidate.claims.sub, candidate);
     }
 
-    const next = new Map<string, PresenceEntry & { readonly sig: string }>();
-    for (const [userId, c] of best) {
+    const next = new Map<string, Stored>();
+    for (const [userId, tracked] of best) {
+      const update = this.updates.get(userId);
+      const c = update !== undefined && newer(update, tracked) ? update : tracked;
       // Measured on the receiver's clock from when this envelope first arrived, so a
       // member's clock skew does not matter and re-sending an old envelope does not
       // make it fresh again.
-      const seenAt = c.firstSeen;
-      if (now - seenAt > LIMITS.presenceExpiryMs) continue;
-      next.set(userId, {
-        ...c.state,
-        userId,
-        name: c.claims.name,
-        role: c.claims.role,
-        seenAt,
-        seq: c.seq,
-        sig: c.sig,
-      });
+      if (now - c.firstSeen > LIMITS.presenceExpiryMs) continue;
+      next.set(userId, stored(userId, c));
     }
+    for (const userId of this.updates.keys()) if (!best.has(userId)) this.updates.delete(userId);
+    const changed = !sameRoster(this.entries, next);
+    this.entries = next;
+    return changed;
+  }
+
+  /** Applies one broadcast state update. Returns true if the roster changed. */
+  async update(payload: unknown): Promise<boolean> {
+    const c = await this.check(payload, this.options.now());
+    if (c === null) return false;
+    const userId = c.claims.sub;
+    const current = this.entries.get(userId);
+    if (current === undefined || !newer(c, current)) return false;
+    this.updates.set(userId, c);
+    const next = new Map(this.entries).set(userId, stored(userId, c));
     const changed = !sameRoster(this.entries, next);
     this.entries = next;
     return changed;
@@ -146,6 +163,24 @@ export class PresenceRoster {
     const firstSeen = this.verified.get(sig)?.firstSeen ?? now;
     return { claims: verified.claims, state, seq: verified.seq, at: verified.at, sig, firstSeen };
   }
+}
+
+function stored(userId: string, c: Candidate): Stored {
+  return {
+    ...c.state,
+    userId,
+    name: c.claims.name,
+    role: c.claims.role,
+    seenAt: c.firstSeen,
+    seq: c.seq,
+    sig: c.sig,
+    at: c.at,
+  };
+}
+
+/** Both come from the same member's clock, so their timestamps are comparable. */
+function newer(a: { at: number; seq: number }, b: { at: number; seq: number }): boolean {
+  return a.at > b.at || (a.at === b.at && a.seq > b.seq);
 }
 
 function prefer(a: Candidate, b: Candidate): boolean {

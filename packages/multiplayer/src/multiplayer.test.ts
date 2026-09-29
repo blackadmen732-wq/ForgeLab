@@ -14,6 +14,7 @@ import {
   ProjectSession,
   TicketRefused,
   createMemoryRealtime,
+  type RealtimeTransport,
   type ReceivedEvent,
   type SessionSnapshot,
 } from "./index.js";
@@ -60,7 +61,7 @@ async function ticketServer() {
   return { issue, serverKey };
 }
 
-async function eventually(check: () => void, attempts = 200): Promise<void> {
+async function eventually(check: () => void, attempts = 500): Promise<void> {
   for (let i = 0; ; i++) {
     try {
       check();
@@ -295,6 +296,100 @@ describe("presence roster", () => {
     expect(issued).toBeGreaterThan(1);
     // Mark's own ticket expired (his session renews too) and Andre is still listed.
     await eventually(() => expect(names(mark.snapshot())).toEqual(["Andre", "Mark"]));
+  });
+
+  it("stays within the realtime service's per-client presence budget", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "setTimeout", "clearTimeout"] });
+    const tracks: { at: number; payload: { data: { mic: string } } }[] = [];
+    const counting: RealtimeTransport = {
+      open(topic, handlers) {
+        const channel = hub.transport.open(topic, handlers);
+        return {
+          ...channel,
+          track: async (payload) => {
+            tracks.push({ at: now, payload: payload as (typeof tracks)[number]["payload"] });
+            await channel.track(payload);
+          },
+        };
+      },
+    };
+    const session = new ProjectSession({
+      projectId: PROJECT,
+      transport: counting,
+      fetchTicket: (key) => server.issue("andre", key),
+      now: clock,
+    });
+    sessions.push(session);
+    await session.start();
+    await vi.advanceTimersByTimeAsync(10);
+    // Someone hammering mute: 20 changes in 8 seconds.
+    for (let i = 0; i < 20; i++) {
+      session.update({ mic: i % 2 === 0 ? "unmuted" : "muted" });
+      now += 400;
+      await vi.advanceTimersByTimeAsync(400);
+    }
+    for (let t = 0; t < 60_000; t += 1000) {
+      now += 1000;
+      await vi.advanceTimersByTimeAsync(1000);
+    }
+    // Signing runs on WebCrypto's thread pool, which fake timers do not drive: give the
+    // last (held-back) update real time to finish.
+    for (let i = 0; i < 2000 && tracks.at(-1)?.payload.data.mic !== "muted"; i++)
+      await new Promise((r) => setImmediate(r));
+    for (const { at } of tracks) {
+      const inWindow = tracks.filter((u) => u.at >= at && u.at - at < LIMITS.presenceWindowMs);
+      expect(inWindow.length).toBeLessThanOrEqual(LIMITS.presenceMaxUpdates);
+    }
+    // Nothing is lost: the final state went out.
+    expect(tracks.at(-1)?.payload.data.mic).toBe("muted");
+  });
+
+  it("shows state changes at once even when the presence budget is spent", async () => {
+    const mark = await join("mark");
+    const andre = await join("andre");
+    await eventually(() => expect(mark.snapshot().roster).toHaveLength(2));
+    for (let i = 0; i < 6; i++) {
+      andre.update({ mic: i % 2 === 0 ? "unmuted" : "muted" });
+      await new Promise((r) => setTimeout(r, LIMITS.presenceCoalesceMs + 50));
+    }
+    andre.update({ voiceChannelId: VOICE });
+    await eventually(
+      () =>
+        expect(
+          mark.snapshot().roster.find((e) => e.userId === USERS.andre.id)?.voiceChannelId,
+        ).toBe(VOICE),
+      1000,
+    );
+    // Our own entry always reflects our own state.
+    expect(andre.snapshot().roster.find((e) => e.userId === USERS.andre.id)?.voiceChannelId).toBe(
+      VOICE,
+    );
+
+    // A broadcast state cannot make someone appear online.
+    const keys = await generateSessionKeys();
+    const jay = await server.issue("jay", keys.publicJwk);
+    hub.injectBroadcast(
+      projectTopic(PROJECT),
+      await signEnvelope(
+        {
+          ticket: jay.ticket,
+          kind: "presence",
+          seq: 1,
+          at: now,
+          data: {
+            voiceChannelId: VOICE,
+            mic: "unmuted",
+            deafened: false,
+            activity: "building",
+            workspaceId: "",
+            focus: null,
+          },
+        },
+        keys.privateKey,
+      ),
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(names(mark.snapshot())).toEqual(["Andre", "Mark"]);
   });
 
   it("ends the session when the server refuses a ticket", async () => {

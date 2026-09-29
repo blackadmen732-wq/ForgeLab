@@ -237,16 +237,26 @@ export async function updateProfile(
  * Projects and versions
  * -------------------------------------------------------------------------------------- */
 
-export async function listMyProjects(userId: string): Promise<Project[]> {
+export interface MyProject extends Project {
+  /** The caller's role: "owner" for their own projects, otherwise what they were invited as. */
+  readonly role: "owner" | "admin" | "member" | "viewer";
+}
+
+/** Projects the user owns or has been invited to. */
+export async function listMyProjects(userId: string): Promise<MyProject[]> {
   const supabase = await requireSupabase();
-  return check(
+  const rows = check(
     await supabase
       .from("projects")
-      .select(PROJECT_COLUMNS)
-      .eq("owner_id", userId)
+      .select(`${PROJECT_COLUMNS}, project_members!inner(role)`)
+      .eq("project_members.user_id", userId)
       .order("updated_at", { ascending: false })
-      .returns<Project[]>(),
+      .returns<(Project & { project_members: { role: MyProject["role"] }[] })[]>(),
   );
+  return rows.map(({ project_members, ...project }) => ({
+    ...project,
+    role: project_members[0]?.role ?? (project.owner_id === userId ? "owner" : "viewer"),
+  }));
 }
 
 export async function listPublicProjectsBy(ownerId: string): Promise<Project[]> {
@@ -294,6 +304,12 @@ async function insertProject(
 }
 
 export interface SaveVersionInput {
+  /**
+   * The version this design was based on. The database rejects the save if someone else
+   * has saved since (see `isStaleVersion`), so collaborators never overwrite each other.
+   * Null only for a project's first version.
+   */
+  readonly parentVersionId: string | null;
   readonly design: AssemblyFileV2;
   readonly designHash: string;
   readonly engineVersion: string;
@@ -304,13 +320,14 @@ export interface SaveVersionInput {
 /** Creates a cloud project and its first version from a design. */
 export async function createProject(
   name: string,
-  version: SaveVersionInput,
+  version: Omit<SaveVersionInput, "parentVersionId">,
   stats: ProjectStats,
 ): Promise<{ project: Project; version: ProjectVersionMeta }> {
   const supabase = await requireSupabase();
   const project = await insertProject(supabase, { name, stats });
   const saved = await saveVersion(project.id, {
     ...version,
+    parentVersionId: null,
     autosave: false,
     label: version.label ?? "Created",
   });
@@ -334,10 +351,16 @@ export async function saveVersion(
         design_hash: input.designHash,
         label: input.label ?? null,
         is_autosave: input.autosave,
+        parent_version_id: input.parentVersionId,
       })
       .select(VERSION_META_COLUMNS)
       .single<ProjectVersionMeta>(),
   );
+}
+
+/** True for the error a save gets when another member saved a newer version first. */
+export function isStaleVersion(error: unknown): boolean {
+  return error instanceof Error && /^stale_version\b/.test(error.message);
 }
 
 export async function updateProject(

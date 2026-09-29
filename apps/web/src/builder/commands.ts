@@ -16,6 +16,8 @@ export interface CommandContext {
   newProject(): void;
   openBlueprints(): void;
   fork(): void;
+  /** Shows or hides the team panel (channels, chat, voice); absent outside shared projects. */
+  toggleTeam?: () => void;
 }
 
 export interface Command {
@@ -72,6 +74,13 @@ export const COMMANDS: readonly Command[] = [
   },
   { id: "new", label: "New project", group: "File", run: (c) => c.newProject() },
   { id: "blueprints", label: "Load a blueprint…", group: "File", run: (c) => c.openBlueprints() },
+  {
+    id: "team",
+    label: "Team: channels, chat and voice",
+    group: "View",
+    enabled: (v) => (v.cloud?.role ?? null) !== null,
+    run: (c) => c.toggleTeam?.(),
+  },
   {
     id: "import",
     label: "Import design file (.json)…",

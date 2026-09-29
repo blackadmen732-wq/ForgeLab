@@ -16,8 +16,14 @@ type LiveKit = typeof LiveKitModule;
  * LiveKit room to ForgeLab's VoiceTransport. Audio only: no camera, no screen share, no
  * data channel — the server's token forbids them anyway.
  */
-export async function createLiveKitTransport(): Promise<VoiceTransport> {
+export async function createLiveKitTransport(
+  options: { debug?: boolean } = {},
+): Promise<VoiceTransport> {
   const lk = await import("livekit-client");
+  // LiveKit logs routine events (such as its data channels closing when we leave) as
+  // console errors. Failures that matter reach the user through VoiceClient's state, so
+  // its own logging is off unless asked for.
+  lk.setLogLevel(options.debug === true ? "debug" : "silent");
   return new LiveKitTransport(lk);
 }
 

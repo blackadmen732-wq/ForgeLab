@@ -46,6 +46,7 @@ export const router = createBrowserRouter([
             path: "profile/:username",
             lazy: lazyPage(() => import("../pages/Profile.js"), "Profile"),
           },
+          { path: "invite", lazy: lazyPage(() => import("../pages/Invite.js"), "Invite") },
           { path: "settings", lazy: lazyPage(() => import("../pages/Settings.js"), "Settings") },
           {
             path: "auth/callback",

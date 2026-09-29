@@ -1,6 +1,9 @@
 import { SIMULATION_ENGINE_VERSION, type AssemblyFileV2 } from "@forgelab/sim-core";
 import { designHash } from "@forgelab/sim-runner";
+import type { ProjectRole } from "@forgelab/protocol";
 import {
+  getProject,
+  isStaleVersion,
   saveVersion,
   updateProject,
   type ProjectStats,
@@ -55,12 +58,22 @@ export interface CloudBinding {
   readonly visibility: Visibility;
   readonly thumbnailPath: string | null;
   readonly latestVersionId: string | null;
-  /** Someone else's project: it can be run and tinkered with, but only a fork saves. */
+  /** The signed-in user's role in this project; null when they are not a member. */
+  readonly role: ProjectRole | null;
+  /** Not an editor here: the design can be run and tinkered with, but only a fork saves. */
   readonly readOnly: boolean;
 }
 
 export type SaveStatus =
-  "local" | "saved" | "saving" | "unsaved" | "offline" | "error" | "readonly";
+  | "local"
+  | "saved"
+  | "saving"
+  | "unsaved"
+  | "offline"
+  | "error"
+  | "readonly"
+  /** Another member saved first; autosave pauses until the user decides. */
+  | "conflict";
 
 export interface SaveState {
   readonly status: SaveStatus;
@@ -91,6 +104,14 @@ export class CloudSync {
   #onlineListener = () => {
     if (this.#dirty) void this.flush();
   };
+
+  #savedListeners = new Set<(version: ProjectVersionMeta) => void>();
+
+  /** Called after every successful save, so collaborators can be told. */
+  onSaved(listener: (version: ProjectVersionMeta) => void): () => void {
+    this.#savedListeners.add(listener);
+    return () => this.#savedListeners.delete(listener);
+  }
 
   constructor(getFile: () => AssemblyFileV2, getStats: () => ProjectStats, onChange: () => void) {
     this.#getFile = getFile;
@@ -129,6 +150,22 @@ export class CloudSync {
     this.#onChange();
   }
 
+  /** The user's role changed while the project is open (promoted, demoted or removed). */
+  setAccess(role: ProjectRole | null, readOnly: boolean): void {
+    const binding = this.binding;
+    if (binding === null || (binding.role === role && binding.readOnly === readOnly)) return;
+    this.binding = { ...binding, role, readOnly };
+    if (readOnly) {
+      clearTimeout(this.#timer);
+      this.#dirty = false;
+      this.#set({ status: "readonly", error: null });
+    } else if (this.state.status === "readonly") {
+      this.#set({ status: "saved", error: null });
+    } else {
+      this.#onChange();
+    }
+  }
+
   updateBinding(changes: Partial<CloudBinding>): void {
     if (this.binding === null) return;
     this.binding = { ...this.binding, ...changes };
@@ -142,6 +179,7 @@ export class CloudSync {
   markChanged(): void {
     if (this.binding === null || this.binding.readOnly) return;
     this.#dirty = true;
+    if (this.state.status === "conflict") return;
     if (this.state.status !== "saving")
       this.#set({ status: navigator.onLine ? "unsaved" : "offline" });
     clearTimeout(this.#timer);
@@ -153,6 +191,7 @@ export class CloudSync {
     clearTimeout(this.#timer);
     if (this.#inFlight !== null) await this.#inFlight;
     if (!this.#dirty || this.binding === null || this.binding.readOnly) return;
+    if (this.state.status === "conflict") return;
     if (!navigator.onLine) {
       this.#set({ status: "offline" });
       return;
@@ -163,6 +202,34 @@ export class CloudSync {
     );
     await this.#inFlight;
     this.#inFlight = null;
+  }
+
+  /**
+   * The editor now shows `version` (someone else's save, loaded deliberately): it becomes
+   * the parent of the next save, and any conflict is over.
+   */
+  adoptVersion(version: { id: string; design_hash: string }, name: string): void {
+    clearTimeout(this.#timer);
+    if (this.binding !== null) this.binding = { ...this.binding, latestVersionId: version.id };
+    this.#dirty = false;
+    this.#lastHash = `${version.design_hash}|${name}`;
+    this.#set({ status: "saved", error: null });
+  }
+
+  /**
+   * Resolves a conflict by saving this design as a new version on top of the other
+   * member's. Nothing is lost: their version stays in the history.
+   */
+  async keepMine(): Promise<void> {
+    const binding = this.binding;
+    if (binding === null) return;
+    const project = await getProject(binding.projectId);
+    if (this.binding?.projectId !== binding.projectId) return;
+    this.binding = { ...this.binding, latestVersionId: project?.latest_version_id ?? null };
+    this.#set({ status: "unsaved", error: null });
+    await this.#save({ autosave: false, label: "Kept my changes", force: true }).catch(
+      () => undefined,
+    );
   }
 
   /** A named version: kept forever, shown in history and on the public page. */
@@ -192,6 +259,7 @@ export class CloudSync {
     this.#set({ status: "saving", error: null });
     try {
       const version = await saveVersion(binding.projectId, {
+        parentVersionId: binding.latestVersionId,
         design: file,
         designHash: hash,
         engineVersion: SIMULATION_ENGINE_VERSION,
@@ -208,9 +276,18 @@ export class CloudSync {
         error: null,
       });
       if (this.#dirty) this.markChanged();
+      for (const listener of this.#savedListeners) listener(version);
       return version;
     } catch (error) {
       this.#dirty = true;
+      if (isStaleVersion(error)) {
+        clearTimeout(this.#timer);
+        this.#set({
+          status: "conflict",
+          error: "Someone else saved a newer version of this project.",
+        });
+        throw error;
+      }
       const message = error instanceof Error ? error.message : String(error);
       this.#set({ status: navigator.onLine ? "error" : "offline", error: message });
       clearTimeout(this.#timer);
@@ -222,7 +299,9 @@ export class CloudSync {
   /** Keeps the project row's name and display stats in step with the design. */
   async #syncProjectRow(file: AssemblyFileV2): Promise<void> {
     const binding = this.binding;
-    if (binding === null) return;
+    // The project row (name, listing stats) belongs to its owner; teammates' saves are
+    // versions only.
+    if (binding === null || binding.role !== "owner") return;
     const stats = this.#getStats();
     const statsJson = JSON.stringify(stats);
     const name = file.name.trim().slice(0, 120) || "Untitled Design";

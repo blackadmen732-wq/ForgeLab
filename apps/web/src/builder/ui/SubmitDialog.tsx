@@ -98,7 +98,7 @@ export function SubmitDialog() {
     }
   };
 
-  const canSubmit = cloud !== null && !cloud.readOnly && cloud.visibility === "public";
+  const canSubmit = cloud !== null && cloud.role === "owner" && cloud.visibility === "public";
   return (
     <Dialog title="Submit a score" onClose={close} wide>
       <p>
@@ -131,7 +131,9 @@ export function SubmitDialog() {
               ? "Save to the cloud first."
               : cloud.readOnly
                 ? "Fork this design to submit it."
-                : "Publish the design first — leaderboards list public designs."}
+                : cloud.role !== "owner"
+                  ? "Only the project owner can submit scores."
+                  : "Publish the design first — leaderboards list public designs."}
           </span>
         )}
       </div>

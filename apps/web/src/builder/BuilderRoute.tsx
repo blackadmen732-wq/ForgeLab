@@ -1,9 +1,16 @@
 import "./builder.css";
 import { SIMULATION_ENGINE_VERSION, parseAssemblyFile } from "@forgelab/sim-core";
 import { designHash } from "@forgelab/sim-runner";
+import { ROLE_PERMISSIONS, type ProjectRole } from "@forgelab/protocol";
 import { MonitorX, Smartphone } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
+import { CollabBanner } from "../collab/CollabBanner.js";
+import { CollabContext } from "../collab/context.js";
+import { CollabController } from "../collab/controller.js";
+import { ManageDialog } from "../collab/ManageDialog.js";
+import { TeamPanel } from "../collab/TeamPanel.js";
+import { VoiceBar } from "../collab/VoiceBar.js";
 import { ErrorBoundary } from "../components/ErrorBoundary.js";
 import { Loading } from "../components/States.js";
 import {
@@ -17,13 +24,14 @@ import {
   type Project,
 } from "../lib/api.js";
 import { useAuth } from "../lib/auth.js";
+import { getMyRole } from "../lib/collab.js";
 import { confirmDialog } from "../lib/confirm.js";
 import { env } from "../lib/env.js";
 import { detectWebGL, isTypingTarget } from "../lib/platform.js";
 import { errorMessage, toast } from "../lib/toast.js";
 import { COMMANDS, type CommandContext } from "./commands.js";
 import { Viewport } from "./scene/Viewport.js";
-import { EditorContext, useEditor } from "./store/context.js";
+import { EditorContext, useEditor, useEditorStore } from "./store/context.js";
 import { EditorStore } from "./store/editor.js";
 import { type CloudBinding, readLocalDraft } from "./store/persistence.js";
 import { CommandPalette } from "./ui/CommandPalette.js";
@@ -44,7 +52,7 @@ type PendingAction = "save" | "publish" | "submit" | "fork" | "version" | null;
 
 function bindingFor(
   project: Project,
-  userId: string | null,
+  role: ProjectRole | null,
   ownerUsername: string | null,
 ): CloudBinding {
   return {
@@ -56,9 +64,13 @@ function bindingFor(
     visibility: project.visibility,
     thumbnailPath: project.thumbnail_path,
     latestVersionId: project.latest_version_id,
-    readOnly: project.owner_id !== userId,
+    role,
+    readOnly: !canEdit(role),
   };
 }
+
+const canEdit = (role: ProjectRole | null) =>
+  role !== null && ROLE_PERMISSIONS[role].includes("can_edit_design");
 
 function download(filename: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
@@ -131,12 +143,19 @@ function Workspace({
   context,
   onStart,
   onCreateVersion,
+  teamOpen,
+  onLoadLatest,
 }: {
   context: CommandContext;
   onStart: (kind: string) => void;
   onCreateVersion: (label: string) => Promise<void>;
+  teamOpen: boolean;
+  onLoadLatest: (versionId: string | null) => void;
 }) {
-  const drawerOpen = useEditor((v) => v.drawerOpen);
+  const store = useEditorStore();
+  const [manage, setManage] = useState(false);
+  const showTeam = teamOpen && context.toggleTeam !== undefined;
+  const drawerOpen = useEditor((v) => v.drawerOpen) || showTeam;
   const mode = useEditor((v) => v.mode);
   const dialog = useEditor((v) => v.dialog);
   const showHelp = useEditor((v) => v.showHelp);
@@ -146,7 +165,16 @@ function Workspace({
       <TopBar context={context} />
       <div className={`builder__main${drawerOpen ? "" : " builder__main--no-drawer"}`}>
         <ToolRail />
-        {drawerOpen && <ComponentDrawer />}
+        {showTeam ? (
+          <TeamPanel
+            onClose={() => context.toggleTeam?.()}
+            onManage={() => setManage(true)}
+            onFocusComponent={(id) => store.focusComponent(id)}
+            componentExists={(id) => store.world.getComponent(id) !== undefined}
+          />
+        ) : (
+          drawerOpen && <ComponentDrawer />
+        )}
         <main id="main" className="builder__stage">
           <ErrorBoundary
             fallback={(error, reset) => (
@@ -160,7 +188,14 @@ function Workspace({
           >
             <Viewport />
           </ErrorBoundary>
-          <ReadOnlyBanner onFork={context.fork} />
+          <div className="stage-notices">
+            <ReadOnlyBanner onFork={context.fork} />
+            <CollabBanner
+              onLoadLatest={onLoadLatest}
+              onKeepMine={() => void store.cloud.keepMine()}
+            />
+          </div>
+          <VoiceBar />
           <Hints />
           <StatusStrip />
         </main>
@@ -174,6 +209,7 @@ function Workspace({
       {dialog === "version-name" && <VersionNameDialog onCreate={onCreateVersion} />}
       {showHelp && <HelpOverlay />}
       {showPalette && <CommandPalette context={context} />}
+      {manage && <ManageDialog onClose={() => setManage(false)} />}
     </div>
   );
 }
@@ -199,6 +235,11 @@ export function BuilderRoute() {
   const initialised = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const userId = auth.user?.id ?? null;
+  /** Which account the current cloud binding's access was worked out for. */
+  const boundUser = useRef<string | null | undefined>(undefined);
+  const [teamOpen, setTeamOpen] = useState(() => params.get("team") === "1");
+  const binding = useSyncExternalStore(store.subscribe, () => store.getView().cloud);
+  const mode = useSyncExternalStore(store.subscribe, () => store.getView().mode);
 
   useEffect(() => {
     store.activate();
@@ -250,17 +291,29 @@ export function BuilderRoute() {
 
   useEffect(() => {
     if (projectId === undefined) return;
-    if (
-      store.cloud.binding?.projectId === projectId &&
-      store.cloud.binding.readOnly === (store.cloud.binding.ownerId !== userId)
-    )
-      return;
     if (!env.cloudConfigured || auth.status === "loading") return;
+    const bound = store.cloud.binding;
+    if (bound?.projectId === projectId && boundUser.current === userId) return;
     let live = true;
     initialised.current = true;
+    const roleFor = () =>
+      userId === null ? Promise.resolve(null) : getMyRole(projectId).catch(() => null);
+
+    if (bound?.projectId === projectId) {
+      // Same design, different account (signed in or out while viewing): only access changes.
+      void roleFor().then((role) => {
+        if (!live) return;
+        boundUser.current = userId;
+        store.cloud.bind({ ...bound, role, readOnly: !canEdit(role) });
+      });
+      return () => {
+        live = false;
+      };
+    }
+
     void (async () => {
       try {
-        const project = await getProject(projectId);
+        const [project, role] = await Promise.all([getProject(projectId), roleFor()]);
         if (!live) return;
         if (project === null) throw new Error("This project doesn't exist, or it's private.");
         if (project.latest_version_id === null)
@@ -273,9 +326,8 @@ export function BuilderRoute() {
         if (version === null) throw new Error("The latest version could not be read.");
         let design = version.design;
         const draft = readLocalDraft();
-        const mine = project.owner_id === userId;
         if (
-          mine &&
+          canEdit(role) &&
           draft !== null &&
           draft.projectId === project.id &&
           new Date(draft.savedAt) > new Date(version.created_at)
@@ -293,7 +345,8 @@ export function BuilderRoute() {
         }
         // The project row owns the name (renames can outlive the last physics change).
         store.loadFile(design, { name: project.name });
-        store.cloud.bind(bindingFor(project, userId, owner?.username ?? null), {
+        boundUser.current = userId;
+        store.cloud.bind(bindingFor(project, role, owner?.username ?? null), {
           hash: version.design_hash,
           name: project.name,
         });
@@ -309,6 +362,75 @@ export function BuilderRoute() {
       live = false;
     };
   }, [projectId, auth.status, userId, store]);
+
+  /* ---------------- team: presence, channels, chat, voice ---------------- */
+
+  // Members of the open project get a live team connection; it ends when they leave it.
+  const collabKey =
+    binding !== null && binding.role !== null && userId !== null
+      ? `${binding.projectId}|${userId}`
+      : null;
+  const collab = useMemo(() => {
+    if (collabKey === null) return null;
+    const [project, user] = collabKey.split("|") as [string, string];
+    return new CollabController(project, user);
+  }, [collabKey]);
+  useEffect(() => {
+    if (collab === null) return;
+    void collab.start();
+    const unsubscribe = store.cloud.onSaved((version) => collab.announceRevision(version));
+    // Role changes made by an admin while this project is open take effect here too.
+    const unwatch = collab.subscribe(() => {
+      const { role, loading } = collab.getState();
+      const bound = store.cloud.binding;
+      if (loading || bound === null || bound.role === role) return;
+      if (role === null) toast("warning", "You no longer have access to this project");
+      store.cloud.setAccess(role, !canEdit(role));
+    });
+    return () => {
+      unwatch();
+      unsubscribe();
+      void collab.stop();
+    };
+  }, [collab, store]);
+
+  useEffect(() => {
+    collab?.setActivity(
+      mode === "simulate" ? "simulating" : binding?.readOnly ? "observing" : "building",
+    );
+  }, [collab, mode, binding?.readOnly]);
+
+  /** Replaces the editor's design with the project's latest (or a given) saved version. */
+  const loadLatest = useCallback(
+    async (versionId: string | null) => {
+      const bound = store.cloud.binding;
+      if (bound === null) return;
+      if (store.cloud.hasUnsavedChanges || store.cloud.state.status === "conflict") {
+        const ok = await confirmDialog({
+          title: "Load the teammate's version?",
+          body: "Your changes since your last save will be discarded. To keep them instead, choose Keep mine — their version stays in the history either way.",
+          confirmLabel: "Load theirs",
+          danger: true,
+        });
+        if (!ok) return;
+      }
+      setBusy("Loading the latest version");
+      try {
+        const project = await getProject(bound.projectId);
+        const id = versionId ?? project?.latest_version_id ?? null;
+        const version = id === null ? null : await getVersion(id);
+        if (project === null || version === null) throw new Error("That version can't be read.");
+        store.loadFile(version.design, { name: project.name });
+        store.cloud.adoptVersion(version, project.name);
+        collab?.dismissRevision();
+      } catch (error) {
+        toast("error", "Couldn't load the version", errorMessage(error));
+      } finally {
+        setBusy(null);
+      }
+    },
+    [store, collab],
+  );
 
   /* ---------------- cloud actions ---------------- */
 
@@ -348,11 +470,12 @@ export function BuilderRoute() {
       store.cloud.bind(
         bindingFor(
           { ...project, latest_version_id: version.id },
-          userId,
+          "owner",
           auth.profile?.username ?? null,
         ),
         { hash: version.design_hash, name: file.name },
       );
+      boundUser.current = userId;
       store.flushDraft();
       void navigate(`/app/${project.id}`, { replace: true });
       toast("success", "Saved to the cloud", "Changes now autosave while you work.");
@@ -407,7 +530,9 @@ export function BuilderRoute() {
       const hash = designHash(file);
       const source = binding.latestVersionId ? await getVersion(binding.latestVersionId) : null;
       if (source !== null && source.design_hash !== hash) {
+        const forked = await getProject(id);
         await saveVersion(id, {
+          parentVersionId: forked?.latest_version_id ?? null,
           design: file,
           designHash: hash,
           engineVersion: SIMULATION_ENGINE_VERSION,
@@ -431,6 +556,10 @@ export function BuilderRoute() {
       if (store.cloud.binding === null && !(await createCloudProject())) return;
       if (store.cloud.binding?.readOnly) {
         toast("info", "Fork this design first", "Only the owner can publish or submit it.");
+        return;
+      }
+      if (action === "publish" && store.cloud.binding?.role !== "owner") {
+        toast("info", "Only the owner can publish", "Ask the project owner to publish it.");
         return;
       }
       then();
@@ -463,8 +592,9 @@ export function BuilderRoute() {
         void navigate("/app?new=1");
       },
       openBlueprints: () => store.openDialog("start"),
+      ...(collab === null ? {} : { toggleTeam: () => setTeamOpen((open) => !open) }),
     }),
-    [store, save, fork, withProject, navigate],
+    [store, save, fork, withProject, navigate, collab],
   );
 
   // Finish what the player was doing when they were asked to sign in.
@@ -478,13 +608,6 @@ export function BuilderRoute() {
     else if (action === "version") context.newVersion();
     else if (action === "submit") context.submitScore();
   }, [auth.status, context]);
-
-  // A binding made while signed out (viewing) must be re-evaluated once signed in.
-  useEffect(() => {
-    const b = store.cloud.binding;
-    if (b !== null && b.readOnly && userId !== null && b.ownerId === userId)
-      store.cloud.bind({ ...b, readOnly: false });
-  }, [userId, store]);
 
   const createVersion = useCallback(
     async (label: string) => {
@@ -673,15 +796,19 @@ export function BuilderRoute() {
 
   return (
     <EditorContext.Provider value={store}>
-      <Workspace
-        context={context}
-        onStart={(kind) => {
-          store.cloud.bind(null);
-          if (projectId !== undefined) void navigate("/app", { replace: true });
-          if (kind !== "blank") store.requestFrame(null);
-        }}
-        onCreateVersion={createVersion}
-      />
+      <CollabContext.Provider value={collab}>
+        <Workspace
+          context={context}
+          teamOpen={teamOpen}
+          onLoadLatest={(versionId) => void loadLatest(versionId)}
+          onStart={(kind) => {
+            store.cloud.bind(null);
+            if (projectId !== undefined) void navigate("/app", { replace: true });
+            if (kind !== "blank") store.requestFrame(null);
+          }}
+          onCreateVersion={createVersion}
+        />
+      </CollabContext.Provider>
       <input
         ref={fileInput}
         type="file"

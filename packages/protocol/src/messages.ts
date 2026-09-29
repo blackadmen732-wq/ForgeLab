@@ -104,3 +104,33 @@ export function segments(
   if (at < content.length) out.push({ text: content.slice(at) });
   return out;
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validates a stored message row (from a query, or from the realtime delivery the
+ * database sends on insert). Rows are untrusted input to the renderer like anything else.
+ */
+export function parseChatRow(input: unknown): ChatMessage | null {
+  if (typeof input !== "object" || input === null) return null;
+  const r = input as Record<string, unknown>;
+  const { id, project_id, channel_id, user_id, content, refs, created_at } = r;
+  if (![id, project_id, channel_id, user_id].every((v) => typeof v === "string" && UUID_RE.test(v)))
+    return null;
+  if (
+    typeof content !== "string" ||
+    content.length === 0 ||
+    content.length > LIMITS.messageMaxChars
+  )
+    return null;
+  if (typeof created_at !== "string" || Number.isNaN(Date.parse(created_at))) return null;
+  return {
+    id: id as string,
+    projectId: project_id as string,
+    channelId: channel_id as string,
+    userId: user_id as string,
+    content,
+    refs: parseRefs(refs, content),
+    createdAt: created_at,
+  };
+}
