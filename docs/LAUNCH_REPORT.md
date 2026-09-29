@@ -23,7 +23,8 @@ text, a new channel reaching everyone, both in General voice with speaking indic
 mute and deafen seen by the other side, switching channels changing who hears whom, a
 teammate's save announced and loaded, a stale save caught as a conflict and resolved
 without loss, removal ending voice and access, and presence clearing when a tab closes.
-The original 17-step acceptance test still passes.
+The original 17-step acceptance test still passes. Both run in GitHub Actions against
+`supabase start` and `livekit-server` v1.13.7 (run #6, commit `67bc4c7`: all green).
 
 The run found and fixed real problems before passing: Supabase Realtime closes a
 client's channel after 5 presence updates in 30 s (voice state changes exceeded it — now

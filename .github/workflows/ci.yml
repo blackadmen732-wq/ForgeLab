@@ -61,14 +61,16 @@ jobs:
       - name: Throwaway voice and presence keys for this run
         run: |
           secret="$(openssl rand -hex 32)"
+          presence="$(node scripts/generate-presence-key.mjs | awk '{printf "%s\\n", $0}')"
           echo "::add-mask::$secret"
+          echo "::add-mask::$presence"
           {
             echo "LIVEKIT_API_KEY=forgelab"
             echo "LIVEKIT_API_SECRET=$secret"
             echo "LIVEKIT_URL=http://localhost:7880"
             echo "VITE_LIVEKIT_URL=ws://localhost:7880"
             # One line with literal \n; the server unescapes it.
-            echo "FORGELAB_PRESENCE_KEY=$(node scripts/generate-presence-key.mjs | awk '{printf "%s\\n", $0}')"
+            echo "FORGELAB_PRESENCE_KEY=$presence"
           } >> "$GITHUB_ENV"
       - name: Start LiveKit (SFU for voice)
         run: |
