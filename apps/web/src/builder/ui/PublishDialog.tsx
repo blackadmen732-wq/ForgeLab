@@ -25,6 +25,11 @@ export function PublishDialog() {
     let live = true;
     void (async () => {
       try {
+        // Frame the whole design without selection highlights before taking the picture.
+        store.select([]);
+        store.requestFrame(null);
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        if (!live) return;
         const png = await store.viewport?.capture();
         if (!png || !live) return;
         const blob = await resizeImage(png, 800, 500);

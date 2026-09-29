@@ -231,13 +231,25 @@ describe("model confidence", () => {
     ).toBe(true);
   });
 
-  it("labels a linear (cylindrical) device experimental", () => {
+  it("labels a linear (cylindrical) plasma device experimental", () => {
     const world = new SimulationWorld();
     placePart(world, "reactor-chamber", { id: "chamber", position: { x: 0, y: 1.5, z: 0 } });
     placePart(world, "solenoid-coil", { id: "coil", position: { x: 0, y: 1.5, z: 0 } });
+    placePart(world, "neutral-beam", { id: "nbi", position: { x: 0, y: 1.2, z: 8 } });
+    world.connect(
+      { componentId: "nbi", connectionPointId: "port" },
+      { componentId: "chamber", connectionPointId: "heating" },
+    );
     world.solve();
     const confidence = world.getSnapshot().plant.confidence;
     expect(confidence.level).toBe("experimental");
+  });
+
+  it("does not call an empty chamber a plasma experiment", () => {
+    const world = new SimulationWorld();
+    placePart(world, "reactor-chamber", { id: "chamber", position: { x: 0, y: 1.5, z: 0 } });
+    world.solve();
+    expect(world.getSnapshot().plant.confidence.level).not.toBe("experimental");
   });
 
   it("labels a coil that encloses nothing experimental and says why", () => {

@@ -19,15 +19,21 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build"
+    "verify": "pnpm typecheck && pnpm lint && pnpm test && pnpm build",
+    "vercel-build": "pnpm build && node scripts/build-vercel.mjs",
+    "dev:api": "pnpm vercel-build && node scripts/serve-output.mjs 3000",
+    "serve": "node scripts/serve-output.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
     "@eslint/js": "^10.0.1",
+    "@supabase/supabase-js": "^2.117.2",
     "@types/node": "^24.10.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
+    "playwright": "1.56.1",
     "prettier": "^3.9.8",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",

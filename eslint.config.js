@@ -5,7 +5,14 @@ import reactHooks from "eslint-plugin-react-hooks";
 
 export default tseslint.config(
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/coverage/**", "**/*.d.ts"],
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      "**/*.d.ts",
+      ".vercel/**",
+      "supabase/.temp/**",
+    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,
@@ -62,6 +69,13 @@ export default tseslint.config(
     rules: {
       ...reactHooks.configs.recommended.rules,
     },
+  },
+  {
+    // Node-side code: build scripts, the verification function, end-to-end tests.
+    files: ["scripts/**/*.{js,mjs,ts}", "e2e/**/*.{js,mjs}", "api-src/**/*.ts"],
+    // e2e callbacks passed to page.waitForFunction run in the browser.
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+    rules: { "no-console": "off" },
   },
   {
     files: ["**/*.config.{ts,js}", "**/*.test.ts"],

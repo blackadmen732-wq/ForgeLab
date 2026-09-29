@@ -105,8 +105,8 @@ export function SubmitDialog() {
         Scores come from the <strong>{STANDARD_SCENARIO.name}</strong>:{" "}
         {STANDARD_SCENARIO.durationSec / 60} simulated minutes from the design's saved start state,
         averaged over the last {STANDARD_SCENARIO.averagingWindowSec} s. The server reruns your
-        saved version with engine and records only what it computes. Experimental designs are not
-        ranked.
+        saved version with the same engine and records only what it computes. Experimental designs
+        are not ranked.
       </p>
       <div className="row">
         <button

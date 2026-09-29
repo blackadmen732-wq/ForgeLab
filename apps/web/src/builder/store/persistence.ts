@@ -114,11 +114,12 @@ export class CloudSync {
     this.#onChange();
   }
 
-  bind(binding: CloudBinding | null, savedHash: string | null = null): void {
+  /** `saved` identifies what the cloud already holds, so identical designs aren't re-uploaded. */
+  bind(binding: CloudBinding | null, saved: { hash: string; name: string } | null = null): void {
     clearTimeout(this.#timer);
     this.binding = binding;
     this.#dirty = false;
-    this.#lastHash = savedHash;
+    this.#lastHash = saved === null ? null : `${saved.hash}|${saved.name}`;
     this.#lastStatsJson = "";
     this.state = {
       status: binding === null ? "local" : binding.readOnly ? "readonly" : "saved",
@@ -180,8 +181,10 @@ export class CloudSync {
     if (binding === null) return null;
     const file = this.#getFile();
     const hash = designHash(file);
+    // The canonical hash covers physics only; a rename is still a change worth saving.
+    const saveKey = `${hash}|${file.name}`;
     this.#dirty = false;
-    if (!options.force && hash === this.#lastHash) {
+    if (!options.force && saveKey === this.#lastHash) {
       this.#set({ status: "saved", error: null });
       await this.#syncProjectRow(file);
       return null;
@@ -195,7 +198,7 @@ export class CloudSync {
         autosave: options.autosave,
         ...(options.label === undefined ? {} : { label: options.label }),
       });
-      this.#lastHash = hash;
+      this.#lastHash = saveKey;
       if (this.binding?.projectId === binding.projectId)
         this.binding = { ...this.binding, latestVersionId: version.id };
       await this.#syncProjectRow(file);

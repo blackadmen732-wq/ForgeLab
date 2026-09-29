@@ -133,7 +133,11 @@ export function assessConfidence(input: {
     const plasma = vessel.plasma;
     const reasons: string[] = [];
     let level: ConfidenceLevel = "supported";
-    if (layout.configuration === "linear") {
+    // An open vessel is only a plasma experiment once something tries to make plasma in it
+    // (heating or fuelling attached, or a plasma already formed); an empty chamber is not.
+    const attempted =
+      layout.heaterIds.length > 0 || layout.injectorIds.length > 0 || plasma.phase !== "off";
+    if (layout.configuration === "linear" && attempted) {
       level = "experimental";
       reasons.push(
         "Linear (open) configuration: confinement uses pessimistic Bohm diffusion and end losses along the field are not modelled.",

@@ -1,6 +1,6 @@
 import { LEADERBOARD_CATEGORIES } from "@forgelab/sim-runner";
 import { Flag, GitFork, Heart, Play, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { Avatar } from "../components/Avatar.js";
 import { ConfidenceBadge } from "../components/ConfidenceBadge.js";
@@ -91,6 +91,27 @@ function Detail({ id }: { id: string }) {
   const [likeDelta, setLikeDelta] = useState(0);
   const [busy, setBusy] = useState(false);
   const [reporting, setReporting] = useState(false);
+  // An action a guest started before signing in, finished once they have.
+  const pendingFork = useRef(false);
+
+  const doFork = useCallback(async () => {
+    setBusy(true);
+    try {
+      const newId = await forkProject(id);
+      toast("success", "Forked", "The copy is private until you publish it.");
+      void navigate(`/app/${newId}`);
+    } catch (error) {
+      toast("error", "Couldn't fork this design", errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }, [id, navigate]);
+
+  useEffect(() => {
+    if (auth.status !== "signed-in" || !pendingFork.current) return;
+    pendingFork.current = false;
+    void doFork();
+  }, [auth.status, doFork]);
 
   useEffect(() => {
     if (userId === null) return;
@@ -127,17 +148,11 @@ function Detail({ id }: { id: string }) {
   };
 
   const fork = async () => {
-    if (!requireAccount("Sign in to fork this design into your own projects.")) return;
-    setBusy(true);
-    try {
-      const newId = await forkProject(project.id);
-      toast("success", "Forked", "The copy is private until you publish it.");
-      void navigate(`/app/${newId}`);
-    } catch (error) {
-      toast("error", "Couldn't fork this design", errorMessage(error));
-    } finally {
-      setBusy(false);
+    if (!requireAccount("Sign in to fork this design into your own projects.")) {
+      pendingFork.current = true;
+      return;
     }
+    await doFork();
   };
 
   return (

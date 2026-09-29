@@ -291,8 +291,12 @@ export function BuilderRoute() {
             if (restore) design = draft.file;
           }
         }
-        store.loadFile(design);
-        store.cloud.bind(bindingFor(project, userId, owner?.username ?? null), version.design_hash);
+        // The project row owns the name (renames can outlive the last physics change).
+        store.loadFile(design, { name: project.name });
+        store.cloud.bind(bindingFor(project, userId, owner?.username ?? null), {
+          hash: version.design_hash,
+          name: project.name,
+        });
         if (design !== version.design) store.cloud.markChanged();
         store.openDialog(null);
         store.requestFrame(null);
@@ -347,7 +351,7 @@ export function BuilderRoute() {
           userId,
           auth.profile?.username ?? null,
         ),
-        version.design_hash,
+        { hash: version.design_hash, name: file.name },
       );
       store.flushDraft();
       void navigate(`/app/${project.id}`, { replace: true });

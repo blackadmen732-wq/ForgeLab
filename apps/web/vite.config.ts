@@ -29,5 +29,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // /api/verify runs as a server function; `pnpm dev:api` serves it on :3000.
+    proxy: { "/api": process.env.FORGELAB_API_URL ?? "http://localhost:3000" },
   },
 });

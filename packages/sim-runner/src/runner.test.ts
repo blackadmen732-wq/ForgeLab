@@ -102,6 +102,12 @@ describe("verification", () => {
     const world = new SimulationWorld();
     placePart(world, "reactor-chamber", { id: "chamber", position: { x: 0, y: 1.5, z: 0 } });
     placePart(world, "solenoid-coil", { id: "coil", position: { x: 0, y: 1.5, z: 0 } });
+    // Heating attached: this open device is now a plasma experiment, not an empty chamber.
+    placePart(world, "neutral-beam", { id: "nbi", position: { x: 0, y: 1.2, z: 8 } });
+    world.connect(
+      { componentId: "nbi", connectionPointId: "port" },
+      { componentId: "chamber", connectionPointId: "heating" },
+    );
     const result = runVerification(serializeWorld(world), {
       durationSec: 2,
       averagingWindowSec: 1,

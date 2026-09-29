@@ -8,12 +8,13 @@ import { leaderboard } from "../lib/api.js";
 import { relativeTime } from "../lib/format.js";
 import { useAsync } from "../lib/useAsync.js";
 
+/** Scores are stored in each category's own unit (LEADERBOARD_CATEGORIES): MW, Q, tonnes. */
 export function formatScore(category: string, value: number): string {
   switch (category) {
     case "net-electric":
-      return `${(value / 1e6).toFixed(1)} MW`;
+      return `${value.toFixed(1).replace("-", "−")} MW`;
     case "lightest-net-positive":
-      return `${(value / 1000).toFixed(1)} t`;
+      return `${value.toFixed(1)} t`;
     case "fusion-gain":
       return `Q ${value.toFixed(2)}`;
     default:

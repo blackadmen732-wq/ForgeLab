@@ -440,9 +440,11 @@ export class EditorStore {
     this.requestFrame(null);
   }
 
-  loadFile(file: unknown): void {
+  loadFile(file: unknown, options: { name?: string } = {}): void {
     const parsed = parseAssemblyFile(file);
-    this.replaceWorld(deserializeWorld(parsed));
+    const world = deserializeWorld(parsed);
+    if (options.name !== undefined && options.name.trim() !== "") world.name = options.name;
+    this.replaceWorld(world);
   }
 
   newBlank(name = "Untitled Design"): void {
