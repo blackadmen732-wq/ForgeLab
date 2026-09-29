@@ -1,4 +1,5 @@
 import type { Meters, Newtons, Vec3 } from "@forgelab/shared";
+import type { PortSpec } from "./ports.js";
 
 export type ComponentId = string;
 export type ConnectionId = string;
@@ -17,6 +18,7 @@ export type ConnectionPointId = string;
  *   fuel       — fuel injector to vessel
  *   port       — plasma heater to vessel
  *   control    — sensor / controller / actuator signals
+ *   cryo       — cryogenic helium from a cryoplant to superconducting magnets
  */
 export const CONNECTION_TYPES = Object.freeze([
   "structural",
@@ -29,6 +31,7 @@ export const CONNECTION_TYPES = Object.freeze([
   "shaft",
   "steam",
   "port",
+  "cryo",
 ] as const);
 
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
@@ -59,6 +62,8 @@ export interface ConnectionPoint {
   readonly localDirection: Vec3;
   readonly connectionType: ConnectionType;
   readonly maxLoadN?: Newtons;
+  /** The engineering interface: domain, direction and ratings (see ports.ts). */
+  readonly port?: PortSpec;
 }
 
 /** One end of an established link. */

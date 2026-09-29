@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   MATERIAL_CATALOG,
   MaterialIds,
+  SUBSTANCE_CATALOG,
+  criticalTemperatureK,
   findMaterial,
+  findSubstance,
   getMaterial,
+  getSubstance,
   listMaterialIds,
+  upperCriticalFieldT,
 } from "./index.js";
 
 describe("material catalogue", () => {
@@ -72,6 +77,44 @@ describe("material catalogue", () => {
         copper.electricalResistivityOhmM,
       );
       expect(material.densityKgM3).toBeLessThanOrEqual(tungsten.densityKgM3);
+    }
+  });
+});
+
+describe("internal substances", () => {
+  it("resolves structural materials and internal-only substances through one lookup", () => {
+    expect(getSubstance("copper").densityKgM3).toBe(getMaterial("copper").densityKgM3);
+    expect(getSubstance("nbti").superconductor).toBeDefined();
+    expect(findSubstance("nbti")?.densityKgM3).toBeCloseTo(6020, 0);
+    expect(() => getSubstance("unobtainium")).toThrowError(/Unknown substance/);
+  });
+
+  it("keeps internal-only substances out of the structural catalogue", () => {
+    expect(findMaterial("nbti")).toBeUndefined();
+    expect(findMaterial("g10-cr")).toBeUndefined();
+  });
+
+  it("follows the NbTi critical surface (Bottura 2000: Tc0 9.2 K, Bc20 14.5 T, n 1.7)", () => {
+    const sc = getSubstance("nbti").superconductor!;
+    expect(criticalTemperatureK(sc, 0)).toBeCloseTo(9.2, 6);
+    expect(criticalTemperatureK(sc, 14.5)).toBe(0);
+    expect(upperCriticalFieldT(sc, 0)).toBeCloseTo(14.5, 6);
+    expect(upperCriticalFieldT(sc, 9.2)).toBe(0);
+    // The two relations are inverses of each other.
+    for (const b of [1, 5, 9, 12]) {
+      expect(upperCriticalFieldT(sc, criticalTemperatureK(sc, b))).toBeCloseTo(b, 6);
+    }
+    // At 4.5 K the conductor carries at most ~10.7 T (well-known NbTi operating range).
+    expect(upperCriticalFieldT(sc, 4.5)).toBeGreaterThan(10);
+    expect(upperCriticalFieldT(sc, 4.5)).toBeLessThan(11.5);
+  });
+
+  it("records no property it has no source for", () => {
+    const nbti = getSubstance("nbti");
+    expect(nbti.specificHeatJkgK).toBeUndefined();
+    expect(nbti.thermalConductivityWmK).toBeUndefined();
+    for (const s of SUBSTANCE_CATALOG) {
+      expect(s.sourceSummary.length).toBeGreaterThan(20);
     }
   });
 });

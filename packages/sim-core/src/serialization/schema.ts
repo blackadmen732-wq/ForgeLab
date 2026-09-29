@@ -1,3 +1,4 @@
+import type { PortSpec } from "../ports.js";
 import type { ConnectionType } from "../connections.js";
 import type { PlantRole } from "../plant/roles.js";
 import type {
@@ -81,6 +82,16 @@ export interface SerializedConnectionPoint {
   readonly localDirection: SerializedVec3;
   readonly connectionType: ConnectionType;
   readonly maxLoadN?: number;
+  /** Engineering interface of the port (optional; older files have none). */
+  readonly port?: PortSpec;
+}
+
+/** An internal material region of a finished component. */
+export interface SerializedMaterialRegion {
+  readonly id: string;
+  readonly name: string;
+  readonly substanceId: string;
+  readonly volumeFraction: number;
 }
 
 /** The live kinematic state of a component at the moment of saving. */
@@ -108,6 +119,8 @@ export interface SerializedComponent {
   readonly role: PlantRole;
   /** Operating parameters in SI (schema 2). */
   readonly parameters: Readonly<Record<string, number | boolean | string>>;
+  /** Internal material regions; omitted for solid single-material parts. */
+  readonly composition?: readonly SerializedMaterialRegion[];
 }
 
 export interface SerializedConnection {

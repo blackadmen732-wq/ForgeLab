@@ -54,10 +54,32 @@ export {
 } from "./connections.js";
 
 export {
+  PORT_DOMAIN_CONNECTION_TYPES,
+  checkPortCompatibility,
+  parsePortSpec,
+  type ControlPort,
+  type ElectricalPort,
+  type FluidPort,
+  type FuelPort,
+  type HeatingPort,
+  type PortCompatibility,
+  type PortDirection,
+  type PortDomain,
+  type PortFluid,
+  type PortSpec,
+  type ShaftPort,
+  type StructuralPort,
+  type VacuumPort,
+} from "./ports.js";
+
+export {
   ZERO_STRUCTURAL_STATE,
   ZERO_SUPPORT_STATE,
   componentCenterOfMassM,
+  componentHeatCapacityJK,
+  compositionError,
   createComponent,
+  type MaterialRegion,
   currentTransform,
   initialPhysicalProperties,
   resolveMassKg,

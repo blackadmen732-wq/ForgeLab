@@ -2,6 +2,8 @@ import { QUATERNION_IDENTITY, quaternion, transform, vec3, Vec3Math } from "@for
 import type { PhysicalProperties, SimulationComponent } from "../component.js";
 import type { Connection, ConnectionPoint, ConnectionType } from "../connections.js";
 import { CONNECTION_TYPES } from "../connections.js";
+import { compositionError } from "../component.js";
+import { parsePortSpec, type PortSpec } from "../ports.js";
 import {
   boxGeometry,
   cylinderGeometry,
@@ -15,6 +17,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   type AssemblyFileV1,
   type SerializedComponent,
+  type SerializedMaterialRegion,
   type SerializedConnection,
   type SerializedConnectionPoint,
   type SerializedGeometry,
@@ -90,6 +93,9 @@ export function serializeComponent(component: SimulationComponent): SerializedCo
     ...(movedFromAuthoredPlacement ? { physical: serializePhysical(physical) } : {}),
     role: component.role,
     parameters: { ...component.parameters },
+    ...(component.composition.length === 0
+      ? {}
+      : { composition: component.composition.map((r) => ({ ...r })) }),
   };
 }
 
@@ -154,6 +160,7 @@ function serializeConnectionPoint(point: ConnectionPoint): SerializedConnectionP
     localDirection: serializeVec3(point.localDirection),
     connectionType: point.connectionType,
     ...(point.maxLoadN === undefined ? {} : { maxLoadN: point.maxLoadN }),
+    ...(point.port === undefined ? {} : { port: { ...point.port } }),
   };
 }
 
@@ -260,6 +267,7 @@ export function deserializeWorld(
       anchored: component.anchored,
       role: component.role,
       parameters: component.parameters,
+      ...(component.composition === undefined ? {} : { composition: component.composition }),
     });
 
     if (component.physical !== undefined) {
@@ -324,6 +332,7 @@ function deserializeConnectionPoint(point: SerializedConnectionPoint): Connectio
     localDirection: toVec3(point.localDirection),
     connectionType: point.connectionType,
     ...(point.maxLoadN === undefined ? {} : { maxLoadN: point.maxLoadN }),
+    ...(point.port === undefined ? {} : { port: Object.freeze({ ...point.port }) }),
   });
 }
 
@@ -421,6 +430,7 @@ function validateComponent(value: unknown, index: number, version: number): Seri
       ? { physical: validatePhysical(value["physical"], `components[${index}].physical`) }
       : {}),
     ...validateRoleAndParameters(value, index, version),
+    ...validateComposition(value["composition"], `components[${index}].composition`),
   };
 }
 
@@ -522,7 +532,34 @@ function validateConnectionPoint(value: unknown, path: string): SerializedConnec
     localDirection: validateVec3(value["localDirection"], `${path}.localDirection`),
     connectionType: connectionType as ConnectionType,
     ...(typeof value["maxLoadN"] === "number" ? { maxLoadN: value["maxLoadN"] } : {}),
+    ...validatePort(value["port"], `${path}.port`),
   };
+}
+
+function validatePort(value: unknown, path: string): { port?: PortSpec } {
+  if (value === undefined) return {};
+  const port = parsePortSpec(value);
+  if (port === null) throw new AssemblyFileError(`${path} is not a valid port specification.`);
+  return { port };
+}
+
+function validateComposition(
+  value: unknown,
+  path: string,
+): { composition?: readonly SerializedMaterialRegion[] } {
+  if (value === undefined) return {};
+  const regions = requireArray(value, path).map((raw, i) => {
+    if (!isRecord(raw)) throw new AssemblyFileError(`${path}[${i}] is not an object.`);
+    return {
+      id: requireString(raw["id"], `${path}[${i}].id`),
+      name: typeof raw["name"] === "string" ? raw["name"].slice(0, 80) : "",
+      substanceId: requireString(raw["substanceId"], `${path}[${i}].substanceId`),
+      volumeFraction: requireFinite(raw["volumeFraction"], `${path}[${i}].volumeFraction`),
+    };
+  });
+  const problem = compositionError(regions);
+  if (problem !== null) throw new AssemblyFileError(`${path}: ${problem}`);
+  return { composition: regions };
 }
 
 function validateConnection(value: unknown, index: number): SerializedConnection {

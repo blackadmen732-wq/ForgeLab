@@ -8,7 +8,11 @@ import {
   amperesToMegaamperes,
   localPointToWorld,
 } from "@forgelab/shared";
-import { type SimulationComponent, currentTransform } from "../component.js";
+import {
+  type SimulationComponent,
+  componentHeatCapacityJK,
+  currentTransform,
+} from "../component.js";
 import type { Connection } from "../connections.js";
 import { type CausalLink, type FailureEvent, failureKey, formatQuantity } from "../failure.js";
 import {
@@ -1716,10 +1720,7 @@ export class PlantSolver {
           component.massKg * numberParameter(component.parameters, "coldMassSpecificHeatJkgK"),
         );
       } else {
-        capacity.set(
-          component.id,
-          Math.max(component.massKg * getMaterial(component.materialId).specificHeatJkgK, 1),
-        );
+        capacity.set(component.id, Math.max(componentHeatCapacityJK(component), 1));
       }
     }
     // Conduction paths over load-bearing joints.
