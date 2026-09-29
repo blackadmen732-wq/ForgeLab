@@ -1,7 +1,6 @@
 import {
   GizmoHelper,
   GizmoViewport,
-  Grid,
   OrbitControls,
   OrthographicCamera,
   PerspectiveCamera,
@@ -55,13 +54,13 @@ import {
   readoutFromFrame,
 } from "./appearance.js";
 import { hover } from "./hover.js";
+import { Environment } from "./environment/Environment.js";
 import { ComponentMesh, isDragging, meshRegistry, setDragging } from "./meshes.js";
 
 type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
 
 /** Removes the half-space z > 0 in cutaway mode. */
 const CUT_PLANE = new Plane(new Vector3(0, 0, -1), 0);
-const BACKGROUND = "#0b0e12";
 
 /* ------------------------------------------------------------------------------------ *
  * Parts
@@ -710,6 +709,7 @@ export function Viewport() {
   const store = useEditorStore();
   const tool = useEditor((v) => v.tool);
   const cutaway = useEditor((v) => v.cutaway);
+  const mode = useEditor((v) => v.mode);
   const empty = useEditor((v) => v.snapshot.components.length === 0);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const [box, setBox] = useState<BoxState | null>(null);
@@ -792,6 +792,7 @@ export function Viewport() {
       <Canvas
         frameloop="demand"
         dpr={[1, 2]}
+        shadows="percentage"
         gl={{ antialias: true, powerPreference: "high-performance" }}
         onCreated={({ gl }) => {
           gl.localClippingEnabled = true;
@@ -810,25 +811,8 @@ export function Viewport() {
         }}
         aria-label="3D workspace"
       >
-        <color attach="background" args={[BACKGROUND]} />
-        <fog attach="fog" args={[BACKGROUND, 600, 2400]} />
-        <hemisphereLight args={["#dfe7ef", "#20262d", 0.9]} />
-        <directionalLight position={[60, 120, 40]} intensity={1.6} />
-        <directionalLight position={[-80, 50, -60]} intensity={0.45} />
+        <Environment showGrid={mode === "build"} />
         <CameraRig controlsRef={controlsRef} />
-        <Grid
-          infiniteGrid
-          cellSize={1}
-          sectionSize={10}
-          cellThickness={0.5}
-          sectionThickness={1}
-          cellColor="#1a2027"
-          sectionColor="#27303a"
-          fadeDistance={900}
-          fadeStrength={1.5}
-          followCamera={false}
-          position={[0, -0.002, 0]}
-        />
         <Parts />
         <Connections />
         <Sockets />

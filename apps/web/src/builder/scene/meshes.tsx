@@ -104,6 +104,7 @@ function CoilRibs({
         key={i}
         geometry={ring}
         material={material}
+        castShadow
         position={[
           Math.cos(angle) * geometry.majorRadiusM,
           0,
@@ -221,7 +222,7 @@ export const ComponentMesh = memo(function ComponentMesh({
           <CoilRibs geometry={geometry} material={body} />
         </group>
       ) : (
-        <mesh geometry={shape} material={body} {...handlers}>
+        <mesh geometry={shape} material={body} castShadow receiveShadow {...handlers}>
           {selected && <Edges threshold={30} color="#6fd3d1" />}
         </mesh>
       )}
