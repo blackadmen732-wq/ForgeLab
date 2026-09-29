@@ -1,11 +1,12 @@
-import { MATERIAL_CATALOG, getMaterial } from "@forgelab/materials";
-import { findComponentDefinition } from "@forgelab/reactor-components";
+import { MATERIAL_CATALOG, findSubstance, getMaterial } from "@forgelab/materials";
+import { findComponentDefinition, type ProductInfo } from "@forgelab/reactor-components";
 import {
   ROLE_PARAMETERS,
   type ParameterSpec,
   type PlantSummary,
   type SimulationComponent,
   type SimulationSettings,
+  type PortSpec,
 } from "@forgelab/sim-core";
 import { vec3 } from "@forgelab/shared";
 import { ChevronDown, ChevronRight, Copy, Focus, Pin, PinOff, Trash2, Unlink } from "lucide-react";
@@ -397,6 +398,125 @@ function formatOutput(key: string, value: number): string {
  * Panels
  * ------------------------------------------------------------------------------------ */
 
+const DOMAIN_LABELS: Record<PortSpec["domain"], string> = {
+  structural: "Mount",
+  electrical: "Electrical",
+  fluid: "Fluid",
+  vacuum: "Vacuum",
+  fuel: "Fuel",
+  control: "Control",
+  shaft: "Shaft",
+  heating: "Heating",
+};
+
+function portRating(port: PortSpec): string {
+  switch (port.domain) {
+    case "electrical":
+      return `${si(port.nominalVoltageV, "V")} · ${si(port.ratedCurrentA, "A")}`;
+    case "fluid":
+      return `${port.fluid.replace(/-/g, " ")} · ⌀${(port.innerDiameterM * 1000).toFixed(0)} mm · ${si(port.ratedPressurePa, "Pa")}`;
+    case "vacuum":
+      return `DN${Math.round(port.flangeDiameterM * 1000)}`;
+    case "shaft":
+    case "heating":
+      return si(port.ratedPowerW, "W");
+    case "control":
+      return port.signal;
+    case "fuel":
+      return port.medium;
+    default:
+      return "";
+  }
+}
+
+/**
+ * The finished-product sheet: what the machine is, what it is rated for, how it connects,
+ * what is inside it, and how it can fail. The player places the whole machine; none of
+ * these internals is something they build.
+ */
+function ProductPanel({
+  component,
+  product,
+}: {
+  component: SimulationComponent;
+  product: ProductInfo;
+}) {
+  const ratings = product.ratings(component.parameters);
+  const ports = component.connectionPoints.filter(
+    (p) => p.port !== undefined && p.port.domain !== "structural",
+  );
+  const connected = new Set(
+    component.connections.flatMap((c) => [
+      c.from.componentId === component.id ? c.from.connectionPointId : "",
+      c.to.componentId === component.id ? c.to.connectionPointId : "",
+    ]),
+  );
+  return (
+    <>
+      <Section title="Product">
+        <p className="insp-note">{product.summary}</p>
+        {ratings.map((r) => (
+          <Row key={r.label} label={r.label}>
+            {r.value}
+          </Row>
+        ))}
+      </Section>
+      {ports.length > 0 && (
+        <Section title={`Ports (${ports.length})`}>
+          <ul className="insp-ports">
+            {ports.map((p) => (
+              <li key={p.id} className={connected.has(p.id) ? "is-connected" : ""}>
+                <span className={`port-dot port-dot--${p.port!.domain}`} aria-hidden="true" />
+                <span className="insp-ports__label">{p.port!.label}</span>
+                <span className="dim insp-ports__spec">
+                  {DOMAIN_LABELS[p.port!.domain]} · {portRating(p.port!)}
+                </span>
+                <span className="insp-ports__state dim">
+                  {connected.has(p.id) ? "connected" : "open"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+      <Section title="Inside" defaultOpen={false}>
+        <ul className="insp-internals">
+          {product.internals.map((i) => (
+            <li key={i.id}>
+              <strong>{i.name}</strong>
+              <span className="dim">
+                {" "}
+                · {findSubstance(i.substanceId)?.name ?? i.substanceId}
+                {i.volumeFraction !== undefined &&
+                  ` · ${(i.volumeFraction * 100).toFixed(0)} % of volume`}
+              </span>
+              <p className="dim">{i.purpose}</p>
+            </li>
+          ))}
+        </ul>
+        {!product.internalsSetMass && (
+          <p className="insp-note">
+            Shown for inspection; this part&apos;s mass is its material × volume.
+          </p>
+        )}
+      </Section>
+      {product.failureModes.length > 0 && (
+        <Section title="Can fail by" defaultOpen={false}>
+          <ul className="insp-internals">
+            {product.failureModes.map((f) => (
+              <li key={f.id}>
+                <strong>{f.name}</strong>
+                <span className="dim"> · {f.system}</span>
+                <p className="dim">{f.description}</p>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
+    </>
+  );
+}
+
 function PartPanel({ component }: { component: SimulationComponent }) {
   const store = useEditorStore();
   const mode = useEditor((v) => v.mode);
@@ -490,7 +610,9 @@ function PartPanel({ component }: { component: SimulationComponent }) {
 
       <StateReadouts component={live} />
 
-      <Section title="Material">
+      {definition && <ProductPanel component={component} product={definition.product} />}
+
+      <Section title={component.composition.length > 0 ? "Casing material" : "Material"}>
         <Row label="Material">
           <select
             className="select"

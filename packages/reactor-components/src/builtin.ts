@@ -9,8 +9,11 @@ import {
   cylinderGeometry,
   torusGeometry,
 } from "@forgelab/sim-core";
+import { V01_PORTS, V01_PRODUCTS, type PortSource } from "./products.js";
 import {
   buildConnectionPoints,
+  productComposition,
+  type ProductInfo,
   type ComponentCategory,
   type ComponentDefinition,
   type DimensionSpec,
@@ -75,6 +78,10 @@ interface Recipe {
   readonly dimensionsOf: (geometry: ComponentGeometry) => Record<string, number>;
   readonly presets?: Readonly<Record<string, number | boolean | string>>;
   readonly keyProperty: string;
+  /** Product sheet; V0.1 parts take theirs from products.ts. */
+  readonly product?: ProductInfo;
+  /** Typed port per socket id; V0.1 parts take theirs from products.ts. */
+  readonly ports?: Readonly<Record<string, PortSource>>;
 }
 
 const dim = (
@@ -124,7 +131,25 @@ function sizeOf(geometry: ComponentGeometry): Vec3 {
   }
 }
 
-function define(recipe: Recipe): ComponentDefinition {
+function define(input: Recipe): ComponentDefinition {
+  const product = input.product ?? V01_PRODUCTS[input.type];
+  if (product === undefined) throw new Error(`No product sheet for "${input.type}".`);
+  const ports = input.ports ?? V01_PORTS[input.type] ?? {};
+  const recipe: Recipe = {
+    ...input,
+    shape: (d) => {
+      const shape = input.shape(d);
+      return {
+        ...shape,
+        sockets: shape.sockets.map((socket) => {
+          const source = ports[socket.id];
+          if (source === undefined || socket.port !== undefined) return socket;
+          return { ...socket, port: typeof source === "function" ? source(d) : source };
+        }),
+      };
+    },
+  };
+  const composition = productComposition(product);
   const defaults = resolveDimensions(recipe.dimensions);
   const defaultShape = recipe.shape(defaults);
   return {
@@ -138,6 +163,7 @@ function define(recipe: Recipe): ComponentDefinition {
     presetParameters: recipe.presets ?? {},
     keyProperty: recipe.keyProperty,
     dimensions: recipe.dimensions,
+    product,
     createSpec(options: PlacementOptions): ComponentSpec {
       const materialId = options.materialId ?? recipe.material;
       const { geometry, sockets } =
@@ -152,6 +178,7 @@ function define(recipe: Recipe): ComponentDefinition {
         connectionPoints: buildConnectionPoints(sockets, geometry, materialId),
         role: recipe.role,
         parameters: { ...(recipe.presets ?? {}), ...(options.parameters ?? {}) },
+        ...(composition === undefined ? {} : { composition }),
         ...(options.transform === undefined ? {} : { transform: options.transform }),
         ...(options.label === undefined ? {} : { label: options.label }),
         ...(options.anchored === undefined ? {} : { anchored: options.anchored }),

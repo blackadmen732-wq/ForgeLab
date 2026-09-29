@@ -1432,3 +1432,73 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* ---------- finished-product sheet ---------- */
+
+.insp-ports,
+.insp-internals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.insp-ports li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.insp-ports__label {
+  font-family: var(--font-mono);
+  color: var(--text-strong);
+}
+.insp-ports__spec {
+  grid-column: 2 / -1;
+  font-size: var(--fs-xs);
+}
+.insp-ports__state {
+  grid-column: 3;
+  grid-row: 1;
+  font-size: var(--fs-xs);
+}
+.insp-ports li.is-connected .insp-ports__state {
+  color: var(--ok);
+}
+.port-dot {
+  grid-row: span 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.port-dot--electrical {
+  background: var(--power);
+}
+.port-dot--fluid {
+  background: var(--coolant);
+}
+.port-dot--vacuum {
+  background: #9aa8b8;
+}
+.port-dot--fuel {
+  background: var(--plasma);
+}
+.port-dot--control {
+  background: var(--control);
+}
+.port-dot--shaft {
+  background: #c9a27a;
+}
+.port-dot--heating {
+  background: var(--heat-hot);
+}
+.insp-internals li {
+  font-size: var(--fs-sm);
+}
+.insp-internals p {
+  margin: 2px 0 0;
+  font-size: var(--fs-xs);
+}

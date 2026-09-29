@@ -1,9 +1,18 @@
 export {
   COMPONENT_CATEGORIES,
   buildConnectionPoints,
+  productComposition,
   structuralSocketCapacityN,
+  type AnimationHook,
+  type AudioProfileId,
   type ComponentCategory,
   type ComponentDefinition,
+  type PhysicsDomain,
+  type ProductFailureMode,
+  type ProductInfo,
+  type ProductInternal,
+  type ProductRating,
+  type VisualProfileId,
   type PlacementOptions,
   type SocketTemplate,
 } from "./definition.js";
@@ -19,3 +28,5 @@ export {
   placePart,
   type ReferencePlantOptions,
 } from "./designs.js";
+
+export { PLANT_BUS_V, V01_PORTS, V01_PRODUCTS } from "./products.js";
