@@ -15,11 +15,19 @@ export default defineConfig({
         new URL("../../packages/sim-core/src/dynamics/rapier-backend.ts", import.meta.url),
       ),
       "@forgelab/sim-core": pkg("sim-core"),
+      "@forgelab/sim-runner": pkg("sim-runner"),
       "@forgelab/reactor-components": pkg("reactor-components"),
     },
+  },
+  worker: {
+    format: "es",
   },
   build: {
     target: "es2022",
     sourcemap: true,
+    chunkSizeWarningLimit: 1400,
+  },
+  server: {
+    port: 5173,
   },
 });

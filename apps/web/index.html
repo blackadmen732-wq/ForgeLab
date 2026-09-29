@@ -3,14 +3,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%230d1117'/%3E%3Cpath d='M9 23V9h13v3h-9v3h8v3h-8v5z' fill='%234fd1c5'/%3E%3C/svg%3E"
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0b0e12" />
+    <meta
+      name="description"
+      content="ForgeLab is a browser-based 3D engineering sandbox for designing, simulating, breaking and improving advanced energy systems. Build anything. Physics decides."
     />
-    <title>ForgeLab — Engineering Workspace</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>ForgeLab — Build anything. Physics decides.</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot" role="status" aria-live="polite">
+        <svg class="boot__mark" viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M8 25V7h15v3.5H12v4h9.5V18H12v7z" fill="currentColor" />
+        </svg>
+        <span class="boot__text">ForgeLab</span>
+      </div>
+    </div>
+    <noscript>ForgeLab needs JavaScript to run its simulation in your browser.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
