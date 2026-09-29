@@ -158,6 +158,7 @@ function serializeSettings(settings: SimulationSettings): SerializedSimulationSe
     designSafetyFactor: settings.designSafetyFactor,
     failurePropagation: settings.failurePropagation,
     maxFailureLogEntries: settings.maxFailureLogEntries,
+    bucklingEffectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
   };
 }
 
@@ -504,6 +505,10 @@ function validateSettings(value: unknown): SerializedSimulationSettings {
     maxFailureLogEntries: Math.max(
       1,
       Math.floor(finiteOr(value["maxFailureLogEntries"], defaults.maxFailureLogEntries)),
+    ),
+    bucklingEffectiveLengthFactor: positiveOr(
+      value["bucklingEffectiveLengthFactor"],
+      defaults.bucklingEffectiveLengthFactor,
     ),
   };
 }

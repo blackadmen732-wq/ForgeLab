@@ -134,20 +134,10 @@ export function geometryLocalCenterOfMassM(_geometry: ComponentGeometry): Vec3 {
 /**
  * Cross-sectional area that resists the vertical load path, in square metres.
  *
- * DOCUMENTED APPROXIMATION. ForgeLab Phase 0 treats every component as a short axially
- * loaded member: it takes the section perpendicular to whichever *local* axis is most
- * closely aligned with world vertical, and reports that section's material area. It does
- * not compute bending, buckling, shear or torsion, so a wide slab spanning two distant
- * supports is reported far stronger than it really is. See docs/ARCHITECTURE.md.
- */
-/**
- * Cross-sectional area that resists the vertical load path, in square metres.
- *
- * DOCUMENTED APPROXIMATION. ForgeLab Phase 0 treats every component as a short axially
- * loaded member: it takes the section perpendicular to whichever *local* axis is most
- * closely aligned with world vertical, and reports that section's material area. It does
- * not compute bending, buckling, shear or torsion, so a wide slab spanning two distant
- * supports is reported far stronger than it really is. See docs/ARCHITECTURE.md.
+ * It takes the section perpendicular to whichever *local* axis is most closely aligned
+ * with world vertical and reports that section's material area. This is the direct
+ * (axial) stress check. Bending and buckling are checked separately by
+ * `systems/members.ts` (Structural 0.1); shear and torsion are not modelled.
  */
 export function loadBearingAreaM2(geometry: ComponentGeometry, rotation: Quaternion): SquareMeters {
   const localUp = QuaternionMath.inverseRotateVec3(rotation, UP);

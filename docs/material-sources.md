@@ -111,6 +111,25 @@ exactly why it is worth having in the catalogue.
 
 ---
 
+## Structural 0.1 and thermal additions
+
+Two properties were added for Structural 0.1 (buckling, bending) and the V0.1 lumped
+thermal model. Both are conventional room-temperature handbook values.
+
+| Material         | `youngsModulusPa` | `specificHeatJkgK` | Source and meaning                                                                                             |
+| ---------------- | ----------------- | ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| ASTM A36 steel   | 200 × 10⁹         | 486                | Conventional E for carbon steel (AISC uses 29 000 ksi ≈ 200 GPa). cp ≈ 0.486 kJ/(kg·K), handbook at 20–100 °C. |
+| 316L stainless   | 193 × 10⁹         | 500                | Supplier datasheet E for annealed 316/316L; cp 0.50 kJ/(kg·K) at 0–100 °C.                                     |
+| Pure tungsten    | 411 × 10⁹         | 132                | CRC Handbook E ≈ 411 GPa; cp from 24.27 J/(mol·K) ÷ 183.84 g/mol.                                              |
+| C11000 copper    | 117 × 10⁹         | 385                | Handbook E for annealed copper spans ~110–128 GPa; 117 GPa is the common datasheet figure. cp 0.385 kJ/(kg·K). |
+| 6061-T6 aluminum | 68.9 × 10⁹        | 896                | ASM datasheet E = 68.9 GPa (10 000 ksi); cp 0.896 kJ/(kg·K).                                                   |
+
+**Caveats.** Both properties fall with temperature (steel E is roughly 10 % lower at
+400 °C; cp rises). ForgeLab V0.1 uses the room-temperature scalar everywhere and does not
+yet derate stiffness or strength with temperature.
+
+---
+
 ## Adding or changing a value
 
 1. Name the grade. A property without a grade is not data.

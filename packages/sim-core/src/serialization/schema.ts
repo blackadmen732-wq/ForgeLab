@@ -100,6 +100,8 @@ export interface SerializedSimulationSettings {
   readonly designSafetyFactor: number;
   readonly failurePropagation: FailurePropagationMode;
   readonly maxFailureLogEntries: number;
+  /** Added in Structural 0.1. Files without it load with the default of 1.0. */
+  readonly bucklingEffectiveLengthFactor?: number;
 }
 
 /** Clock state, so that reopening a save resumes the run rather than restarting it. */

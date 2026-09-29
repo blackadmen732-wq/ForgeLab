@@ -57,6 +57,7 @@ export {
   type ConnectionLoad,
   type PhysicalProperties,
   type SimulationComponent,
+  type StructuralMode,
   type StructuralState,
   type SupportMode,
   type SupportState,
@@ -66,6 +67,8 @@ export {
   UTILIZATION_FAILURE_THRESHOLD,
   UTILIZATION_STRESSED_THRESHOLD,
   classifyUtilization,
+  describeBendingFailure,
+  describeBucklingFailure,
   describeConnectionOverload,
   describeYieldFailure,
   failureKey,
@@ -101,11 +104,28 @@ export {
 export {
   GROUND_CONTACT_TOLERANCE_M,
   LATERAL_CONNECTION_EPSILON_M,
+  SLENDER_MEMBER_ASPECT_RATIO,
   STRUCTURAL_SOLVER_CONSTANTS,
   solveStructure,
   type StructuralSolveInput,
   type StructuralSolveResult,
 } from "./systems/structural.js";
+
+export {
+  beamMaxBendingMoment,
+  columnBuckling,
+  elasticSectionModulusM3,
+  extentAlongAxis,
+  extremeFibreDistanceM,
+  secondMomentOfAreaM4,
+  sectionProperties,
+  type BeamBendingInput,
+  type BeamBendingResult,
+  type BeamPointLoad,
+  type BucklingResult,
+  type MemberRole,
+  type SectionProperties,
+} from "./systems/members.js";
 
 export { BuiltInDynamicsBackend } from "./dynamics/builtin-backend.js";
 export type {

@@ -2,6 +2,7 @@ import type {
   KgPerCubicMeter,
   Kelvin,
   OhmMeters,
+  JoulesPerKilogramKelvin,
   Pascals,
   WattsPerMeterKelvin,
 } from "@forgelab/shared";
@@ -24,6 +25,13 @@ export interface MaterialDefinition {
   readonly name: string;
   readonly densityKgM3: KgPerCubicMeter;
   readonly yieldStrengthPa: Pascals;
+  /**
+   * Young's modulus (elastic modulus) at room temperature. Used for Euler buckling,
+   * bending stiffness and the Johnson short-column transition. Added in Structural 0.1.
+   */
+  readonly youngsModulusPa: Pascals;
+  /** Specific heat capacity at room temperature. Used by the lumped thermal model. */
+  readonly specificHeatJkgK: JoulesPerKilogramKelvin;
   readonly maxOperatingTemperatureK: Kelvin;
   readonly thermalConductivityWmK: WattsPerMeterKelvin;
   readonly electricalResistivityOhmM: OhmMeters;

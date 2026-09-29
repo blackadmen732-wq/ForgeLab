@@ -1,6 +1,10 @@
 import { getMaterial } from "@forgelab/materials";
 import {
+  AXIS_X,
+  AXIS_Y,
+  AXIS_Z,
   GEOMETRIC_EPSILON_M,
+  QuaternionMath,
   type Meters,
   type Newtons,
   UP,
@@ -16,6 +20,7 @@ import {
   type ComponentId,
   type ConnectionLoad,
   type SimulationComponent,
+  type StructuralMode,
   type StructuralState,
   type SupportMode,
   type SupportState,
@@ -28,11 +33,29 @@ import {
 } from "../connections.js";
 import {
   classifyUtilization,
+  describeBendingFailure,
+  describeBucklingFailure,
   describeConnectionOverload,
   describeYieldFailure,
   type FailureEvent,
 } from "../failure.js";
-import { loadBearingAreaM2, worldBottomY } from "../geometry.js";
+import {
+  type GeometryAxis,
+  dominantLocalAxis,
+  loadBearingAreaM2,
+  sectionAreaPerpendicularToLocalAxis,
+  worldBottomY,
+} from "../geometry.js";
+import {
+  type BeamBendingResult,
+  type BucklingResult,
+  type MemberRole,
+  beamMaxBendingMoment,
+  columnBuckling,
+  elasticSectionModulusM3,
+  extentAlongAxis,
+  sectionProperties,
+} from "./members.js";
 import type { SimulationSettings } from "../settings.js";
 import { gravitationalForceN } from "./gravity.js";
 
@@ -95,10 +118,15 @@ export interface StructuralSolveResult {
  *      For the two-support case this reproduces the statics answer exactly.
  *   4. Turns each member's total load into an axial stress over its load-bearing section
  *      and compares that against the material's allowable stress.
+ *   5. (Structural 0.1) Idealises slender members as columns or beams. Columns are
+ *      checked for buckling (Euler / Johnson), beams for bending between their outermost
+ *      supports. Utilization is the worst of axial, bending and buckling, and each mode
+ *      that exceeds its limit raises its own explained failure. See systems/members.ts.
  *
  * WHAT IT DOES NOT DO (documented approximations; see docs/ARCHITECTURE.md)
- *   - No bending, shear, torsion or buckling. Every member is treated as a short column
- *     in pure compression, so long slender spans read far stronger than they are.
+ *   - No shear, torsion, combined axial-bending interaction or lateral-torsional
+ *     buckling. Beams ignore intermediate supports (conservative); columns use a global
+ *     effective length factor K rather than per-joint end fixity.
  *   - No elastic compatibility. A statically indeterminate frame is resolved by the
  *     geometric lever rule above rather than by relative stiffness.
  *   - No horizontal equilibrium, no overturning check, and no dynamic amplification.
@@ -266,11 +294,43 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
     });
 
     const material = getMaterial(component.materialId);
-    const areaM2 = loadBearingAreaM2(component.geometry, component.state.physical.rotation);
+    const rotation = component.state.physical.rotation;
+    const areaM2 = loadBearingAreaM2(component.geometry, rotation);
     const allowableStressPa = material.yieldStrengthPa / settings.designSafetyFactor;
     // A component in free fall is not being loaded by anything: no contact, no stress.
     const appliedStressPa = mode === "free" ? 0 : safeRatio(total, areaM2);
-    const utilization = safeRatio(appliedStressPa, allowableStressPa);
+    const axialUtilization = safeRatio(appliedStressPa, allowableStressPa);
+
+    const member = analyseMember({
+      component,
+      mode,
+      rooted: rooted.has(id),
+      totalLoadN: total,
+      ownWeightN: own,
+      supports: (edgesBySupported.get(id) ?? []).filter((e) => supportedIds.has(e.supportId)),
+      loadsOn: (edgesBySupport.get(id) ?? []).map((edge) => ({
+        edge,
+        loadN:
+          (reactionsBySupported.get(edge.supportedId) ?? []).find(
+            (r) => r.connectionId === edge.connectionId,
+          )?.loadN ?? 0,
+      })),
+      allowableStressPa,
+      youngsModulusPa: material.youngsModulusPa,
+      yieldStrengthPa: material.yieldStrengthPa,
+      effectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
+    });
+
+    let utilization = axialUtilization;
+    let governingMode: StructuralMode = "axial";
+    if (member.bendingUtilization > utilization) {
+      utilization = member.bendingUtilization;
+      governingMode = "bending";
+    }
+    if (member.bucklingUtilization > utilization) {
+      utilization = member.bucklingUtilization;
+      governingMode = "buckling";
+    }
     const status = classifyUtilization(utilization);
 
     const structural: StructuralState = Object.freeze({
@@ -280,23 +340,36 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
       utilization,
       status,
       failed: status === "failed",
+      memberRole: member.role,
+      governingMode,
+      axialUtilization,
+      bendingMomentNm: member.bendingMomentNm,
+      bendingStressPa: member.bendingStressPa,
+      bendingUtilization: member.bendingUtilization,
+      criticalBucklingLoadN: member.criticalBucklingLoadN,
+      slendernessRatio: member.slendernessRatio,
+      bucklingUtilization: member.bucklingUtilization,
     });
 
     states.set(id, { support, structural });
 
-    if (status === "failed") {
+    const baseEvent = {
+      timestampSec: input.simulatedTimeSec,
+      tick: input.tick,
+      componentId: id,
+      system: "structural" as const,
+      loadPathComponentIds: Object.freeze(loadPath.get(id) ?? []),
+    };
+
+    if (classifyUtilization(axialUtilization) === "failed") {
       failures.push(
         Object.freeze({
-          timestampSec: input.simulatedTimeSec,
-          tick: input.tick,
-          componentId: id,
-          system: "structural",
+          ...baseEvent,
           failureType: "yield_exceeded",
           unit: "Pa",
           measuredValue: appliedStressPa,
           limitValue: allowableStressPa,
-          utilization,
-          loadPathComponentIds: Object.freeze(loadPath.get(id) ?? []),
+          utilization: axialUtilization,
           cause: describeYieldFailure({
             componentId: id,
             componentType: component.type,
@@ -310,6 +383,63 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
             yieldStrengthPa: material.yieldStrengthPa,
             designSafetyFactor: settings.designSafetyFactor,
             supportedComponentIds: support.supportingComponentIds,
+          }),
+        }),
+      );
+    }
+
+    if (
+      member.buckling !== undefined &&
+      classifyUtilization(member.bucklingUtilization) === "failed"
+    ) {
+      failures.push(
+        Object.freeze({
+          ...baseEvent,
+          failureType: "buckling",
+          unit: "N",
+          measuredValue: total,
+          limitValue: member.criticalBucklingLoadN,
+          utilization: member.bucklingUtilization,
+          cause: describeBucklingFailure({
+            componentId: id,
+            componentType: component.type,
+            materialName: material.name,
+            axialLoadN: total,
+            criticalLoadN: member.criticalBucklingLoadN,
+            lengthM: member.lengthM,
+            slendernessRatio: member.buckling.slendernessRatio,
+            transitionSlenderness: member.buckling.transitionSlenderness,
+            regime: member.buckling.regime,
+            effectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
+            youngsModulusPa: material.youngsModulusPa,
+          }),
+        }),
+      );
+    }
+
+    if (
+      member.bending !== undefined &&
+      classifyUtilization(member.bendingUtilization) === "failed"
+    ) {
+      failures.push(
+        Object.freeze({
+          ...baseEvent,
+          failureType: "bending_yield",
+          unit: "Pa",
+          measuredValue: member.bendingStressPa,
+          limitValue: allowableStressPa,
+          utilization: member.bendingUtilization,
+          cause: describeBendingFailure({
+            componentId: id,
+            componentType: component.type,
+            materialName: material.name,
+            momentNm: member.bendingMomentNm,
+            spanM: member.bending.spanM,
+            idealisation: member.bending.idealisation,
+            sectionModulusM3: member.sectionModulusM3,
+            bendingStressPa: member.bendingStressPa,
+            allowableStressPa,
+            loadedByComponentIds: support.supportingComponentIds,
           }),
         }),
       );
@@ -355,6 +485,142 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
   failures.sort(compareFailures);
 
   return { states, failures, diagnostics };
+}
+
+/**
+ * ACI 318 defines a pedestal as a compression member whose height is at most three times
+ * its least lateral dimension. ForgeLab uses the same ratio to decide when a member is
+ * slender enough to be idealised as a column (buckling checked) or a beam (bending
+ * checked), rather than a stocky block where only direct stress matters.
+ */
+export const SLENDER_MEMBER_ASPECT_RATIO = 3;
+
+interface MemberInput {
+  readonly component: SimulationComponent;
+  readonly mode: SupportMode;
+  readonly rooted: boolean;
+  readonly totalLoadN: Newtons;
+  readonly ownWeightN: Newtons;
+  readonly supports: readonly SupportEdge[];
+  readonly loadsOn: readonly { edge: SupportEdge; loadN: Newtons }[];
+  readonly allowableStressPa: number;
+  readonly youngsModulusPa: number;
+  readonly yieldStrengthPa: number;
+  readonly effectiveLengthFactor: number;
+}
+
+interface MemberResult {
+  readonly role: MemberRole;
+  readonly lengthM: number;
+  readonly bendingMomentNm: number;
+  readonly bendingStressPa: number;
+  readonly bendingUtilization: number;
+  readonly sectionModulusM3: number;
+  readonly criticalBucklingLoadN: number;
+  readonly slendernessRatio: number;
+  readonly bucklingUtilization: number;
+  readonly buckling?: BucklingResult;
+  readonly bending?: BeamBendingResult;
+}
+
+const NO_MEMBER_EFFECTS = {
+  bendingMomentNm: 0,
+  bendingStressPa: 0,
+  bendingUtilization: 0,
+  sectionModulusM3: 0,
+  criticalBucklingLoadN: 0,
+  slendernessRatio: 0,
+  bucklingUtilization: 0,
+};
+
+/**
+ * Structural 0.1 member idealisation.
+ *
+ *  - column: the longest local axis is (within 45 degrees of) vertical and at least three
+ *    times the least lateral dimension. Checked for buckling under its total axial load.
+ *  - beam: the longest local axis is horizontal, at least three times the depth, and the
+ *    member is held up at discrete points by other components (not lying on the ground).
+ *    Checked for bending under its own weight plus the reactions of what rests on it.
+ *  - block: everything else. Direct (axial) stress only, as in Phase 0.
+ */
+function analyseMember(input: MemberInput): MemberResult {
+  const { component } = input;
+  const geometry = component.geometry;
+  const rotation = component.state.physical.rotation;
+  if (input.mode === "free") return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
+
+  const localUp = QuaternionMath.inverseRotateVec3(rotation, UP);
+  const verticalAxis = dominantLocalAxis(localUp);
+  const extents: Record<GeometryAxis, number> = {
+    x: extentAlongAxis(geometry, "x"),
+    y: extentAlongAxis(geometry, "y"),
+    z: extentAlongAxis(geometry, "z"),
+  };
+  const axes: GeometryAxis[] = ["x", "y", "z"];
+  // Longest axis; ties resolve to the vertical axis so a cube reads as upright.
+  let longAxis: GeometryAxis = verticalAxis;
+  for (const axis of axes) if (extents[axis] > extents[longAxis]) longAxis = axis;
+  const lengthM = extents[longAxis];
+  const lateral = axes.filter((axis) => axis !== longAxis).map((axis) => extents[axis]);
+  const leastLateral = Math.min(...lateral);
+  const slender = lengthM >= SLENDER_MEMBER_ASPECT_RATIO * leastLateral;
+
+  if (longAxis === verticalAxis) {
+    if (!slender) return { role: "block", lengthM, ...NO_MEMBER_EFFECTS };
+    const section = sectionProperties(
+      geometry,
+      longAxis,
+      sectionAreaPerpendicularToLocalAxis(geometry, longAxis),
+    );
+    const buckling = columnBuckling({
+      lengthM,
+      effectiveLengthFactor: input.effectiveLengthFactor,
+      section,
+      youngsModulusPa: input.youngsModulusPa,
+      yieldStrengthPa: input.yieldStrengthPa,
+    });
+    return {
+      role: "column",
+      lengthM,
+      ...NO_MEMBER_EFFECTS,
+      criticalBucklingLoadN: buckling.criticalLoadN,
+      slendernessRatio: buckling.slendernessRatio,
+      bucklingUtilization: safeRatio(input.totalLoadN, buckling.criticalLoadN),
+      buckling,
+    };
+  }
+
+  const depth = extents[verticalAxis];
+  const isBeam =
+    !input.rooted && input.supports.length > 0 && lengthM >= SLENDER_MEMBER_ASPECT_RATIO * depth;
+  if (!isBeam) return { role: "block", lengthM, ...NO_MEMBER_EFFECTS };
+
+  const center = currentTransform(component).positionM;
+  const axisWorld = localDirectionToWorld(currentTransform(component), unitAxis(longAxis));
+  const along = (point: Vec3): number => Vec3Math.dot(Vec3Math.subtract(point, center), axisWorld);
+
+  const bending = beamMaxBendingMoment({
+    lengthM,
+    distributedLoadN: input.ownWeightN,
+    pointLoads: input.loadsOn.map(({ edge, loadN }) => ({ atM: along(edge.supportPointM), loadN })),
+    supportsAtM: input.supports.map((edge) => along(edge.supportPointM)),
+  });
+  const sectionModulusM3 = elasticSectionModulusM3(geometry, longAxis, verticalAxis);
+  const bendingStressPa = safeRatio(bending.maxMomentNm, sectionModulusM3);
+  return {
+    role: "beam",
+    lengthM,
+    ...NO_MEMBER_EFFECTS,
+    bendingMomentNm: bending.maxMomentNm,
+    bendingStressPa,
+    bendingUtilization: safeRatio(bendingStressPa, input.allowableStressPa),
+    sectionModulusM3,
+    bending,
+  };
+}
+
+function unitAxis(axis: GeometryAxis): Vec3 {
+  return axis === "x" ? AXIS_X : axis === "y" ? AXIS_Y : AXIS_Z;
 }
 
 function supportModeFor(

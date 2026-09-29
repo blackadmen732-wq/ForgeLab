@@ -28,6 +28,7 @@ import {
   geometryVolumeM3,
 } from "./geometry.js";
 import type { StructuralStatus } from "./failure.js";
+import type { MemberRole } from "./systems/members.js";
 
 /**
  * The live kinematic state of a component.
@@ -81,12 +82,38 @@ export interface SupportState {
 
 export interface StructuralState {
   readonly loadBearingAreaM2: SquareMeters;
+  /** Axial (direct compressive) stress through the load-bearing section. */
   readonly appliedStressPa: Pascals;
   readonly allowableStressPa: Pascals;
+  /**
+   * Governing utilization: the largest of the axial, bending and buckling utilizations.
+   * Each mode is also reported separately below so a player can see which one governs.
+   */
   readonly utilization: Ratio;
   readonly status: StructuralStatus;
   readonly failed: boolean;
+
+  /** How the solver idealised this member (Structural 0.1). */
+  readonly memberRole: MemberRole;
+  /** Which mode produced `utilization`. */
+  readonly governingMode: StructuralMode;
+  /** appliedStressPa / allowableStressPa. */
+  readonly axialUtilization: Ratio;
+  /** Peak bending moment for a beam, N·m. 0 for columns and blocks. */
+  readonly bendingMomentNm: number;
+  /** Peak bending stress M / S at the extreme fibre, Pa. */
+  readonly bendingStressPa: Pascals;
+  readonly bendingUtilization: Ratio;
+  /** Critical buckling load for a column (Euler or Johnson), N. 0 when not a column. */
+  readonly criticalBucklingLoadN: Newtons;
+  /** Effective slenderness K·L/r of a column. 0 when not a column. */
+  readonly slendernessRatio: number;
+  /** Axial load / critical buckling load. */
+  readonly bucklingUtilization: Ratio;
 }
+
+/** The structural failure modes Structural 0.1 checks. */
+export type StructuralMode = "axial" | "bending" | "buckling";
 
 /**
  * Everything a solver has determined about a component this tick.
@@ -181,6 +208,15 @@ export const ZERO_STRUCTURAL_STATE: StructuralState = Object.freeze({
   utilization: 0,
   status: "normal",
   failed: false,
+  memberRole: "block",
+  governingMode: "axial",
+  axialUtilization: 0,
+  bendingMomentNm: 0,
+  bendingStressPa: 0,
+  bendingUtilization: 0,
+  criticalBucklingLoadN: 0,
+  slendernessRatio: 0,
+  bucklingUtilization: 0,
 });
 
 /** The live world-space placement of a component (not its authored transform). */

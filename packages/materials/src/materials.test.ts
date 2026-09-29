@@ -42,6 +42,12 @@ describe("material catalogue", () => {
       // Metals span ~8 (stainless) to ~430 (silver) W/(m*K).
       expect(material.thermalConductivityWmK).toBeGreaterThan(5);
       expect(material.thermalConductivityWmK).toBeLessThan(500);
+      // Young's modulus of engineering metals: magnesium ~45 GPa .. tungsten ~411 GPa.
+      expect(material.youngsModulusPa).toBeGreaterThan(40e9);
+      expect(material.youngsModulusPa).toBeLessThan(450e9);
+      // Specific heat of metals near room temperature: ~120 (heavy) .. ~1000 (light) J/(kg K).
+      expect(material.specificHeatJkgK).toBeGreaterThan(100);
+      expect(material.specificHeatJkgK).toBeLessThan(1100);
       // Metallic resistivity in ohm-metres is on the order of 1e-8 .. 1e-6.
       expect(material.electricalResistivityOhmM).toBeGreaterThan(1e-9);
       expect(material.electricalResistivityOhmM).toBeLessThan(1e-5);

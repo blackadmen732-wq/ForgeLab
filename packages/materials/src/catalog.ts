@@ -1,4 +1,4 @@
-import { celsiusToKelvin, megapascalsToPascals } from "@forgelab/shared";
+import { celsiusToKelvin, gigapascalsToPascals, megapascalsToPascals } from "@forgelab/shared";
 import type { MaterialDefinition, MaterialId } from "./types.js";
 
 /**
@@ -13,8 +13,8 @@ import type { MaterialDefinition, MaterialId } from "./types.js";
  * `maxOperatingTemperatureK` is defined consistently across the catalogue as the
  * *maximum continuous service temperature at which the grade retains its listed
  * room-temperature structural properties*. It is not a melting point and not a
- * creep-rupture limit. Milestone 0 does not simulate temperature at all; the field
- * exists so Phase 2 has somewhere honest to read from.
+ * creep-rupture limit. The V0.1 lumped thermal model compares component temperatures
+ * against it.
  */
 
 const STRUCTURAL_STEEL: MaterialDefinition = {
@@ -23,6 +23,8 @@ const STRUCTURAL_STEEL: MaterialDefinition = {
   grade: "ASTM A36 hot-rolled carbon steel",
   densityKgM3: 7850,
   yieldStrengthPa: megapascalsToPascals(250),
+  youngsModulusPa: gigapascalsToPascals(200),
+  specificHeatJkgK: 486,
   maxOperatingTemperatureK: celsiusToKelvin(400),
   thermalConductivityWmK: 45.0,
   electricalResistivityOhmM: 1.6e-7,
@@ -40,6 +42,8 @@ const STAINLESS_STEEL: MaterialDefinition = {
   grade: "AISI 316L austenitic stainless, annealed",
   densityKgM3: 8000,
   yieldStrengthPa: megapascalsToPascals(170),
+  youngsModulusPa: gigapascalsToPascals(193),
+  specificHeatJkgK: 500,
   maxOperatingTemperatureK: celsiusToKelvin(870),
   thermalConductivityWmK: 16.3,
   electricalResistivityOhmM: 7.4e-7,
@@ -58,6 +62,8 @@ const TUNGSTEN: MaterialDefinition = {
   grade: "Pure sintered tungsten (>= 99.95%), stress-relieved",
   densityKgM3: 19250,
   yieldStrengthPa: megapascalsToPascals(550),
+  youngsModulusPa: gigapascalsToPascals(411),
+  specificHeatJkgK: 132,
   maxOperatingTemperatureK: celsiusToKelvin(1300),
   thermalConductivityWmK: 173,
   electricalResistivityOhmM: 5.6e-8,
@@ -75,6 +81,8 @@ const COPPER: MaterialDefinition = {
   grade: "C11000 electrolytic tough pitch, annealed (O60)",
   densityKgM3: 8960,
   yieldStrengthPa: megapascalsToPascals(69),
+  youngsModulusPa: gigapascalsToPascals(117),
+  specificHeatJkgK: 385,
   maxOperatingTemperatureK: celsiusToKelvin(200),
   thermalConductivityWmK: 401,
   electricalResistivityOhmM: 1.678e-8,
@@ -93,6 +101,8 @@ const ALUMINUM: MaterialDefinition = {
   grade: "6061-T6 aluminium alloy",
   densityKgM3: 2700,
   yieldStrengthPa: megapascalsToPascals(276),
+  youngsModulusPa: gigapascalsToPascals(68.9),
+  specificHeatJkgK: 896,
   maxOperatingTemperatureK: celsiusToKelvin(200),
   thermalConductivityWmK: 167,
   electricalResistivityOhmM: 3.99e-8,

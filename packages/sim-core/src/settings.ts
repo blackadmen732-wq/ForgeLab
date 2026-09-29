@@ -38,6 +38,13 @@ export interface SimulationSettings {
    */
   readonly designSafetyFactor: Ratio;
   readonly failurePropagation: FailurePropagationMode;
+  /**
+   * Effective length factor K for column buckling, P_cr = π²EI/(KL)².
+   * 1.0 is the pinned–pinned idealisation. ForgeLab joints carry no rotational stiffness
+   * information yet, so K is a global engineering assumption rather than per joint.
+   * Typical textbook values: 0.5 fixed–fixed, 0.7 fixed–pinned, 2.0 fixed–free.
+   */
+  readonly bucklingEffectiveLengthFactor: Ratio;
   /** Oldest failures are dropped past this count so a long run cannot grow without bound. */
   readonly maxFailureLogEntries: number;
 }
@@ -50,11 +57,15 @@ export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = Object.freeze({
   groundLevelM: 0,
   designSafetyFactor: 1,
   failurePropagation: "report-only",
+  bucklingEffectiveLengthFactor: 1,
   maxFailureLogEntries: 500,
 });
 
 export function makeSettings(overrides: Partial<SimulationSettings> = {}): SimulationSettings {
-  const merged: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, ...overrides };
+  const defined = Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) => value !== undefined),
+  ) as Partial<SimulationSettings>;
+  const merged: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, ...defined };
   if (!(merged.fixedTimestepSec > 0)) {
     throw new RangeError(
       `fixedTimestepSec must be greater than zero, received ${String(merged.fixedTimestepSec)}`,
@@ -63,6 +74,11 @@ export function makeSettings(overrides: Partial<SimulationSettings> = {}): Simul
   if (!(merged.designSafetyFactor > 0)) {
     throw new RangeError(
       `designSafetyFactor must be greater than zero, received ${String(merged.designSafetyFactor)}`,
+    );
+  }
+  if (!(merged.bucklingEffectiveLengthFactor > 0)) {
+    throw new RangeError(
+      `bucklingEffectiveLengthFactor must be greater than zero, received ${String(merged.bucklingEffectiveLengthFactor)}`,
     );
   }
   if (merged.gravityMps2 < 0) {
