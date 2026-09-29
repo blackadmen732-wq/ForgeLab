@@ -236,24 +236,6 @@ export class ProjectSession {
    * carries whatever the state is by the time it goes out.
    */
   private publish(broadcast = false): Promise<void> {
-    const now = this.now();
-    this.sent = this.sent.filter((t) => now - t < LIMITS.presenceWindowMs);
-    const track = this.sent.length < LIMITS.presenceMaxUpdates;
-    if (track) {
-      if (this.pendingTrack !== null) clearTimeout(this.pendingTrack);
-      this.pendingTrack = null;
-      this.sent.push(now);
-    } else if (this.pendingTrack === null && !this.stopped) {
-      this.pendingTrack = setTimeout(
-        () => {
-          this.pendingTrack = null;
-          void this.publish(false);
-        },
-        LIMITS.presenceWindowMs - (now - this.sent[0]!) + 50,
-      );
-    }
-    if (!track && !broadcast) return this.publishing;
-
     this.publishing = this.publishing.then(async () => {
       const { channel, ticket, keys } = this;
       if (channel === null || ticket === null || keys === null || this.status !== "connected")
@@ -269,12 +251,32 @@ export class ProjectSession {
         keys.privateKey,
       );
       if (broadcast) await channel.broadcast(envelope).catch(() => undefined);
-      if (track) {
-        this.lastPublished = this.now();
-        await channel.track(envelope).catch(() => undefined);
+      // The budget is counted when an update is actually sent, not when it was asked for.
+      const now = this.now();
+      this.sent = this.sent.filter((t) => now - t < LIMITS.presenceWindowMs);
+      if (this.sent.length >= LIMITS.presenceMaxUpdates) {
+        this.holdTrack(now);
+        return;
       }
+      if (this.pendingTrack !== null) clearTimeout(this.pendingTrack);
+      this.pendingTrack = null;
+      this.sent.push(now);
+      this.lastPublished = now;
+      await channel.track(envelope).catch(() => undefined);
     });
     return this.publishing;
+  }
+
+  /** Sends the latest state as presence once the oldest update leaves the window. */
+  private holdTrack(now: number): void {
+    if (this.pendingTrack !== null || this.stopped) return;
+    this.pendingTrack = setTimeout(
+      () => {
+        this.pendingTrack = null;
+        void this.publish(false);
+      },
+      LIMITS.presenceWindowMs - (now - this.sent[0]!) + 50,
+    );
   }
 
   private onStatus(status: ConnectionStatus): void {

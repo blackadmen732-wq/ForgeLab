@@ -61,14 +61,16 @@ async function ticketServer() {
   return { issue, serverKey };
 }
 
-async function eventually(check: () => void, attempts = 500): Promise<void> {
-  for (let i = 0; ; i++) {
+/** Polls until `check` passes or `timeoutMs` of real time has passed (crypto is async). */
+async function eventually(check: () => void, timeoutMs = 5000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
     try {
       check();
       return;
     } catch (error) {
-      if (i >= attempts) throw error;
-      await new Promise((r) => setTimeout(r, 2));
+      if (Date.now() > deadline) throw error;
+      await new Promise((r) => setTimeout(r, 5));
     }
   }
 }
@@ -334,7 +336,8 @@ describe("presence roster", () => {
     }
     // Signing runs on WebCrypto's thread pool, which fake timers do not drive: give the
     // last (held-back) update real time to finish.
-    for (let i = 0; i < 2000 && tracks.at(-1)?.payload.data.mic !== "muted"; i++)
+    const deadline = Date.now() + 5000;
+    while (tracks.at(-1)?.payload.data.mic !== "muted" && Date.now() < deadline)
       await new Promise((r) => setImmediate(r));
     for (const { at } of tracks) {
       const inWindow = tracks.filter((u) => u.at >= at && u.at - at < LIMITS.presenceWindowMs);
@@ -358,7 +361,8 @@ describe("presence roster", () => {
         expect(
           mark.snapshot().roster.find((e) => e.userId === USERS.andre.id)?.voiceChannelId,
         ).toBe(VOICE),
-      1000,
+      // Far below the 30 s a held-back presence update would take.
+      3000,
     );
     // Our own entry always reflects our own state.
     expect(andre.snapshot().roster.find((e) => e.userId === USERS.andre.id)?.voiceChannelId).toBe(
