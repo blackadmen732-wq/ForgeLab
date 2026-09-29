@@ -807,7 +807,7 @@ export function Viewport() {
             suppressMiss.current = false;
             return;
           }
-          if (event.button === 0 && !event.shiftKey) store.clearSelection();
+          if (event.button === 0 && !event.shiftKey) store.dismissPanels();
         }}
         aria-label="3D workspace"
       >

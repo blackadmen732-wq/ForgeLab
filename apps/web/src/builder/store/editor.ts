@@ -57,7 +57,7 @@ export type Projection = "perspective" | "orthographic";
 export type ViewName = "front" | "right" | "top" | "iso";
 
 export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] = [
-  { id: "none", label: "Material", hint: "Parts drawn in their material colours." },
+  { id: "none", label: "Normal", hint: "Machines as they look, in their material colours." },
   {
     id: "stress",
     label: "Stress",
@@ -204,8 +204,9 @@ export class EditorStore {
   #angleSnapDeg = 15;
   #socketSnap = true;
   #connectFrom: ConnectionEndpoint | null = null;
-  #drawerOpen = true;
-  #timelineOpen = true;
+  // The 3D world is the product: panels start closed and open when needed.
+  #drawerOpen = false;
+  #timelineOpen = false;
   #advanced = false;
   #showHelp = false;
   #showPalette = false;
@@ -437,6 +438,9 @@ export class EditorStore {
     this.#hidden = new Set();
     this.#connectFrom = null;
     this.#blueprintId = options.blueprintId ?? null;
+    // An empty hall needs machines, so the parts library opens; a loaded design gets the
+    // whole view.
+    this.#drawerOpen = world.listComponents().length === 0;
     this.#afterDesignChange(true);
     this.requestFrame(null);
   }
@@ -451,6 +455,16 @@ export class EditorStore {
   newBlank(name = "Untitled Design"): void {
     this.replaceWorld(new SimulationWorld({ name }));
   }
+
+  /** A click on empty space: drop the selection and put away the parts library. */
+  dismissPanels = (): void => {
+    const hadConnect = this.#connectFrom !== null;
+    this.clearSelection();
+    if (!hadConnect && this.#drawerOpen && this.#world.listComponents().length > 0) {
+      this.#drawerOpen = false;
+      this.#publish();
+    }
+  };
 
   exportFile(): AssemblyFileV2 {
     return serializeWorld(this.#world, {

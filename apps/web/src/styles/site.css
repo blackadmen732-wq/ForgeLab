@@ -818,3 +818,14 @@
     display: none;
   }
 }
+.menu__label {
+  padding: 6px 10px 2px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.menu__pad {
+  display: inline-block;
+  width: 14px;
+}

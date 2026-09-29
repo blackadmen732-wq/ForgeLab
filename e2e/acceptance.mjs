@@ -87,13 +87,15 @@ await check("guest opens the builder with an empty workspace offer", async () =>
 
 await check("loads the interactive starter", async () => {
   await page.click("text=Interactive starter");
+  // Design figures live in the engineering overlay, hidden until asked for.
+  await page.keyboard.press("t");
   await page.waitForSelector('.insp-row:has-text("Parts") >> text=16');
 });
 
 await check("simulates and the plant fails with an explained cause", async () => {
   await sim();
   await page.waitForSelector('.failure:has-text("lost flow")', { timeout: 30000 });
-  await page.click('.failure button[aria-label="Why?"]');
+  await page.click('.failure:has-text("lost flow") button[aria-label="Why?"]');
   expect(
     (await text(".failure__detail")).includes("switched off"),
     "cause does not name the switched-off pump",

@@ -31,6 +31,11 @@ import { relativeTime } from "../../lib/format.js";
 import { MOD } from "../../lib/platform.js";
 import { useCollab } from "../../collab/context.js";
 import type { CommandContext } from "../commands.js";
+import {
+  ENVIRONMENT_PRESETS,
+  setEnvironmentId,
+  useEnvironment,
+} from "../scene/environment/presets.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 
 function SaveStatus() {
@@ -127,6 +132,7 @@ function TeamButton({ onClick }: { onClick: () => void }) {
 
 function MoreMenu({ context }: { context: CommandContext }) {
   const [open, setOpen] = useState(false);
+  const environment = useEnvironment();
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -171,6 +177,27 @@ function MoreMenu({ context }: { context: CommandContext }) {
           {item(<Download />, "Export .json", context.exportFile, `${MOD} E`)}
           <div className="menu__sep" />
           {item(<Trophy />, "Submit score…", context.submitScore)}
+          <div className="menu__sep" />
+          <div className="menu__label">Environment</div>
+          {ENVIRONMENT_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={environment.id === preset.id}
+              className="menu__item"
+              disabled={!preset.available}
+              title={preset.description}
+              onClick={() => {
+                setOpen(false);
+                setEnvironmentId(preset.id);
+              }}
+            >
+              {environment.id === preset.id ? <Check /> : <span className="menu__pad" />}{" "}
+              {preset.name}
+              {!preset.available && <span className="menu__hint">soon</span>}
+            </button>
+          ))}
           {item(<FolderOpen />, "My projects", () => window.location.assign("/projects"))}
         </div>
       )}

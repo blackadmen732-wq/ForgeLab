@@ -336,7 +336,7 @@ export const COMMANDS: readonly Command[] = [
   },
   {
     id: "timeline",
-    label: "Toggle timeline",
+    label: "Engineering overlay (telemetry, plant figures, failures)",
     group: "View",
     keys: "T",
     match: key("t"),

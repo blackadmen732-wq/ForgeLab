@@ -31,7 +31,7 @@ import { detectWebGL, isTypingTarget } from "../lib/platform.js";
 import { errorMessage, toast } from "../lib/toast.js";
 import { COMMANDS, type CommandContext } from "./commands.js";
 import { Viewport } from "./scene/Viewport.js";
-import { EditorContext, useEditor, useEditorStore } from "./store/context.js";
+import { EditorContext, useEditor, useEditorStore, useSim } from "./store/context.js";
 import { EditorStore } from "./store/editor.js";
 import { type CloudBinding, readLocalDraft } from "./store/persistence.js";
 import { CommandPalette } from "./ui/CommandPalette.js";
@@ -155,26 +155,28 @@ function Workspace({
   const store = useEditorStore();
   const [manage, setManage] = useState(false);
   const showTeam = teamOpen && context.toggleTeam !== undefined;
-  const drawerOpen = useEditor((v) => v.drawerOpen) || showTeam;
+  const drawerOpen = useEditor((v) => v.drawerOpen);
   const mode = useEditor((v) => v.mode);
+  const hasSelection = useEditor((v) => v.selection.length > 0);
   const dialog = useEditor((v) => v.dialog);
   const showHelp = useEditor((v) => v.showHelp);
   const showPalette = useEditor((v) => v.showPalette);
+  const building = mode === "build";
+  const failureCount = useSim((s) => s.failures.length);
+
+  // Telemetry stays hidden until asked for — except when something fails, which is the
+  // moment a player needs it.
+  const seenFailures = useRef(0);
+  useEffect(() => {
+    if (!building && failureCount > 0 && seenFailures.current === 0) store.toggleTimeline(true);
+    seenFailures.current = building ? 0 : failureCount;
+  }, [building, failureCount, store]);
+
   return (
     <div className={`builder builder--${mode}`}>
       <TopBar context={context} />
-      <div className={`builder__main${drawerOpen ? "" : " builder__main--no-drawer"}`}>
-        <ToolRail />
-        {showTeam ? (
-          <TeamPanel
-            onClose={() => context.toggleTeam?.()}
-            onManage={() => setManage(true)}
-            onFocusComponent={(id) => store.focusComponent(id)}
-            componentExists={(id) => store.world.getComponent(id) !== undefined}
-          />
-        ) : (
-          drawerOpen && <ComponentDrawer />
-        )}
+      <div className={`builder__main${building ? "" : " builder__main--full"}`}>
+        {building && <ToolRail />}
         <main id="main" className="builder__stage">
           <ErrorBoundary
             fallback={(error, reset) => (
@@ -196,12 +198,33 @@ function Workspace({
             />
           </div>
           <VoiceBar />
+          {showTeam ? (
+            <div className="panel panel--left">
+              <TeamPanel
+                onClose={() => context.toggleTeam?.()}
+                onManage={() => setManage(true)}
+                onFocusComponent={(id) => store.focusComponent(id)}
+                componentExists={(id) => store.world.getComponent(id) !== undefined}
+              />
+            </div>
+          ) : (
+            drawerOpen &&
+            building && (
+              <div className="panel panel--left">
+                <ComponentDrawer />
+              </div>
+            )
+          )}
+          {hasSelection && (
+            <div className="panel panel--right">
+              <Inspector />
+            </div>
+          )}
           <Hints />
           <StatusStrip />
+          <Timeline />
         </main>
-        <Inspector />
       </div>
-      <Timeline />
       {dialog === "start" && <StartDialog onStart={onStart} />}
       {dialog === "publish" && <PublishDialog />}
       {dialog === "submit" && <SubmitDialog />}

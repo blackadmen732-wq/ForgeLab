@@ -935,7 +935,7 @@ function SettingsPanel() {
   );
 }
 
-function AssemblyPanel() {
+export function AssemblyPanel() {
   const snapshot = useEditor((v) => v.snapshot);
   const mode = useEditor((v) => v.mode);
   const simPlant = useSim((s) => s.plant);

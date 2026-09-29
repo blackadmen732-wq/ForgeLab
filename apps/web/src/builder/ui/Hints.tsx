@@ -42,12 +42,12 @@ export function Hints() {
       hint = {
         id: "starter-1",
         title: "1 · Run the plant",
-        body: "This fusion plant is almost ready. Press SIMULATE (or Tab), then pick 10× in the timeline to watch the first minutes quickly.",
+        body: "This fusion plant is almost ready. Press SIMULATE (or Tab), then pick 10× in the controls at the bottom to watch the first minutes quickly.",
       };
     else if (!pumpOn && simulating && sim.failures === 0)
       hint = {
         id: "starter-2",
-        title: "2 · Watch the timeline",
+        title: "2 · Watch the plant",
         body: "The plasma heats up and burns. Keep an eye on the failure list and the Temperature overlay — something is about to go wrong.",
       };
     else if (!pumpOn && simulating)
@@ -90,7 +90,7 @@ export function Hints() {
     hint = {
       id: "simulate",
       title: "Run it",
-      body: "Press SIMULATE to step the design through time in a background thread. Failures appear in the timeline with their causes.",
+      body: "Press SIMULATE to step the design through time in a background thread. Failures open the engineering overlay (T) with their causes.",
     };
   } else if (simulating && sim.failures > 0) {
     hint = {

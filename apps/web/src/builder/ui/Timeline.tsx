@@ -3,6 +3,7 @@ import { SESSION_SPEEDS, type HistoryPoint, type SessionSpeed } from "@forgelab/
 import {
   ChevronDown,
   ChevronUp,
+  Gauge,
   Pause,
   Play,
   RotateCcw,
@@ -15,6 +16,7 @@ import { ConfidenceBadge } from "../../components/ConfidenceBadge.js";
 import { duration, gain, kelvin, megawatts, si } from "../../lib/format.js";
 import { useEditor, useEditorStore, useSim } from "../store/context.js";
 import { OVERLAYS } from "../store/editor.js";
+import { AssemblyPanel } from "./Inspector.js";
 
 /* ------------------------------------------------------------------------------------ *
  * Sparklines
@@ -221,9 +223,81 @@ export function Timeline() {
 
   return (
     <section
-      className={`timeline${open ? "" : " timeline--collapsed"}`}
-      aria-label="Simulation timeline"
+      className={`timeline${open ? " timeline--open" : ""}`}
+      aria-label="Simulation controls and engineering overlay"
     >
+      {open && (
+        <div className="timeline__body" role="region" aria-label="Engineering overlay">
+          <div className="timeline__design">
+            <AssemblyPanel />
+          </div>
+          <div className="timeline__charts">
+            {simulating ? (
+              <>
+                <Sparkline
+                  history={sim.history}
+                  pick={pickNet}
+                  label="Net electric"
+                  format={(v) => megawatts(v)}
+                  tone="power"
+                  zeroLine
+                />
+                <Sparkline
+                  history={sim.history}
+                  pick={pickFusion}
+                  label="Fusion power"
+                  format={(v) => megawatts(v)}
+                  tone="plasma"
+                />
+                <Sparkline
+                  history={sim.history}
+                  pick={pickPlasmaT}
+                  label="Plasma T"
+                  format={(v) => `${v.toFixed(1)} keV`}
+                  tone="plasma"
+                />
+                <Sparkline
+                  history={sim.history}
+                  pick={pickPeakT}
+                  label="Peak temperature"
+                  format={kelvin}
+                  tone="heat"
+                />
+                <div className="timeline__kpis">
+                  <span>
+                    Gross <strong className="num">{megawatts(m.grossElectricW)}</strong>
+                  </span>
+                  <span>
+                    House load <strong className="num">{megawatts(m.houseLoadW)}</strong>
+                  </span>
+                  <span>
+                    Q <strong className="num">{gain(m.plasmaGainQ)}</strong>
+                  </span>
+                </div>
+              </>
+            ) : (
+              <div className="timeline__idle">
+                <p>
+                  <strong>Build mode.</strong> Loads, stresses and the plant&apos;s start-up state
+                  update as you edit. Run the design to see it through time.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn--primary"
+                  disabled={count === 0}
+                  onClick={() => store.startSimulation()}
+                >
+                  <Zap /> Simulate
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="timeline__failures">
+            <h3>Failures &amp; causes</h3>
+            <FailureList failures={failures} />
+          </div>
+        </div>
+      )}
       <div className="timeline__bar">
         <div className="transport">
           <button
@@ -285,21 +359,21 @@ export function Timeline() {
             </span>
           )}
         </div>
-        <div className="overlays" role="radiogroup" aria-label="Overlay">
-          {OVERLAYS.map((o) => (
-            <button
-              key={o.id}
-              type="button"
-              role="radio"
-              aria-checked={overlay === o.id}
-              className={`chip chip--${o.id}${overlay === o.id ? " is-active" : ""}`}
-              data-tip={o.hint}
-              onClick={() => store.setOverlay(o.id)}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
+        <label className="view-mode">
+          <span className="visually-hidden">View mode</span>
+          <select
+            className={`input input--sm view-mode--${overlay}`}
+            value={overlay}
+            aria-label="View mode"
+            onChange={(e) => store.setOverlay(e.target.value as typeof overlay)}
+          >
+            {OVERLAYS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="timeline__end">
           <span
             className={`kpi-inline num ${m.netElectricW > 0 ? "pos" : m.netElectricW < 0 ? "neg" : ""}`}
@@ -308,90 +382,25 @@ export function Timeline() {
             <Zap aria-hidden="true" /> {megawatts(m.netElectricW)}
           </span>
           <ConfidenceBadge level={plant.confidence.level} />
-          <span className={`badge ${failures.length > 0 ? "badge--fail" : ""}`}>
-            {failures.length} failures
-          </span>
           <button
             type="button"
-            className="btn btn--ghost btn--icon btn--sm"
-            aria-label={open ? "Collapse timeline" : "Expand timeline"}
+            className={`badge badge--button ${failures.length > 0 ? "badge--fail" : ""}`}
+            onClick={() => store.toggleTimeline(true)}
+          >
+            {failures.length} failures
+          </button>
+          <button
+            type="button"
+            className={`btn btn--sm${open ? " is-active" : ""}`}
+            aria-label={open ? "Hide engineering overlay" : "Show engineering overlay"}
             aria-expanded={open}
+            data-tip="Engineering overlay: telemetry, plant figures, failures (T)"
             onClick={() => store.toggleTimeline()}
           >
-            {open ? <ChevronDown /> : <ChevronUp />}
+            {open ? <ChevronDown /> : <Gauge />} Engineering
           </button>
         </div>
       </div>
-      {open && (
-        <div className="timeline__body">
-          <div className="timeline__charts">
-            {simulating ? (
-              <>
-                <Sparkline
-                  history={sim.history}
-                  pick={pickNet}
-                  label="Net electric"
-                  format={(v) => megawatts(v)}
-                  tone="power"
-                  zeroLine
-                />
-                <Sparkline
-                  history={sim.history}
-                  pick={pickFusion}
-                  label="Fusion power"
-                  format={(v) => megawatts(v)}
-                  tone="plasma"
-                />
-                <Sparkline
-                  history={sim.history}
-                  pick={pickPlasmaT}
-                  label="Plasma T"
-                  format={(v) => `${v.toFixed(1)} keV`}
-                  tone="plasma"
-                />
-                <Sparkline
-                  history={sim.history}
-                  pick={pickPeakT}
-                  label="Peak temperature"
-                  format={kelvin}
-                  tone="heat"
-                />
-                <div className="timeline__kpis">
-                  <span>
-                    Gross <strong className="num">{megawatts(m.grossElectricW)}</strong>
-                  </span>
-                  <span>
-                    House load <strong className="num">{megawatts(m.houseLoadW)}</strong>
-                  </span>
-                  <span>
-                    Q <strong className="num">{gain(m.plasmaGainQ)}</strong>
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="timeline__idle">
-                <p>
-                  <strong>Build mode.</strong> Loads, stresses and the plant's start-up state update
-                  as you edit. Press <kbd className="kbd">Tab</kbd> or <strong>SIMULATE</strong> to
-                  run the design through time.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={count === 0}
-                  onClick={() => store.startSimulation()}
-                >
-                  <Zap /> Simulate
-                </button>
-              </div>
-            )}
-          </div>
-          <div className="timeline__failures">
-            <h3>Failures &amp; causes</h3>
-            <FailureList failures={failures} />
-          </div>
-        </div>
-      )}
     </section>
   );
 }
