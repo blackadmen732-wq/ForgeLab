@@ -1,7 +1,7 @@
 import type { FailureEvent } from "@forgelab/sim-core";
 import type { EditorStore } from "../builder/store/editor.js";
 import { ActivationTracker, currentStage, type StageProgress } from "./activation.js";
-import { destructionEvent, type DestructionEvent } from "./destruction.js";
+import { destructionEvent, rootOf, type DestructionEvent } from "./destruction.js";
 import {
   alarmTier,
   facilityState,
@@ -13,6 +13,7 @@ import {
 } from "./facility.js";
 import { readingFromFrame, type PlantReading } from "./reading.js";
 import { RunRecorder } from "./replay.js";
+import { RunAccumulator, type RunReport } from "./runReport.js";
 import {
   createVisualTracker,
   resetVisualTracker,
@@ -40,6 +41,11 @@ export interface PresentationState {
   readonly warnings: readonly WarningReason[];
   /** What each machine appears to be doing (rotors, lamps, sound). */
   readonly visuals: ReadonlyMap<string, ComponentVisual>;
+  /**
+   * The run has finished: a failure has settled (post-failure) or every plasma has ended
+   * or disrupted. The run report opens on this.
+   */
+  readonly runEnded: boolean;
   /** True while failure cinema is showing recorded frames instead of the live run. */
   readonly replaying: boolean;
   /** Increments on every reset or new run; effects clear their state when it changes. */
@@ -71,6 +77,7 @@ const INITIAL: PresentationState = Object.freeze({
   destructions: [],
   warnings: [],
   visuals: new Map(),
+  runEnded: false,
   replaying: false,
   runEpoch: 0,
 });
@@ -82,6 +89,7 @@ export class PresentationDirector {
   #listeners = new Set<() => void>();
   #eventListeners = new Set<(event: PresentationEvent) => void>();
   #tracker = new ActivationTracker();
+  #run = new RunAccumulator();
   #visualTracker = createVisualTracker();
   #failures: RaisedFailure[] = [];
   #lastFrame: unknown = null;
@@ -131,6 +139,7 @@ export class PresentationDirector {
 
   #resetRun(): void {
     this.#tracker.reset();
+    this.#run.reset();
     resetVisualTracker(this.#visualTracker);
     this.#failures = [];
     this.#previous = null;
@@ -144,11 +153,17 @@ export class PresentationDirector {
       reading: null,
       warnings: [],
       visuals: new Map(),
+      runEnded: false,
       replaying: false,
       runEpoch: epoch,
     });
     this.#replaying = false;
     this.#emit({ type: "reset", epoch });
+  }
+
+  /** The report for the run so far (live run; replay does not change it). */
+  runReport(): RunReport {
+    return this.#run.report(this.#state.destructions, rootOf(this.#state.destructions));
   }
 
   /* Failure cinema ------------------------------------------------------------------ */
@@ -249,6 +264,7 @@ export class PresentationDirector {
     for (const c of reading.components)
       visuals.set(c.id, visualFor(c, reading, this.#visualTracker, failing));
     this.#previous = reading;
+    this.#run.add(reading);
     const recorded: RecordedPresentation = {
       reading,
       stages,
@@ -259,8 +275,15 @@ export class PresentationDirector {
       visuals,
     };
     this.recorder.record(frame, fresh, recorded);
+    const plasmaVessels = Object.values(reading.vessels).filter(
+      (v) => v.plasma.configuration !== "none",
+    );
+    const plasmaOver =
+      plasmaVessels.length > 0 &&
+      plasmaVessels.every((v) => v.plasma.phase === "ended" || v.plasma.phase === "disrupted");
     this.#set({
       ...recorded,
+      runEnded: this.#state.runEnded || facility === "POST_FAILURE" || plasmaOver,
       ...(fresh.length > 0 ? { destructions: [...this.#state.destructions, ...fresh] } : {}),
     });
     this.#emit({ type: "reading", reading });

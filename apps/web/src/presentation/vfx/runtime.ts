@@ -12,6 +12,9 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Camera,
+  type Object3D,
+  type Scene,
+  type WebGLRenderer,
   RingGeometry,
   SphereGeometry,
   Vector3,
@@ -526,6 +529,30 @@ export class VfxRuntime {
     state.gl.toneMappingExposure = this.cam.exposure;
     if (this.cam.busy) busy = true;
     if (busy) state.invalidate();
+  }
+
+  /**
+   * Compile every effect material up front, so the first failure does not stall on shader
+   * compilation at its most dramatic moment. Objects are made visible just for this.
+   */
+  prewarm(gl: WebGLRenderer, camera: Camera, scene: Scene): void {
+    const hidden: Object3D[] = [];
+    this.root.traverse((o) => {
+      if (!o.visible) {
+        hidden.push(o);
+        o.visible = true;
+      }
+    });
+    const counts = [this.debris.rigidMesh, this.debris.simpleMesh].map((m) => m.count);
+    this.debris.rigidMesh.count = 1;
+    this.debris.simpleMesh.count = 1;
+    try {
+      gl.compile(this.root, camera, scene);
+    } finally {
+      for (const o of hidden) o.visible = false;
+      this.debris.rigidMesh.count = counts[0]!;
+      this.debris.simpleMesh.count = counts[1]!;
+    }
   }
 
   /** Particle and debris counts for the developer panel. */

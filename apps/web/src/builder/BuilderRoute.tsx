@@ -52,6 +52,7 @@ import { HelpOverlay } from "./ui/HelpOverlay.js";
 import { Hints } from "./ui/Hints.js";
 import { ActivationHud } from "./ui/ActivationHud.js";
 import { FailureCinemaPanel } from "./ui/FailureCinema.js";
+import { RunReportPanel } from "./ui/RunReport.js";
 import { EffectsDebugPanel } from "./ui/EffectsDebugPanel.js";
 import { Inspector } from "./ui/Inspector.js";
 import { PublishDialog } from "./ui/PublishDialog.js";
@@ -252,6 +253,7 @@ function Workspace({
           )}
           <ActivationHud />
           <FailureCinemaPanel />
+          <RunReportPanel />
           {debugPanel && <EffectsDebugPanel />}
           <Hints />
           <StatusStrip />

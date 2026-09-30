@@ -20,6 +20,8 @@ export function VfxLayer() {
   const budget = tierBudget(useSettings());
   const runtime = useMemo(() => new VfxRuntime(budget), [budget]);
   useLayoutEffect(() => () => runtime.dispose(), [runtime]);
+  const scene = useThree((s) => s.scene);
+  useEffect(() => runtime.prewarm(gl, camera, scene), [runtime, gl, camera, scene]);
   const fov = (camera as PerspectiveCamera).fov ?? 45;
   useLayoutEffect(() => {
     const scale = size.height / (2 * Math.tan((fov * Math.PI) / 360));

@@ -1,5 +1,5 @@
 import type { SessionFrame } from "@forgelab/sim-runner";
-import type { DestructionEvent } from "./destruction.js";
+import { rootOf, type DestructionEvent } from "./destruction.js";
 import type { RecordedPresentation } from "./director.js";
 
 /**
@@ -83,12 +83,6 @@ export class RunRecorder {
 
   /** The root failure of the run: the earliest destruction that has no recorded cause. */
   rootDestruction(): DestructionEvent | null {
-    const all = this.destructions();
-    const ids = new Set(all.map((d) => d.eventId));
-    return (
-      all.find((d) => d.causalFailureId === undefined || !ids.has(d.causalFailureId)) ??
-      all[0] ??
-      null
-    );
+    return rootOf(this.destructions());
   }
 }

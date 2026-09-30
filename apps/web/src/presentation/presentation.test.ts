@@ -3,7 +3,8 @@ import { SimulationWorld, failureKey, serializeWorld } from "@forgelab/sim-core"
 import { buildReferencePlant, buildScenario } from "@forgelab/reactor-components";
 import { SimulationSession, type SessionFrame } from "@forgelab/sim-runner";
 import { ActivationTracker, currentStage, type StageProgress } from "./activation.js";
-import { destructionEvent, type DestructionEvent } from "./destruction.js";
+import { destructionEvent, rootOf, type DestructionEvent } from "./destruction.js";
+import { NO_BESTS, RunAccumulator, mergeBests } from "./runReport.js";
 import { alarmTier, facilityState, type RaisedFailure } from "./facility.js";
 import { readingFromFrame, type PlantReading } from "./reading.js";
 import { RunRecorder } from "./replay.js";
@@ -189,4 +190,65 @@ describe("effect sites", () => {
       expect(boil.siteComponentId).not.toBe("pump");
     },
   );
+});
+
+describe("run report", () => {
+  const report = (
+    world: SimulationWorld,
+    seconds: number,
+    until?: (d: DestructionEvent[]) => boolean,
+  ) => {
+    const acc = new RunAccumulator();
+    const session = new SimulationSession(() => 0);
+    session.handle({ type: "load", runId: 1, file: serializeWorld(world) });
+    const components = world.getSnapshot().components;
+    const destructions: DestructionEvent[] = [];
+    let previous: PlantReading | null = null;
+    for (let s = 0; s < seconds * 2; s += 1) {
+      const frame = session.handle({ type: "step", count: 30 })[0] as SessionFrame;
+      const reading = readingFromFrame(frame, components);
+      destructions.push(...frame.newFailures.map((f) => destructionEvent(f, reading, previous)));
+      acc.add(reading);
+      previous = reading;
+      if (until?.(destructions)) break;
+    }
+    return acc.report(destructions, rootOf(destructions));
+  };
+
+  it("summarises a clean burn from published figures", { timeout: 60000 }, () => {
+    const r = report(plant(), 40);
+    expect(r.clean).toBe(true);
+    expect(r.runtimeSec).toBeCloseTo(39.5, 0);
+    expect(r.burnSec).toBeGreaterThan(5);
+    expect(r.plasmaSec).toBeGreaterThanOrEqual(r.burnSec);
+    expect(r.peakFusionW).toBeGreaterThan(1e8);
+    expect(r.peakGainQ).toBeGreaterThan(1);
+    expect(r.meanNetElectricBurnW).not.toBeNull();
+    expect(r.rootFailure).toBeNull();
+    expect(r.thermalMargin!.fraction).toBeLessThan(1);
+  });
+
+  it("names the root failure of a failed run", { timeout: 120000 }, () => {
+    const r = report(buildScenario("magnet-quench"), 120, (d) =>
+      d.some((e) => e.family === "disruption"),
+    );
+    expect(r.clean).toBe(false);
+    expect(r.rootFailure?.componentId).toBe("tf-coils");
+  });
+
+  it("records a best only when a figure improves", () => {
+    const base = { ...NO_BESTS };
+    const run = {
+      peakFusionW: 5e8,
+      peakGainQ: 3,
+      burnSec: 20,
+      meanNetElectricBurnW: -1e8,
+    } as Parameters<typeof mergeBests>[1];
+    const first = mergeBests(base, run);
+    expect(first.improved).toEqual(["peakFusionW", "peakGainQ", "longestBurnSec", "bestMeanNetW"]);
+    const again = mergeBests(first.bests, run);
+    expect(again.improved).toEqual([]);
+    const better = mergeBests(first.bests, { ...run, peakGainQ: 4 });
+    expect(better.improved).toEqual(["peakGainQ"]);
+  });
 });

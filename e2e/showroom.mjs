@@ -157,7 +157,8 @@ for (const scenario of SCENARIOS) {
       );
       await page.evaluate(() => window.__forgelab.store.setSpeed(0));
       let stats = {};
-      for (let i = 0; i < 20; i += 1) {
+      // Software GL renders about one frame a second; give the effect time to appear.
+      for (let i = 0; i < 50; i += 1) {
         stats = await vfx();
         if ((stats[scenario.effect] ?? 0) > 0) break;
         await page.waitForTimeout(300);
@@ -193,6 +194,23 @@ for (const scenario of SCENARIOS) {
         expect((await state()).replaying, "presentation is not showing the replay");
         await page.click("button[aria-label='Exit replay']");
         expect(!(await state()).replaying, "still replaying after exit");
+
+        // The run report names the root failure; Fix it goes back to Build with it selected.
+        if ((await page.locator(".report").count()) === 0) await page.click(".report-toggle");
+        await page.waitForSelector(".report", { timeout: 10000 });
+        const text = await page.locator(".report").innerText();
+        expect(/Root failure/.test(text) && text.includes("tf-coils"), `report: ${text}`);
+        expect(/measured .* limit/.test(text), "no measured-vs-limit line in the report");
+        await page.click(".report button:has-text('Fix it')");
+        await page.waitForTimeout(500);
+        const after = await page.evaluate(() => {
+          const v = window.__forgelab.store.getView();
+          return { mode: v.mode, selection: v.selection };
+        });
+        expect(
+          after.mode === "build" && after.selection.join() === "tf-coils",
+          `after Fix it: ${JSON.stringify(after)}`,
+        );
       }
 
       // RETURN TO BUILD restores the design exactly as it was before activation.

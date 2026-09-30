@@ -248,3 +248,13 @@ export function destructionEvent(
     combustible: part !== undefined && COMBUSTIBLE_ROLES.has(part.role),
   };
 }
+
+/** The root failure among raised ones: the earliest whose cause is not itself listed. */
+export function rootOf(all: readonly DestructionEvent[]): DestructionEvent | null {
+  const ids = new Set(all.map((d) => d.eventId));
+  return (
+    all.find((d) => d.causalFailureId === undefined || !ids.has(d.causalFailureId)) ??
+    all[0] ??
+    null
+  );
+}
