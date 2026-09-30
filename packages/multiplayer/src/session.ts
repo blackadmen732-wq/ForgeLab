@@ -128,7 +128,10 @@ export class ProjectSession {
     const topic = projectTopic(this.options.projectId);
     this.channel = this.options.transport.open(topic, {
       presence: (payloads) => void this.onPresence(payloads),
-      broadcast: (payload) => void this.onBroadcast(payload),
+      // Verification is asynchronous; chaining keeps messages in the order they arrived.
+      broadcast: (payload) => {
+        this.inbox = this.inbox.then(() => this.onBroadcast(payload)).catch(() => undefined);
+      },
       status: (status) => this.onStatus(status),
     });
     this.timer = setInterval(() => void this.tick(), LIMITS.presenceHeartbeatMs);
@@ -290,6 +293,8 @@ export class ProjectSession {
   private async onPresence(payloads: readonly unknown[]): Promise<void> {
     if (this.roster !== null && (await this.roster.sync(payloads))) this.emit();
   }
+
+  private inbox: Promise<void> = Promise.resolve();
 
   private async onBroadcast(payload: unknown): Promise<void> {
     if (this.serverKey === null || this.roster === null) return;

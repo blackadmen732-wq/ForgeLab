@@ -184,7 +184,9 @@ const livekitOrigin = livekitUrl === "" ? "" : new URL(livekitUrl).origin;
 const livekitHttp = livekitOrigin.replace(/^ws/, "http");
 const csp = [
   "default-src 'self'",
-  "script-src 'self'",
+  // 'wasm-unsafe-eval' lets the debris physics (Rapier, WebAssembly) compile; it does not
+  // allow JavaScript eval.
+  "script-src 'self' 'wasm-unsafe-eval'",
   "worker-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
   `img-src 'self' data: blob: ${supabaseOrigin} https://*.supabase.co`.trim(),

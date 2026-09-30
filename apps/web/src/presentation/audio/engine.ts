@@ -552,6 +552,48 @@ export class AudioEngine {
     g.setTargetAtTime(1, t + 0.3, seconds / 3);
   }
 
+  /* Debris impacts: short metallic clanks, rate-limited. ---------------------------- */
+
+  #lastImpact = 0;
+
+  /** A debris fragment hit something with `force` newtons (from the debris physics). */
+  impact(position: Vec3, force: number): void {
+    const ctx = this.#ctx;
+    const b = this.#buses;
+    const noise = this.#noise;
+    if (ctx === null || b === null || noise === null) return;
+    const now = ctx.currentTime;
+    if (now - this.#lastImpact < 0.06) return;
+    this.#lastImpact = now;
+    const loud = Math.min(1, Math.log10(Math.max(force, 1e3)) / 7);
+    const panner = new PannerNode(ctx, {
+      panningModel: "equalpower",
+      distanceModel: "inverse",
+      refDistance: 6,
+      positionX: position[0],
+      positionY: position[1],
+      positionZ: position[2],
+    });
+    const out = gain(ctx, 0.25 * loud);
+    out.connect(panner).connect(b.failures);
+    const n = ctx.createBufferSource();
+    n.buffer = noise.white;
+    const g = gain(ctx, 0);
+    n.connect(filter(ctx, "bandpass", 900 + Math.random() * 2500, 3))
+      .connect(g)
+      .connect(out);
+    envelope(g.gain, now, 0.8, 0.001, 0.12);
+    n.start(now);
+    n.stop(now + 0.2);
+    const o = osc(ctx, "sine", 700 + Math.random() * 1600);
+    const og = gain(ctx, 0);
+    o.connect(og).connect(out);
+    envelope(og.gain, now, 0.25, 0.001, 0.35);
+    o.start(now);
+    o.stop(now + 0.4);
+    setTimeout(() => out.disconnect(), 800);
+  }
+
   /* Failure one-shots, placed where the failure happened. --------------------------- */
 
   #failure(family: FailureFamily, position: Vec3, severity: number): void {

@@ -50,6 +50,8 @@ import {
 } from "../../presentation/settings.js";
 import { useCinematic } from "../../presentation/view.js";
 import { AudioBridge } from "../../presentation/audio/AudioBridge.js";
+import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
+import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
@@ -881,6 +883,7 @@ export function Viewport() {
         <AppearanceDriver />
         <ComponentAnimator />
         <AudioBridge />
+        <VfxLayer />
         <ViewportBridge store={store} controlsRef={controlsRef} />
         <InvalidateOnStore />
         {!cinematic && (
@@ -900,6 +903,7 @@ export function Viewport() {
           }}
         />
       )}
+      <ScreenCracks />
       {cutaway && <div className="viewport__badge">Cutaway: near half hidden</div>}
       {empty && (
         <div className="viewport__empty">

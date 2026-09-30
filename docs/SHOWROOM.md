@@ -176,6 +176,14 @@ Three tiers, all pooled:
   floor bounce.
 - **C** — GPU instanced particles for dust and grit.
 
+Rapier is WebAssembly; the site's Content-Security-Policy allows `'wasm-unsafe-eval'`
+(WebAssembly compilation only — JavaScript `eval` stays blocked). Fragments are faceted
+chunks sized from the failed part and coloured by its material; a part breaks up once per
+run however many failures it raises.
+
+Hot parts glow in the Normal view: above the Draper point (≈ 798 K) the published
+temperature drives a blackbody-like emissive ramp from dull red to yellow-white.
+
 A camera protection collider (a thin sensor box in front of the camera) reports Tier A
 contacts. A screen crack appears only when a Tier A fragment actually hits it above an
 impulse threshold; the crack originates at the projected impact point and is cleared on

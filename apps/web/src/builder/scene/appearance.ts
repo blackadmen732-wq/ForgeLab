@@ -112,6 +112,26 @@ function ramp(stops: readonly Color[], t: number, out: Color): Color {
 const STRESS_STOPS = [PALETTE.neutral, PALETTE.ok, PALETTE.stress, PALETTE.fail];
 const HEAT_STOPS = [PALETTE.neutral, PALETTE.warm, PALETTE.hot, PALETTE.fail];
 
+/**
+ * Hot metal glows. Above the Draper point (~798 K) a surface visibly emits: dull red,
+ * then orange, then yellow-white. Colour from an approximate blackbody ramp; brightness
+ * grows steeply with temperature. Drawn only from the temperature the engine published.
+ */
+const GLOW_STOPS = [
+  new Color("#4a0800"),
+  new Color("#b3240a"),
+  new Color("#ff6a1a"),
+  new Color("#ffb45c"),
+  new Color("#fff0d8"),
+];
+
+export function incandescence(temperatureK: number, out: Color): number {
+  if (!(temperatureK > 798)) return 0;
+  const t = Math.min(1, (temperatureK - 798) / 1700);
+  ramp(GLOW_STOPS, t, out);
+  return 0.25 + 1.6 * t * t;
+}
+
 export interface Appearance {
   readonly color: Color;
   readonly emissive: Color;
@@ -134,6 +154,7 @@ export function appearanceFor(
   switch (overlay) {
     case "none":
       out.color.copy(base);
+      emissive = incandescence(r.temperatureK, out.emissive);
       break;
     case "stress":
       // 0 → neutral, 0.5 → green, 0.8 → amber, ≥1 → red.
