@@ -30,3 +30,4 @@ export {
 } from "./designs.js";
 
 export { PLANT_BUS_V, V01_PORTS, V01_PRODUCTS } from "./products.js";
+export { SHOWROOM_SCENARIOS, buildScenario, type ShowroomScenario } from "./scenarios.js";

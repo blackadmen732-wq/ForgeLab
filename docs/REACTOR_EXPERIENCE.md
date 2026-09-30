@@ -50,3 +50,9 @@
    the initiating component, measured vs. limit, consequence chain, return to Build with
    it selected; run report with margins and personal best.
 10. **Verify** — a browser test of the full loop; docs.
+
+## Showroom milestone
+
+The presentation layer (hall, facility lighting, activation stages, audio, effects, failure
+cinema) is specified in [SHOWROOM.md](SHOWROOM.md). Steps 4–6 above continue after it; the
+showroom consumes today's simulation output and adds nothing to `sim-core`.

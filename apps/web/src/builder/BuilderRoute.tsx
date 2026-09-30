@@ -31,6 +31,8 @@ import { detectWebGL, isTypingTarget } from "../lib/platform.js";
 import { errorMessage, toast } from "../lib/toast.js";
 import { COMMANDS, type CommandContext } from "./commands.js";
 import { Viewport } from "./scene/Viewport.js";
+import { PresentationContext } from "../presentation/context.js";
+import { PresentationDirector } from "../presentation/director.js";
 import { EditorContext, useEditor, useEditorStore, useSim } from "./store/context.js";
 import { EditorStore } from "./store/editor.js";
 import { type CloudBinding, readLocalDraft } from "./store/persistence.js";
@@ -247,6 +249,16 @@ export function BuilderRoute() {
   const navigate = useNavigate();
   const auth = useAuth();
   const [store] = useState(() => new EditorStore());
+  // Presentation (lighting, sound, effects) observes the store; it never writes to it.
+  const [director] = useState(() => new PresentationDirector(store));
+  useEffect(() => {
+    director.start();
+    // Browser tests read presentation state through this handle (`/app?debug`). It exposes
+    // nothing a player cannot already do in their own tab.
+    const debug = new URLSearchParams(window.location.search).has("debug");
+    if (debug) (window as unknown as { __forgelab?: unknown }).__forgelab = { store, director };
+    return () => director.stop();
+  }, [director, store]);
   const [webgl] = useState(() => detectWebGL());
   const [narrowOk, setNarrowOk] = useState(() => window.innerWidth >= 820);
   const [busy, setBusy] = useState<string | null>(null);
@@ -819,19 +831,21 @@ export function BuilderRoute() {
 
   return (
     <EditorContext.Provider value={store}>
-      <CollabContext.Provider value={collab}>
-        <Workspace
-          context={context}
-          teamOpen={teamOpen}
-          onLoadLatest={(versionId) => void loadLatest(versionId)}
-          onStart={(kind) => {
-            store.cloud.bind(null);
-            if (projectId !== undefined) void navigate("/app", { replace: true });
-            if (kind !== "blank") store.requestFrame(null);
-          }}
-          onCreateVersion={createVersion}
-        />
-      </CollabContext.Provider>
+      <PresentationContext.Provider value={director}>
+        <CollabContext.Provider value={collab}>
+          <Workspace
+            context={context}
+            teamOpen={teamOpen}
+            onLoadLatest={(versionId) => void loadLatest(versionId)}
+            onStart={(kind) => {
+              store.cloud.bind(null);
+              if (projectId !== undefined) void navigate("/app", { replace: true });
+              if (kind !== "blank") store.requestFrame(null);
+            }}
+            onCreateVersion={createVersion}
+          />
+        </CollabContext.Provider>
+      </PresentationContext.Provider>
       <input
         ref={fileInput}
         type="file"

@@ -37,17 +37,17 @@ export interface EnvironmentPreset {
 export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
   {
     id: "industrial-hall",
-    name: "Industrial Hall",
+    name: "Main Reactor Hall",
     description:
-      "A 140 × 90 m reactor assembly hall with crane, service gallery and high-bay lighting.",
+      "A 140 × 90 m reactor hall: control room, observation galleries, equipment door, bridge crane.",
     available: true,
     background: "#1b2027",
     fog: { color: "#1b2027", near: 110, far: 460 },
     light: {
       sky: "#e6edf5",
       ground: "#3a3f45",
-      hemisphere: 0.32,
-      key: 3.2,
+      hemisphere: 0.5,
+      key: 3.0,
       keyColor: "#fff4e3",
       fill: 0.35,
       fixtures: 1.4,

@@ -1,4 +1,5 @@
 import { MOD } from "../lib/platform.js";
+import { HALL_CAMERAS, HALL_CAMERA_ORDER } from "./scene/environment/hall/cameras.js";
 import type { EditorStore, EditorView } from "./store/editor.js";
 
 /**
@@ -285,6 +286,14 @@ export const COMMANDS: readonly Command[] = [
     match: key("0"),
     run: (c) => c.store.requestView("iso"),
   },
+  ...HALL_CAMERA_ORDER.map((name, i): Command => ({
+    id: `hall-camera-${name}`,
+    label: `Hall camera: ${HALL_CAMERAS[name].label}`,
+    group: "View",
+    keys: `Shift ${i + 1}`,
+    match: (e) => plain(e) && e.shiftKey && e.code === `Digit${i + 1}`,
+    run: (c) => c.store.requestPose(HALL_CAMERAS[name].position, HALL_CAMERAS[name].target),
+  })),
   {
     id: "projection",
     label: "Perspective / orthographic",

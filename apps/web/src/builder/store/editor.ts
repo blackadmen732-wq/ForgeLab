@@ -89,7 +89,13 @@ export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] =
 
 export type CameraRequest =
   | { readonly kind: "frame"; readonly ids: readonly string[] | null; readonly nonce: number }
-  | { readonly kind: "view"; readonly view: ViewName; readonly nonce: number };
+  | { readonly kind: "view"; readonly view: ViewName; readonly nonce: number }
+  | {
+      readonly kind: "pose";
+      readonly position: readonly [number, number, number];
+      readonly target: readonly [number, number, number];
+      readonly nonce: number;
+    };
 
 /** The live scene exposes these so the store can place parts and take thumbnails. */
 export interface ViewportApi {
@@ -677,6 +683,16 @@ export class EditorStore {
   requestView = (view: ViewName): void => {
     this.#cameraNonce += 1;
     this.#cameraRequest = { kind: "view", view, nonce: this.#cameraNonce };
+    for (const listener of this.#cameraListeners) listener();
+  };
+
+  /** Moves the camera to a fixed position (hall camera presets). */
+  requestPose = (
+    position: readonly [number, number, number],
+    target: readonly [number, number, number],
+  ): void => {
+    this.#cameraNonce += 1;
+    this.#cameraRequest = { kind: "pose", position, target, nonce: this.#cameraNonce };
     for (const listener of this.#cameraListeners) listener();
   };
 

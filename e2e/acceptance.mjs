@@ -162,7 +162,8 @@ await check("reload restores the design from the cloud", async () => {
 await check("publishes with a thumbnail", async () => {
   await page.click('button:has-text("Publish")');
   await page.waitForSelector('[role="dialog"]:has-text("Publish design")');
-  await page.waitForSelector(".publish__thumb img", { timeout: 10000 });
+  // Software GL in CI compiles the hall's pipelines on first use; allow for it.
+  await page.waitForSelector(".publish__thumb img", { timeout: 30000 });
   await page.fill(".publish textarea", "The starter plant, pump fixed.");
   await page.click('[role="dialog"] button:has-text("Publish")');
   await page.waitForSelector('[role="dialog"]:has-text("Update public page")', { timeout: 20000 });

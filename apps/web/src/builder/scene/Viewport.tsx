@@ -42,6 +42,7 @@ import {
   type SimulationComponent,
 } from "@forgelab/sim-core";
 import { prefersReducedMotion } from "../../lib/platform.js";
+import { applyAutomaticQuality, tierBudget, useSettings } from "../../presentation/settings.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
 import {
@@ -55,6 +56,7 @@ import {
 } from "./appearance.js";
 import { hover } from "./hover.js";
 import { Environment } from "./environment/Environment.js";
+import { DEFAULT_CAMERA } from "./environment/hall/cameras.js";
 import { ComponentMesh, isDragging, meshRegistry, setDragging } from "./meshes.js";
 
 type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
@@ -481,8 +483,8 @@ interface CameraMemory {
   target: Vector3;
 }
 const cameraMemory: CameraMemory = {
-  position: new Vector3(38, 26, 38),
-  target: new Vector3(0, 2, 0),
+  position: new Vector3(...DEFAULT_CAMERA.position),
+  target: new Vector3(...DEFAULT_CAMERA.target),
 };
 
 const VIEW_DIRECTIONS: Record<ViewName, Vector3> = {
@@ -531,6 +533,20 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       if (request === null || controls === null) return;
       const view = store.getView();
       const target = controls.target.clone();
+      if (request.kind === "pose") {
+        anim.current = {
+          fromPos: camera.position.clone(),
+          toPos: new Vector3(...request.position),
+          fromTarget: target,
+          toTarget: new Vector3(...request.target),
+          fromZoom: camera.zoom,
+          toZoom: camera.zoom,
+          t0: performance.now(),
+          ms: prefersReducedMotion() ? 0 : 700,
+        };
+        invalidate();
+        return;
+      }
       let direction = camera.position.clone().sub(target).normalize();
       let bounds: { centre: Vector3; radius: number } | null;
       if (request.kind === "frame") {
@@ -669,11 +685,22 @@ function ViewportBridge({
         });
       },
       capture() {
-        const { gl, scene, camera } = get();
+        // Thumbnails are at most 900 px wide: render once at that resolution, snapshot the
+        // canvas, then restore the viewer's pixel ratio.
+        const { gl, scene, camera, size, invalidate } = get();
+        const ratio = gl.getPixelRatio();
+        gl.setPixelRatio(Math.min(ratio, 900 / Math.max(1, size.width)));
         gl.render(scene, camera);
-        return new Promise((resolve) => gl.domElement.toBlob(resolve, "image/png"));
+        return new Promise((resolve) => {
+          gl.domElement.toBlob(resolve, "image/png");
+          gl.setPixelRatio(ratio);
+          invalidate();
+        });
       },
     });
+    // Browser tests (`/app?debug`) profile and inspect the scene through this.
+    const debug = (window as unknown as { __forgelab?: Record<string, unknown> }).__forgelab;
+    if (debug !== undefined) debug["three"] = get;
     return () => store.setViewport(null);
   }, [store, get, controlsRef]);
   return null;
@@ -682,14 +709,25 @@ function ViewportBridge({
 function InvalidateOnStore() {
   const store = useEditorStore();
   const invalidate = useThree((s) => s.invalidate);
+  const get = useThree((s) => s.get);
   useEffect(() => {
-    const a = store.subscribe(() => invalidate());
-    const b = store.subscribeSim(() => invalidate());
+    // Shadows are redrawn only when something that casts them can have moved: an edit or a
+    // simulation frame. Lighting animation alone reuses the last shadow map.
+    const shadows = get().gl.shadowMap;
+    shadows.autoUpdate = false;
+    shadows.needsUpdate = true;
+    const refresh = () => {
+      shadows.needsUpdate = true;
+      invalidate();
+    };
+    const a = store.subscribe(refresh);
+    const b = store.subscribeSim(refresh);
     return () => {
       a();
       b();
+      shadows.autoUpdate = true;
     };
-  }, [store, invalidate]);
+  }, [store, invalidate, get]);
   return null;
 }
 
@@ -716,6 +754,7 @@ export function Viewport() {
   const boxRef = useRef<BoxState | null>(null);
   const suppressMiss = useRef(false);
   const [contextLost, setContextLost] = useState(false);
+  const pixelRatio = tierBudget(useSettings()).pixelRatio;
 
   const finishBox = (state: BoxState) => {
     const left = Math.min(state.x0, state.x1);
@@ -791,11 +830,16 @@ export function Viewport() {
     >
       <Canvas
         frameloop="demand"
-        dpr={[1, 2]}
+        dpr={[1, pixelRatio]}
         shadows="percentage"
         gl={{ antialias: true, powerPreference: "high-performance" }}
         onCreated={({ gl }) => {
           gl.localClippingEnabled = true;
+          const context = gl.getContext();
+          const info = context.getExtension("WEBGL_debug_renderer_info");
+          applyAutomaticQuality(
+            info === null ? "" : String(context.getParameter(info.UNMASKED_RENDERER_WEBGL)),
+          );
           gl.domElement.addEventListener("webglcontextlost", (e) => {
             e.preventDefault();
             setContextLost(true);

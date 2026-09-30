@@ -1,18 +1,32 @@
 import { Grid } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
 import { useLayoutEffect, useMemo, useRef } from "react";
-import { type DirectionalLight, PMREMGenerator } from "three";
+import { type DirectionalLight, type HemisphereLight, PMREMGenerator } from "three";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { HALL, IndustrialHall } from "./IndustrialHall.js";
+import { tierBudget, useSettings } from "../../../presentation/settings.js";
+import { EngineeringGrid } from "./hall/EngineeringGrid.js";
+import { HALL } from "./hall/geometry.js";
+import { HALL_LIGHT_NAMES, MainReactorHall } from "./hall/MainReactorHall.js";
 import { useEnvironment } from "./presets.js";
 
 /**
- * The space around the plant: background, fog, lighting and surroundings for the chosen
- * preset. Presentation only — see presets.ts.
+ * The space around the plant: background, haze, lighting and surroundings for the chosen
+ * preset. Presentation only — see presets.ts. Quality settings change shadow resolution
+ * and haze here; they never reach the simulation.
  */
-export function Environment({ showGrid }: { showGrid: boolean }) {
+export function Environment({
+  showGrid,
+  dimGrid = false,
+}: {
+  showGrid: boolean;
+  dimGrid?: boolean;
+}) {
   const preset = useEnvironment();
+  const settings = useSettings();
+  const budget = tierBudget(settings);
   const key = useRef<DirectionalLight>(null);
+  const fill = useRef<DirectionalLight>(null);
+  const hemisphere = useRef<HemisphereLight>(null);
   const hall = preset.scene === "hall";
   const gl = useThree((state) => state.gl);
   const get = useThree((state) => state.get);
@@ -35,7 +49,11 @@ export function Environment({ showGrid }: { showGrid: boolean }) {
     const light = key.current;
     if (light === null) return;
     const s = light.shadow;
-    s.mapSize.set(2048, 2048);
+    if (s.mapSize.x !== budget.shadowMapSize) {
+      s.mapSize.set(budget.shadowMapSize, budget.shadowMapSize);
+      s.map?.dispose();
+      s.map = null;
+    }
     s.camera.left = -HALL.halfX - 10;
     s.camera.right = HALL.halfX + 10;
     s.camera.top = HALL.halfZ + 30;
@@ -47,37 +65,51 @@ export function Environment({ showGrid }: { showGrid: boolean }) {
     s.camera.updateProjectionMatrix();
     light.target.position.set(0, 0, 0);
     light.target.updateMatrixWorld();
-  }, []);
+  }, [budget.shadowMapSize]);
+
+  const haze = hall && settings.haze && budget.haze;
+  const fogNear = haze ? preset.fog.near * 0.7 : preset.fog.near;
+  const fogFar = haze ? preset.fog.far * 0.75 : preset.fog.far;
 
   return (
     <>
       <color attach="background" args={[preset.background]} />
       <primitive attach="environment" object={reflections} />
-      <fog attach="fog" args={[preset.fog.color, preset.fog.near, preset.fog.far]} />
-      <hemisphereLight args={[preset.light.sky, preset.light.ground, preset.light.hemisphere]} />
+      <fog attach="fog" args={[preset.fog.color, fogNear, fogFar]} />
+      <hemisphereLight
+        ref={hemisphere}
+        name={HALL_LIGHT_NAMES.hemisphere}
+        args={[preset.light.sky, preset.light.ground, preset.light.hemisphere]}
+      />
       <directionalLight
         ref={key}
-        position={[-60, 100, 30]}
+        name={HALL_LIGHT_NAMES.key}
+        position={[-35, 110, 25]}
         intensity={preset.light.key}
         color={preset.light.keyColor}
         castShadow={hall}
       />
-      <directionalLight position={[70, 45, 60]} intensity={preset.light.fill} />
-      {hall && <IndustrialHall preset={preset} />}
-      {(showGrid || !hall) && (
+      <directionalLight
+        ref={fill}
+        name={HALL_LIGHT_NAMES.fill}
+        position={[70, 45, 60]}
+        intensity={preset.light.fill}
+      />
+      {hall && <MainReactorHall preset={preset} />}
+      {hall && showGrid && <EngineeringGrid dim={dimGrid} />}
+      {!hall && (
         <Grid
-          infiniteGrid={!hall}
-          {...(hall ? { args: [80, 58] as [number, number] } : {})}
+          infiniteGrid
           cellSize={1}
-          sectionSize={hall ? 6 : 10}
+          sectionSize={10}
           cellThickness={0.5}
-          sectionThickness={hall ? 0.8 : 1}
-          cellColor={hall ? "#3a4450" : "#1a2027"}
-          sectionColor={hall ? "#56616e" : "#27303a"}
-          fadeDistance={hall ? 120 : 900}
+          sectionThickness={1}
+          cellColor="#1a2027"
+          sectionColor="#27303a"
+          fadeDistance={900}
           fadeStrength={1.5}
           followCamera={false}
-          position={[0, hall ? 0.02 : -0.002, 0]}
+          position={[0, -0.002, 0]}
         />
       )}
     </>
