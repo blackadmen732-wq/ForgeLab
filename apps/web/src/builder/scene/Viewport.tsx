@@ -199,6 +199,18 @@ function AppearanceDriver() {
         body.clippingPlanes = planes;
         body.needsUpdate = true;
       }
+      for (const extra of handle.extras) {
+        if (
+          extra.transparent !== xray ||
+          (extra.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0)
+        ) {
+          extra.transparent = xray;
+          extra.depthWrite = !xray;
+          extra.clippingPlanes = planes;
+          extra.needsUpdate = true;
+        }
+        extra.opacity = xray ? 0.12 : 1;
+      }
       if (handle.glow !== null) {
         const glow = plasmaGlow(readout.vessel);
         handle.glow.visible = glow > 0;

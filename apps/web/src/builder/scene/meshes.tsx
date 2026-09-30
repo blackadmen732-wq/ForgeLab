@@ -14,6 +14,7 @@ import {
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { ComponentGeometry, SimulationComponent } from "@forgelab/sim-core";
+import { machineModel } from "./machines.js";
 
 /**
  * Procedural presentation meshes.
@@ -32,7 +33,12 @@ export interface MeshHandle {
   readonly rotorAxis: "x" | "y" | "z";
   /** Status lamp on machines that run; coloured by the animator in Simulate. */
   readonly lamp: Mesh | null;
+  /** Trim and accent materials of the finished model (x-ray and cutaway apply to them). */
+  readonly extras: readonly MeshStandardMaterial[];
 }
+
+/** Draws nothing but still takes pointer events: the envelope under a finished model. */
+const PICK_MATERIAL = new MeshBasicMaterial({ visible: false });
 
 const RUNNING_ROLES = new Set([
   "coolant-pump",
@@ -245,6 +251,31 @@ export const ComponentMesh = memo(function ComponentMesh({
   useLayoutEffect(() => () => body.dispose(), [body]);
 
   const ribs = role === "magnet-coil" && geometry.kind === "torus";
+  const model = useMemo(
+    () => machineModel(component.type, geometry, component.connectionPoints),
+    [component.type, geometry, component.connectionPoints],
+  );
+  const extras = useMemo(
+    () => ({
+      trim: new MeshStandardMaterial({ color: "#2e343a", metalness: 0.6, roughness: 0.5 }),
+      accent: new MeshStandardMaterial({
+        color: model?.accentColor ?? "#8a939e",
+        metalness: 0.35,
+        roughness: 0.5,
+      }),
+    }),
+    [model],
+  );
+  useLayoutEffect(
+    () => () => {
+      model?.main?.dispose();
+      model?.trim?.dispose();
+      model?.accent?.dispose();
+      extras.trim.dispose();
+      extras.accent.dispose();
+    },
+    [model, extras],
+  );
   const glowGeometry = useMemo(
     () =>
       role === "vacuum-vessel" && geometry.kind === "torus"
@@ -315,11 +346,12 @@ export const ComponentMesh = memo(function ComponentMesh({
       rotor: rotorRef.current,
       rotorAxis: rotor?.axis ?? "y",
       lamp: lampRef.current,
+      extras: [extras.trim, extras.accent],
     });
     return () => {
       if (meshRegistry.get(component.id)?.group === g) meshRegistry.delete(component.id);
     };
-  }, [component, body, rotor, lamp]);
+  }, [component, body, rotor, lamp, extras]);
 
   const handlers = {
     onClick: (event: ThreeEvent<MouseEvent>) => {
@@ -341,9 +373,30 @@ export const ComponentMesh = memo(function ComponentMesh({
           <CoilRibs geometry={geometry} material={body} />
         </group>
       ) : (
-        <mesh geometry={shape} material={body} castShadow receiveShadow {...handlers}>
+        <mesh
+          geometry={shape}
+          material={model?.replacesEnvelope ? PICK_MATERIAL : body}
+          castShadow={!model?.replacesEnvelope}
+          receiveShadow
+          {...handlers}
+        >
           {selected && <Edges threshold={30} color="#6fd3d1" />}
         </mesh>
+      )}
+      {model?.main && (
+        <mesh geometry={model.main} material={body} castShadow receiveShadow {...handlers} />
+      )}
+      {model?.trim && (
+        <mesh geometry={model.trim} material={extras.trim} castShadow receiveShadow {...handlers} />
+      )}
+      {model?.accent && (
+        <mesh
+          geometry={model.accent}
+          material={extras.accent}
+          castShadow
+          receiveShadow
+          {...handlers}
+        />
       )}
       {ribs && selected && (
         <mesh geometry={shape} visible={false}>
