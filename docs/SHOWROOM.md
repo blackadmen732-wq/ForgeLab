@@ -135,6 +135,36 @@ If a cascade happens, it is because `sim-core` propagated it (causal chains, sup
 field collapse). A physically coupled debris → damage model belongs in `sim-core` and is
 out of scope here.
 
+## Audio
+
+`presentation/audio/`: the director's events are the bus; `rules.ts` (pure, tested) turns
+them into actions; `engine.ts` plays them through Web Audio:
+
+```
+director events ─► rules ─► emitters (one per running machine, PannerNode at the mesh)
+                          ─► failure one-shots (HRTF, at the failure's position)
+                          ─► alarm patterns (hall PA, not spatial)
+buses: ambient ─┐
+       machinery┴─► duck ─► master ─► limiter ─► output      (+ convolution hall reverb send)
+       alarms, failures, interface ───────► master
+```
+
+- **Ambient** — HVAC (filtered brown noise with slow movement) and mains hum; on POWER
+  LOSS the fans spin down and the hum stops.
+- **Machinery** — pump motor and water flow, turbine whine and steam, generator hum,
+  turbomolecular whine, magnet cold-box compressors, beam-heater buzz. Level and pitch
+  follow each machine's activity (spin-up faster than coast-down); failed machines go
+  silent.
+- **Alarms** by tier — ADVISORY single chime, CAUTION two-tone chime every 5 s, WARNING
+  1 Hz beep, EMERGENCY rising whoop.
+- **Failure families** — arc crackle and breaker bang (electrical), relief thump and long
+  steam hiss (coolant), boom and helium venting (quench), crack, ringing vessel and thud
+  (disruption), groan then crash (structural), relay clicks (brown-out, control).
+- **Priority and ducking** — at most 8 failure voices, highest priority first; violent
+  events duck machinery and ambience by 4–14 dB and let them recover.
+- Everything is synthesized; the context starts on the first gesture; volumes and mute
+  are local settings. Plasma is never given a "sound" of its own.
+
 ## Debris
 
 Three tiers, all pooled:

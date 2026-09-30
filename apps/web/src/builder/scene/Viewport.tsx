@@ -49,6 +49,7 @@ import {
   useSettings,
 } from "../../presentation/settings.js";
 import { useCinematic } from "../../presentation/view.js";
+import { AudioBridge } from "../../presentation/audio/AudioBridge.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
@@ -879,6 +880,7 @@ export function Viewport() {
         <Gizmo />
         <AppearanceDriver />
         <ComponentAnimator />
+        <AudioBridge />
         <ViewportBridge store={store} controlsRef={controlsRef} />
         <InvalidateOnStore />
         {!cinematic && (

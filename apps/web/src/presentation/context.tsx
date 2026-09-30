@@ -1,7 +1,9 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
+import type { AudioEngine } from "./audio/engine.js";
 import type { PresentationDirector, PresentationState } from "./director.js";
 
 export const PresentationContext = createContext<PresentationDirector | null>(null);
+export const AudioEngineContext = createContext<AudioEngine | null>(null);
 
 export function useDirector(): PresentationDirector {
   const director = useContext(PresentationContext);

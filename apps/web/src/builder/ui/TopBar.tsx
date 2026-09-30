@@ -37,6 +37,7 @@ import {
   useEnvironment,
 } from "../scene/environment/presets.js";
 import { useEditor, useEditorStore } from "../store/context.js";
+import { PresentationMenu } from "./PresentationMenu.js";
 
 function SaveStatus() {
   const save = useEditor((v) => v.save);
@@ -338,6 +339,7 @@ export function TopBar({ context }: { context: CommandContext }) {
           </button>
         )}
         {context.toggleTeam !== undefined && <TeamButton onClick={context.toggleTeam} />}
+        <PresentationMenu />
         <MoreMenu context={context} />
         <AccountMenu />
       </div>
