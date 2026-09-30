@@ -198,9 +198,22 @@ await check("both join voice in General: connected, and speaking is shown", asyn
   await voiceCount(A.page, 2);
   await A.page.waitForSelector(".voicebar__channel:has-text('GENERAL')");
   // The synthetic microphone beeps; the SFU reports Andre as an active speaker.
-  await A.page.waitForSelector(`.voicebar__member.is-speaking[data-tip^="${andre.username}"]`, {
-    timeout: 30000,
-  });
+  try {
+    await A.page.waitForSelector(`.voicebar__member.is-speaking[data-tip^="${andre.username}"]`, {
+      timeout: 30000,
+    });
+  } catch (error) {
+    // Say which side lost it: the SFU never flagged Andre, or Andre is not transmitting.
+    const roster = (page) =>
+      page.$$eval(".voicebar__member", (els) =>
+        els.map((e) => `${e.getAttribute("data-tip")} [${e.className}]`),
+      );
+    throw new Error(
+      `${error.message}\n  Mark sees: ${JSON.stringify(await roster(A.page))}` +
+        `\n  Andre sees: ${JSON.stringify(await roster(B.page))}`,
+      { cause: error },
+    );
+  }
   // Presence shows who is in which channel, to everyone in the project.
   await A.page.waitForSelector(`.channel__voice >> text=${andre.username}`, { timeout: 15000 });
 });
