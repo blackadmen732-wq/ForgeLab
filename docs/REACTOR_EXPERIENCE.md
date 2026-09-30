@@ -45,11 +45,31 @@
    conditions, published in snapshots; the UI and scene react to them.
 7. **Audio** — Web Audio, synthesized; consumes snapshots and failure events only.
 8. **Visualization modes** — Normal, Cutaway, Temperature, Coolant, Power, Magnetic,
-   Stress, Plasma (Neutron prepared); internals cutaway per component.
+   Stress, Plasma, Vacuum, Neutrons; internals cutaway per component. See
+   [Views](#views) below.
 9. **Diagnose → fix** — rewind to the root-cause tick (deterministic re-run), highlight
    the initiating component, measured vs. limit, consequence chain, return to Build with
    it selected; run report with margins and personal best.
 10. **Verify** — a browser test of the full loop; docs.
+
+## Views
+
+Every view colours parts from published simulation values; none of them computes physics.
+
+| View     | Colour source                                                     | Scale                                                                                             |
+| -------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Vacuum   | vessel `pressurePa`; vacuum pumps by supply and state             | log₁₀ p: red at atmosphere → amber → teal near the breakdown limit (10⁻² Pa) → blue below 10⁻⁵ Pa |
+| Neutrons | `neutronHeatingW` (blanket, vessel wall and coils, from sim-core) | log₁₀ W from 1 kW (dark violet) to 1 GW (near white); unexposed parts dim                         |
+
+In the Vacuum view everything outside the vacuum system is drawn as a ghost, so a vessel
+inside its coils and blanket stays readable, and vacuum ducts are lit.
+
+**Internals cutaway.** With Cutaway on (X), the selected part shows its internal regions
+from the product sheet as nested bands, outermost first, coloured by substance (the
+Inspector's Inside list shows the same swatches). If every region carries a volume
+fraction the bands are sized by it; otherwise they are equal steps, and the Inspector says
+the section is schematic — region order is known, proportions are not, and none are
+invented.
 
 ## Showroom milestone
 

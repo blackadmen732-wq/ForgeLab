@@ -1,4 +1,5 @@
 import { MATERIAL_CATALOG, findSubstance, getMaterial } from "@forgelab/materials";
+import { materialColor } from "../scene/appearance.js";
 import { findComponentDefinition, type ProductInfo } from "@forgelab/reactor-components";
 import {
   ROLE_PARAMETERS,
@@ -483,6 +484,11 @@ function ProductPanel({
         <ul className="insp-internals">
           {product.internals.map((i) => (
             <li key={i.id}>
+              <span
+                className="insp-swatch"
+                style={{ background: `#${materialColor(i.substanceId).getHexString()}` }}
+                aria-hidden
+              />
               <strong>{i.name}</strong>
               <span className="dim">
                 {" "}
@@ -494,6 +500,14 @@ function ProductPanel({
             </li>
           ))}
         </ul>
+        {product.internals.length > 1 && (
+          <p className="insp-note">
+            Cutaway (X) shows these as a cross-section of this part, outermost first
+            {product.internals.every((i) => i.volumeFraction !== undefined)
+              ? ", sized by volume."
+              : " — schematic: the order is known, the proportions are not, so bands are equal."}
+          </p>
+        )}
         {!product.internalsSetMass && (
           <p className="insp-note">
             Shown for inspection; this part&apos;s mass is its material × volume.

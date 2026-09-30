@@ -1,4 +1,4 @@
-import { Color } from "three";
+import { Color, Plane, Vector3 } from "three";
 import type { SimulationComponent, VesselState } from "@forgelab/sim-core";
 import { frameScalar, type SessionFrame } from "@forgelab/sim-runner";
 import type { Overlay } from "../store/editor.js";
@@ -17,6 +17,9 @@ export interface Readout {
   readonly powerW: number;
   readonly massFlowKgS: number;
   readonly fieldT: number;
+  readonly role: string;
+  /** Fusion-neutron energy deposited in the part, W. */
+  readonly neutronHeatingW: number;
   readonly disabled: boolean;
   readonly free: boolean;
   readonly isLoad: boolean;
@@ -37,6 +40,8 @@ export function readoutFromComponent(component: SimulationComponent): Readout {
     powerW: p.electrical === null ? 0 : Math.max(p.electrical.deliveredW, p.electrical.suppliedW),
     massFlowKgS: p.coolant?.massFlowKgS ?? 0,
     fieldT: p.magnet?.fieldAtPlasmaT ?? p.vessel?.plasma.fieldT ?? 0,
+    role: component.role,
+    neutronHeatingW: p.outputs["neutronHeatingW"] ?? 0,
     disabled: p.disabled,
     free: component.state.support.mode === "free",
     isLoad: (p.electrical?.demandW ?? 0) > 0,
@@ -61,6 +66,8 @@ export function readoutFromFrame(
     powerW,
     massFlowKgS: frameScalar(frame, index, "massFlowKgS"),
     fieldT: frameScalar(frame, index, "fieldT"),
+    role: component.role,
+    neutronHeatingW: frameScalar(frame, index, "neutronHeatingW"),
     disabled: frameScalar(frame, index, "disabled") > 0,
     free: frameScalar(frame, index, "free") > 0,
     // Whether a part is a load is a property of its role, not of this tick.
@@ -95,7 +102,12 @@ const MATERIAL_COLORS: Record<string, string> = {
   tungsten: "#565b62",
   copper: "#a87458",
   aluminum: "#bcc2c9",
+  nbti: "#7b7fa6",
+  "g10-cr": "#b9a35e",
 };
+
+/** Removes the half-space z > 0 in cutaway mode. */
+export const CUT_PLANE = new Plane(new Vector3(0, 0, -1), 0);
 
 export function materialColor(materialId: string): Color {
   return new Color(MATERIAL_COLORS[materialId] ?? "#8a939e");
@@ -109,6 +121,19 @@ function ramp(stops: readonly Color[], t: number, out: Color): Color {
   return out.copy(stops[i]!).lerp(stops[i + 1]!, x - i);
 }
 
+const VACUUM_STOPS = [
+  PALETTE.fail,
+  PALETTE.stress,
+  new Color("#56c2d6"),
+  new Color("#4f8ff7"),
+  new Color("#8fb8ff"),
+];
+const NEUTRON_STOPS = [
+  new Color("#2a1840"),
+  new Color("#7c3aed"),
+  new Color("#e879f9"),
+  new Color("#fdf4ff"),
+];
 const STRESS_STOPS = [PALETTE.neutral, PALETTE.ok, PALETTE.stress, PALETTE.fail];
 const HEAT_STOPS = [PALETTE.neutral, PALETTE.warm, PALETTE.hot, PALETTE.fail];
 
@@ -222,6 +247,25 @@ export function appearanceFor(
         );
       } else out.color.copy(PALETTE.dim);
       break;
+    case "vacuum":
+      if (r.vessel !== null) {
+        // log10(p): 5 at atmosphere, −2 at the breakdown limit, −5 and below deep vacuum.
+        const lp = Math.log10(Math.max(1e-9, r.vessel.pressurePa));
+        ramp(VACUUM_STOPS, (5 - lp) / 10, out.color);
+        out.emissive.copy(out.color);
+        emissive = 0.55;
+      } else if (r.role === "vacuum-pump") {
+        out.color.copy(r.disabled || r.supplyFraction < 0.95 ? PALETTE.stress : PALETTE.coolant);
+      } else out.color.copy(PALETTE.dim);
+      break;
+    case "neutron":
+      if (r.neutronHeatingW > 0) {
+        // log10(W): 3 (1 kW) → 9 (1 GW).
+        ramp(NEUTRON_STOPS, (Math.log10(r.neutronHeatingW) - 3) / 6, out.color);
+        out.emissive.copy(out.color);
+        emissive = 0.3 + 0.5 * Math.min(1, Math.max(0, (Math.log10(r.neutronHeatingW) - 3) / 6));
+      } else out.color.copy(PALETTE.dim);
+      break;
     case "failures":
       out.color.copy(failed ? PALETTE.fail : r.status === 1 ? PALETTE.stress : PALETTE.dim);
       break;
@@ -232,6 +276,15 @@ export function appearanceFor(
     emissive = Math.max(emissive, 0.35);
   }
   return emissive;
+}
+
+/**
+ * Views that look *through* the rest of the plant: in the Vacuum view everything that is
+ * not part of the vacuum system (vessels, vacuum pumps) is drawn as a ghost, so a vessel
+ * wrapped in coils and blanket can still be read.
+ */
+export function ghostedIn(overlay: Overlay, r: Readout): boolean {
+  return overlay === "vacuum" && r.vessel === null && r.role !== "vacuum-pump";
 }
 
 /** Plasma glow strength 0..1 from the vessel state (drawn inside the vessel). */

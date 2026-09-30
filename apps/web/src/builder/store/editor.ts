@@ -53,7 +53,16 @@ import { CloudSync, type CloudBinding, type SaveState, writeLocalDraft } from ".
 export type Mode = "build" | "simulate";
 export type Tool = "select" | "move" | "rotate" | "connect" | "box";
 export type Overlay =
-  "none" | "stress" | "temperature" | "power" | "coolant" | "magnetic" | "plasma" | "failures";
+  | "none"
+  | "stress"
+  | "temperature"
+  | "power"
+  | "coolant"
+  | "magnetic"
+  | "vacuum"
+  | "plasma"
+  | "neutron"
+  | "failures";
 export type Projection = "perspective" | "orthographic";
 export type ViewName = "front" | "right" | "top" | "iso";
 
@@ -77,9 +86,19 @@ export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] =
   { id: "coolant", label: "Coolant", hint: "Coolant mass flow through loop components." },
   { id: "magnetic", label: "Magnetic", hint: "Magnetic field at the plasma from each coil." },
   {
+    id: "vacuum",
+    label: "Vacuum",
+    hint: "Vessel pressure on a log scale: red at atmosphere, cyan at the breakdown limit, deep blue below; pumps lit while running.",
+  },
+  {
     id: "plasma",
     label: "Plasma",
     hint: "Vessels coloured by plasma state; everything else dimmed.",
+  },
+  {
+    id: "neutron",
+    label: "Neutrons",
+    hint: "Fusion-neutron energy deposited in each part (log scale): where the shielding works and where it does not.",
   },
   {
     id: "failures",

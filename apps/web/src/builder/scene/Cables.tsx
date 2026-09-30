@@ -133,13 +133,15 @@ export function Cables() {
     [meshes],
   );
 
-  // Power and Coolant views light up their own system.
+  // Power, Coolant and Vacuum views light up their own system.
   const highlight: ConnectionType[] =
     overlay === "power"
       ? ["electrical"]
       : overlay === "coolant"
         ? ["coolant", "cryo", "steam"]
-        : [];
+        : overlay === "vacuum"
+          ? ["vacuum"]
+          : [];
   return (
     <group name="services">
       {meshes.map((m) =>

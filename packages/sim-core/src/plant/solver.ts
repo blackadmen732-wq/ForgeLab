@@ -1332,6 +1332,9 @@ export class PlantSolver {
       const wallM = vessel.geometry.wallThicknessM ?? 0;
       const throughWall = Math.exp(-wallM / NEUTRON_ATTENUATION_LENGTH_M);
       addHeat(work, vessel.id, neutronW * (1 - throughWall));
+      const vesselRecord = work.outputs.get(vessel.id) ?? {};
+      vesselRecord["neutronHeatingW"] = neutronW * (1 - throughWall);
+      work.outputs.set(vessel.id, vesselRecord);
       let transmitted = neutronW * throughWall;
 
       for (const blanketId of layout.blanketIds) {
@@ -1355,6 +1358,7 @@ export class PlantSolver {
         addHeat(work, coilId, transmitted / Math.max(1, layout.coilIds.length));
         const record = work.outputs.get(coilId) ?? {};
         record["nuclearHeatingW"] = transmitted / Math.max(1, layout.coilIds.length);
+        record["neutronHeatingW"] = record["nuclearHeatingW"];
         work.outputs.set(coilId, record);
       }
     }

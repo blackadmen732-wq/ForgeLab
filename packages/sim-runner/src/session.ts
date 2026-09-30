@@ -41,6 +41,7 @@ export const FRAME_FIELDS = Object.freeze([
   "disabled",
   "electricalPowerW", // delivered to a load, or supplied by a source
   "fieldT",
+  "neutronHeatingW", // fusion-neutron energy deposited in the part
 ] as const);
 export type FrameField = (typeof FRAME_FIELDS)[number];
 const FIELD_COUNT = FRAME_FIELDS.length;
@@ -246,6 +247,7 @@ export class SimulationSession {
       scalars[o + 9] =
         electrical === null ? 0 : Math.max(electrical.deliveredW, electrical.suppliedW);
       scalars[o + 10] = plant.magnet?.fieldAtPlasmaT ?? plant.vessel?.plasma.fieldT ?? 0;
+      scalars[o + 11] = plant.outputs["neutronHeatingW"] ?? 0;
       if (plant.vessel !== null) vessels[component.id] = plant.vessel;
     });
     const newFailures = snapshot.failures.slice(this.#failuresSent);

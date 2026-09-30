@@ -55,13 +55,16 @@ import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { portRating } from "../ui/Inspector.js";
 import { Cables } from "./Cables.js";
+import { InternalsSection } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
 import {
   CONNECTION_COLORS,
+  CUT_PLANE,
   PALETTE,
   appearanceFor,
+  ghostedIn,
   materialColor,
   plasmaGlow,
   readoutFromComponent,
@@ -73,9 +76,6 @@ import { DEFAULT_CAMERA } from "./environment/hall/cameras.js";
 import { ComponentMesh, isDragging, meshRegistry, setDragging } from "./meshes.js";
 
 type OrbitControlsImpl = ComponentRef<typeof OrbitControls>;
-
-/** Removes the half-space z > 0 in cutaway mode. */
-const CUT_PLANE = new Plane(new Vector3(0, 0, -1), 0);
 
 /* ------------------------------------------------------------------------------------ *
  * Parts
@@ -187,7 +187,7 @@ function AppearanceDriver() {
         emissive = Math.max(emissive, 0.14);
       }
       body.emissiveIntensity = emissive;
-      const xray = view.xray;
+      const xray = view.xray || ghostedIn(view.overlay, readout);
       if (body.transparent !== xray) {
         body.transparent = xray;
         body.depthWrite = !xray;
@@ -882,6 +882,7 @@ export function Viewport() {
         <CameraRig controlsRef={controlsRef} />
         <Parts />
         <Cables />
+        <InternalsSection />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />

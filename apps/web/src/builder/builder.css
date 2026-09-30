@@ -2005,3 +2005,11 @@
   flex-wrap: wrap;
   gap: 8px;
 }
+.insp-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: middle;
+}
