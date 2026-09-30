@@ -302,9 +302,9 @@ export function TopBar({ context }: { context: CommandContext }) {
             type="button"
             className="btn btn--primary simulate-btn"
             onClick={() => store.startSimulation()}
-            data-tip="Run the design (Tab)"
+            data-tip="Activate the plant: start the simulation clock (Tab)"
           >
-            <Zap /> SIMULATE
+            <Zap /> ACTIVATE
           </button>
         ) : (
           <button

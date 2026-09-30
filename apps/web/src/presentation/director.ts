@@ -13,6 +13,12 @@ import {
 } from "./facility.js";
 import { readingFromFrame, type PlantReading } from "./reading.js";
 import { RunRecorder } from "./replay.js";
+import {
+  createVisualTracker,
+  resetVisualTracker,
+  visualFor,
+  type ComponentVisual,
+} from "./visualState.js";
 
 /**
  * The presentation director: the only bridge between simulation output and everything
@@ -32,6 +38,8 @@ export interface PresentationState {
   readonly reading: PlantReading | null;
   readonly destructions: readonly DestructionEvent[];
   readonly warnings: readonly WarningReason[];
+  /** What each machine appears to be doing (rotors, lamps, sound). */
+  readonly visuals: ReadonlyMap<string, ComponentVisual>;
   /** Increments on every reset or new run; effects clear their state when it changes. */
   readonly runEpoch: number;
 }
@@ -52,6 +60,7 @@ const INITIAL: PresentationState = Object.freeze({
   reading: null,
   destructions: [],
   warnings: [],
+  visuals: new Map(),
   runEpoch: 0,
 });
 
@@ -62,6 +71,7 @@ export class PresentationDirector {
   #listeners = new Set<() => void>();
   #eventListeners = new Set<(event: PresentationEvent) => void>();
   #tracker = new ActivationTracker();
+  #visualTracker = createVisualTracker();
   #failures: RaisedFailure[] = [];
   #lastFrame: unknown = null;
   #lastTick = -1;
@@ -110,6 +120,7 @@ export class PresentationDirector {
 
   #resetRun(): void {
     this.#tracker.reset();
+    resetVisualTracker(this.#visualTracker);
     this.#failures = [];
     this.#previous = null;
     this.#lastTick = -1;
@@ -163,6 +174,14 @@ export class PresentationDirector {
       stages,
       failures: this.#failures,
     });
+    const failing = new Set(
+      [...this.#state.destructions, ...fresh]
+        .filter((d) => reading.timeSec - d.simulationTime < 3)
+        .map((d) => d.componentId),
+    );
+    const visuals = new Map<string, ComponentVisual>();
+    for (const c of reading.components)
+      visuals.set(c.id, visualFor(c, reading, this.#visualTracker, failing));
     this.recorder.record(frame, fresh);
     this.#previous = reading;
     this.#set({
@@ -172,6 +191,7 @@ export class PresentationDirector {
       facility,
       alarm: alarmTier(facility),
       warnings: warnings(reading),
+      visuals,
       ...(fresh.length > 0 ? { destructions: [...this.#state.destructions, ...fresh] } : {}),
     });
     this.#emit({ type: "reading", reading });

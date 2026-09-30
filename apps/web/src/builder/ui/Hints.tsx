@@ -42,7 +42,7 @@ export function Hints() {
       hint = {
         id: "starter-1",
         title: "1 · Run the plant",
-        body: "This fusion plant is almost ready. Press SIMULATE (or Tab), then pick 10× in the controls at the bottom to watch the first minutes quickly.",
+        body: "This fusion plant is almost ready. Press ACTIVATE (or Tab), then pick 10× in the controls at the bottom to watch the first minutes quickly.",
       };
     else if (!pumpOn && simulating && sim.failures === 0)
       hint = {
@@ -90,7 +90,7 @@ export function Hints() {
     hint = {
       id: "simulate",
       title: "Run it",
-      body: "Press SIMULATE to step the design through time in a background thread. Failures open the engineering overlay (T) with their causes.",
+      body: "Press ACTIVATE to start the plant: the strip at the top follows each stage as the physics reaches it. Failures open the engineering overlay (T) with their causes; K hides everything but the plant.",
     };
   } else if (simulating && sim.failures > 0) {
     hint = {

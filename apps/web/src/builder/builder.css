@@ -1502,3 +1502,162 @@
   margin: 2px 0 0;
   font-size: var(--fs-xs);
 }
+
+/* ------------------------------------------------------------------------------------ *
+ * Activation strip (Simulate) and cinematic view
+ * ------------------------------------------------------------------------------------ */
+
+.activation {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  max-width: min(980px, calc(100% - 32px));
+  pointer-events: none;
+}
+.activation__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: color-mix(in srgb, var(--panel) 86%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(6px);
+  max-width: 100%;
+  overflow-x: auto;
+}
+.activation__facility {
+  font: 600 var(--fs-xs) / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 7px;
+  border-radius: var(--r-sm);
+  background: var(--panel-3);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.activation__facility--running {
+  color: var(--ok);
+}
+.activation__facility--startup,
+.activation__facility--warning {
+  color: var(--stress);
+}
+.activation__facility--power_loss,
+.activation__facility--emergency,
+.activation__facility--failure,
+.activation__facility--post_failure {
+  color: #fff;
+  background: var(--fail);
+}
+.activation__stages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.activation__stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 4px;
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+  border-radius: var(--r-sm);
+  white-space: nowrap;
+}
+.activation__stage svg {
+  width: 12px;
+  height: 12px;
+}
+.activation__stage + .activation__stage::before {
+  content: "";
+  width: 6px;
+  height: 1px;
+  margin-right: 4px;
+  background: var(--line-strong);
+}
+.activation__stage--done {
+  color: var(--ok);
+}
+.activation__stage--active {
+  color: var(--text-strong);
+  background: var(--panel-3);
+}
+.activation__stage--stalled,
+.activation__stage--lost {
+  color: #fff;
+  background: var(--fail-soft);
+}
+.activation__caption {
+  margin: 0;
+  padding: 4px 10px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--panel) 80%, transparent);
+  border-radius: var(--r-sm);
+  max-width: 100%;
+  text-align: center;
+}
+.activation__caption strong {
+  color: var(--text-strong);
+  margin-right: 4px;
+}
+.activation__caption--bad strong {
+  color: var(--fail);
+}
+.activation__caption--good strong {
+  color: var(--ok);
+}
+.activation__exit {
+  pointer-events: auto;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.spin {
+  animation: spin 1.2s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spin {
+    animation: none;
+  }
+}
+
+/* Cinematic: nothing but the hall, the plant and the activation strip. */
+.builder--cinematic {
+  grid-template-rows: 1fr;
+}
+.builder--cinematic .topbar,
+.builder--cinematic .rail,
+.builder--cinematic .panel,
+.builder--cinematic .timeline,
+.builder--cinematic .status-strip,
+.builder--cinematic .hint,
+.builder--cinematic .voicebar,
+.builder--cinematic .stage-notices {
+  display: none !important;
+}
+.builder--cinematic .builder__main {
+  grid-template-columns: 1fr;
+}
+.activation--cinematic .activation__row {
+  background: color-mix(in srgb, var(--panel) 55%, transparent);
+}

@@ -13,12 +13,12 @@ export type StageId =
   "electrical" | "cooling" | "cryogenics" | "vacuum" | "magnets" | "fuel" | "ignition" | "fusion";
 
 export const STAGE_LABELS: Readonly<Record<StageId, string>> = Object.freeze({
-  electrical: "Electrical",
+  electrical: "Power",
   cooling: "Cooling",
-  cryogenics: "Cryogenics",
+  cryogenics: "Cryo",
   vacuum: "Vacuum",
   magnets: "Magnets",
-  fuel: "Fuel & heating",
+  fuel: "Fuel & heat",
   ignition: "Ignition",
   fusion: "Fusion",
 });

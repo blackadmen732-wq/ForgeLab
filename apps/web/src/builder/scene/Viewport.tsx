@@ -42,7 +42,14 @@ import {
   type SimulationComponent,
 } from "@forgelab/sim-core";
 import { prefersReducedMotion } from "../../lib/platform.js";
-import { applyAutomaticQuality, tierBudget, useSettings } from "../../presentation/settings.js";
+import {
+  applyAutomaticQuality,
+  motionAllowed,
+  tierBudget,
+  useSettings,
+} from "../../presentation/settings.js";
+import { useCinematic } from "../../presentation/view.js";
+import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
 import {
@@ -511,6 +518,7 @@ function boundsOf(
 
 function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControlsImpl | null> }) {
   const store = useEditorStore();
+  const cinematic = useCinematic();
   const projection = useEditor((v) => v.projection);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
@@ -585,6 +593,11 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
   useFrame((state) => {
     const camera = state.camera;
     const controls = controlsRef.current;
+    // Cinematic drift: OrbitControls turns the camera only on rendered frames.
+    if (cinematic && motionAllowed()) {
+      controls?.update();
+      invalidate();
+    }
     const a = anim.current;
     if (controls !== null && a !== null) {
       const t = a.ms === 0 ? 1 : Math.min(1, (performance.now() - a.t0) / a.ms);
@@ -634,6 +647,8 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
         minDistance={0.5}
         maxDistance={4000}
         maxPolarAngle={Math.PI * 0.499}
+        autoRotate={cinematic && motionAllowed()}
+        autoRotateSpeed={0.25}
       />
     </>
   );
@@ -745,6 +760,7 @@ interface BoxState {
 
 export function Viewport() {
   const store = useEditorStore();
+  const cinematic = useCinematic();
   const tool = useEditor((v) => v.tool);
   const cutaway = useEditor((v) => v.cutaway);
   const mode = useEditor((v) => v.mode);
@@ -862,11 +878,14 @@ export function Viewport() {
         <Sockets />
         <Gizmo />
         <AppearanceDriver />
+        <ComponentAnimator />
         <ViewportBridge store={store} controlsRef={controlsRef} />
         <InvalidateOnStore />
-        <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
-          <GizmoViewport axisColors={["#c9605a", "#7fbf8f", "#5b8fd6"]} labelColor="#0b0e12" />
-        </GizmoHelper>
+        {!cinematic && (
+          <GizmoHelper alignment="bottom-right" margin={[64, 64]}>
+            <GizmoViewport axisColors={["#c9605a", "#7fbf8f", "#5b8fd6"]} labelColor="#0b0e12" />
+          </GizmoHelper>
+        )}
       </Canvas>
       {box !== null && (
         <div

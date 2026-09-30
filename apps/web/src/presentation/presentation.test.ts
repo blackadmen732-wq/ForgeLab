@@ -8,6 +8,7 @@ import { alarmTier, facilityState, type RaisedFailure } from "./facility.js";
 import { readingFromFrame, type PlantReading } from "./reading.js";
 import { RunRecorder } from "./replay.js";
 import { DEFAULT_SETTINGS, TIER_BUDGETS, parseSettings } from "./settings.js";
+import { createVisualTracker, visualFor } from "./visualState.js";
 
 /**
  * Drives the real simulation session headlessly and runs the presentation derivations on
@@ -117,6 +118,28 @@ describe("destruction events mirror raised failures", () => {
     const fault = destructions.find((d) => d.family === "electrical")!;
     expect(fault.componentId).toBe("bus");
     expect(fault.combustible).toBe(true);
+  });
+});
+
+describe("machine visual states", () => {
+  it("running machines run and a switched-off pump is off", { timeout: 60000 }, () => {
+    const on = run(plant(), 30).reading;
+    const tracker = createVisualTracker();
+    const state = (r: PlantReading, id: string) =>
+      visualFor(
+        r.components.find((c) => c.id === id)!,
+        r,
+        tracker,
+        new Set(),
+      ).state;
+    expect(state(on, "pump")).toBe("RUNNING");
+    expect(state(on, "tf-coils")).toBe("RUNNING");
+    expect(state(on, "generator")).toBe("RUNNING");
+    const off = run(plant({ pump: { enabled: false } }), 2).reading;
+    const fresh = createVisualTracker();
+    const pump = off.components.find((c) => c.id === "pump")!;
+    expect(visualFor(pump, off, fresh, new Set()).state).toBe("OFF");
+    expect(visualFor(pump, off, fresh, new Set(["pump"])).state).toBe("FAILING");
   });
 });
 

@@ -169,6 +169,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
     const radial = radialTexture();
     return {
       floorGeometry: new PlaneGeometry(2 * HALL.halfX, 2 * HALL.halfZ).rotateX(-Math.PI / 2),
+      // Ground outside the walls, seen when a framed view puts the camera beyond them.
+      apron: new PlaneGeometry(800, 800).rotateX(-Math.PI / 2).translate(0, -0.03, 0),
       lens: new CylinderGeometry(0.55, 0.55, 0.06, 18),
       pool: new PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
       wash: new PlaneGeometry(1, 1),
@@ -387,6 +389,7 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
   return (
     <group name="main-reactor-hall">
       <mesh geometry={shared.floorGeometry} material={materials.floor} receiveShadow />
+      <mesh geometry={shared.apron} material={materials.roof} />
       {byZone("floor")}
       {([...WALL_ZONES, "overhead"] as const).map((zone) => (
         <group

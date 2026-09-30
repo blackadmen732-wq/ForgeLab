@@ -199,7 +199,7 @@ export class EditorStore {
   #tool: Tool = "select";
   #overlay: Overlay = "none";
   #buildOverlay: Overlay = "none";
-  #simOverlay: Overlay = "temperature";
+  #simOverlay: Overlay = "none";
   #cutaway = false;
   #xray = false;
   #projection: Projection = "perspective";

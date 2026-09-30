@@ -1,5 +1,5 @@
 import "./builder.css";
-import { SIMULATION_ENGINE_VERSION, parseAssemblyFile } from "@forgelab/sim-core";
+import { SIMULATION_ENGINE_VERSION, parseAssemblyFile, serializeWorld } from "@forgelab/sim-core";
 import { designHash } from "@forgelab/sim-runner";
 import { ROLE_PERMISSIONS, type ProjectRole } from "@forgelab/protocol";
 import { MonitorX, Smartphone } from "lucide-react";
@@ -31,8 +31,10 @@ import { detectWebGL, isTypingTarget } from "../lib/platform.js";
 import { errorMessage, toast } from "../lib/toast.js";
 import { COMMANDS, type CommandContext } from "./commands.js";
 import { Viewport } from "./scene/Viewport.js";
+import { SHOWROOM_SCENARIOS, buildScenario } from "@forgelab/reactor-components";
 import { PresentationContext } from "../presentation/context.js";
 import { PresentationDirector } from "../presentation/director.js";
+import { setCinematic, useCinematic } from "../presentation/view.js";
 import { EditorContext, useEditor, useEditorStore, useSim } from "./store/context.js";
 import { EditorStore } from "./store/editor.js";
 import { type CloudBinding, readLocalDraft } from "./store/persistence.js";
@@ -40,6 +42,7 @@ import { CommandPalette } from "./ui/CommandPalette.js";
 import { ComponentDrawer } from "./ui/ComponentDrawer.js";
 import { HelpOverlay } from "./ui/HelpOverlay.js";
 import { Hints } from "./ui/Hints.js";
+import { ActivationHud } from "./ui/ActivationHud.js";
 import { Inspector } from "./ui/Inspector.js";
 import { PublishDialog } from "./ui/PublishDialog.js";
 import { StartDialog } from "./ui/StartDialog.js";
@@ -165,6 +168,17 @@ function Workspace({
   const showPalette = useEditor((v) => v.showPalette);
   const building = mode === "build";
   const failureCount = useSim((s) => s.failures.length);
+  const cinematic = useCinematic();
+  useEffect(() => {
+    if (!cinematic) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setCinematic(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [cinematic]);
 
   // Telemetry stays hidden until asked for — except when something fails, which is the
   // moment a player needs it.
@@ -175,7 +189,7 @@ function Workspace({
   }, [building, failureCount, store]);
 
   return (
-    <div className={`builder builder--${mode}`}>
+    <div className={`builder builder--${mode}${cinematic ? " builder--cinematic" : ""}`}>
       <TopBar context={context} />
       <div className={`builder__main${building ? "" : " builder__main--full"}`}>
         {building && <ToolRail />}
@@ -222,6 +236,7 @@ function Workspace({
               <Inspector />
             </div>
           )}
+          <ActivationHud />
           <Hints />
           <StatusStrip />
           <Timeline />
@@ -256,7 +271,16 @@ export function BuilderRoute() {
     // Browser tests read presentation state through this handle (`/app?debug`). It exposes
     // nothing a player cannot already do in their own tab.
     const debug = new URLSearchParams(window.location.search).has("debug");
-    if (debug) (window as unknown as { __forgelab?: unknown }).__forgelab = { store, director };
+    if (debug)
+      (window as unknown as { __forgelab?: unknown }).__forgelab = {
+        store,
+        director,
+        scenarios: SHOWROOM_SCENARIOS.map((s) => s.id),
+        loadScenario: (id: string) => {
+          store.loadFile(serializeWorld(buildScenario(id)));
+          store.requestFrame(null);
+        },
+      };
     return () => director.stop();
   }, [director, store]);
   const [webgl] = useState(() => detectWebGL());

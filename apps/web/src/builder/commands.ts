@@ -1,4 +1,5 @@
 import { MOD } from "../lib/platform.js";
+import { toggleCinematic, toggleFullscreen } from "../presentation/view.js";
 import { HALL_CAMERAS, HALL_CAMERA_ORDER } from "./scene/environment/hall/cameras.js";
 import type { EditorStore, EditorView } from "./store/editor.js";
 
@@ -294,6 +295,22 @@ export const COMMANDS: readonly Command[] = [
     match: (e) => plain(e) && e.shiftKey && e.code === `Digit${i + 1}`,
     run: (c) => c.store.requestPose(HALL_CAMERAS[name].position, HALL_CAMERAS[name].target),
   })),
+  {
+    id: "cinematic",
+    label: "Cinematic view (hide everything but the plant)",
+    group: "View",
+    keys: "K",
+    match: key("k"),
+    run: () => toggleCinematic(),
+  },
+  {
+    id: "fullscreen",
+    label: "Fullscreen",
+    group: "View",
+    keys: "Shift K",
+    match: (e) => plain(e) && e.shiftKey && e.key.toLowerCase() === "k",
+    run: () => toggleFullscreen(),
+  },
   {
     id: "projection",
     label: "Perspective / orthographic",
