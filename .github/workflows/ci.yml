@@ -83,13 +83,14 @@ jobs:
           echo "VITE_SUPABASE_URL=$SUPABASE_URL" >> "$GITHUB_ENV"
           VITE_SUPABASE_URL="$SUPABASE_URL" VITE_SITE_URL=http://localhost:3000 pnpm vercel-build
       - run: pnpm exec playwright install --with-deps chromium
-      - name: Serve the build and run the acceptance test
+      - name: Serve the build and run the acceptance, collaboration and showroom tests
         run: |
           node scripts/serve-output.mjs 3000 &
           sleep 2
           mkdir -p e2e-shots
           E2E_SHOTS=e2e-shots node e2e/acceptance.mjs http://localhost:3000
           E2E_SHOTS=e2e-shots node e2e/collaboration.mjs http://localhost:3000
+          E2E_SHOTS=e2e-shots node e2e/showroom.mjs http://localhost:3000
       - if: failure()
         uses: actions/upload-artifact@v4
         with:

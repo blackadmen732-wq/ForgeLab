@@ -191,11 +191,35 @@ reset.
 
 ## Replay and failure cinema
 
-The recorder keeps every frame of the current run (ring buffer, ~10 min at 20 fps). WATCH
-FAILURE opens playback at 5 s before the root failure with pause, 0.25×, 0.5×, 1×, 2×, a
-scrubber, free camera, follow-component and root-cause camera. Playback shows recorded
-frames; the live world is untouched. RETURN TO BUILD and RESET RUN always restore the
-design exactly as it was saved before activation.
+The recorder keeps every frame of the run (~5 min at 20 fps) together with what the
+presentation showed with it (facility state, stages, machine states). **Watch failure**
+(next to the root-cause chain) pauses the live run and opens the replay 5 s before the
+root failure:
+
+- pause, 0.25×, 0.5×, 1×, 2×, and a scrubber with a marker per failure;
+- cameras: **Free**, **Follow** (the orbit target tracks the watched part, which may be
+  falling), **Root cause** (frames the part that failed first);
+- failures are re-issued as the playhead passes them, so their effects play again at
+  replay speed — effects run on presentation time, which the replay scales (pause
+  freezes smoke and debris mid-air);
+- **Reset run** and **Return to Build** are on the panel; Return to Build restores the
+  design exactly as it was before activation (the simulation ran in the worker on a copy).
+
+The viewport shows recorded frames through a store override (`setReplayFrame`); nothing
+is re-simulated and the worker is only paused.
+
+## Root cause
+
+Under the activation strip after a failure: `ROOT CAUSE → … → final failure`, the
+longest causal chain the solver built, root first. Each step is clickable: it selects and
+frames the part and, in replay, jumps to just before that failure.
+
+## Post-processing
+
+`PostFx`: bloom on genuinely bright things (fixtures, plasma, arcs, sparks, flashes), a
+restrained vignette, then tone mapping — only on tiers that allow it and when the viewer
+keeps "Glow on bright lights" on. Heat distortion and replay depth of field are not
+implemented yet.
 
 ## Quality tiers
 
@@ -206,7 +230,29 @@ kick; `cameraEffectsIntensity` scales them; `reducedEffects` removes flashes and
 
 ## Test scenarios
 
-`e2e/showroom.mjs` loads the reference plant with six deliberate faults (magnet quench,
-electrical bus fault, coolant boiling, structural collapse, plasma disruption, and a
-multi-system chain) and asserts that each produces its own family, alarm tier and effect
-set, and that reset restores the undamaged design.
+`reactor-components/src/scenarios.ts` holds six designs with one deliberate engineering
+mistake each — magnet quench, electrical bus fault, coolant boiling, structural collapse,
+plasma disruption (Greenwald), and a multi-system cascade (pump off → wall overheats →
+disruption). `scenarios.test.ts` proves the simulation raises each failure.
+
+`e2e/showroom.mjs` (in CI, against the production build) checks the empty hall, the
+reference plant reaching every stage to fusion with machine sound, then for every
+scenario: the simulation raises the family, its own effect is on screen, the facility is
+in an alarm state, failure cinema opens at the root cause and exits cleanly, and Return
+to Build restores the undamaged design with no glass cracks left. It also checks the six
+scenarios do not all look the same.
+
+## Developer effects panel
+
+`/app?debug` shows a dashed panel with facility, alarm, audio level and live particle /
+debris counts, buttons that load each fault scenario, and "preview" buttons that play an
+effect recipe on the selected part **without** any simulated failure (for tuning only; it
+never changes facility state and is not in the product UI).
+
+## Known limitations
+
+- Debris cannot damage other parts (see "Secondary propagation").
+- Software GL (SwiftShader, llvmpipe) starts on LOW and renders ~1 frame/s; replay and
+  effects then run slower than their nominal rate because frame steps are capped.
+- Pre-fractured pieces are generated per failure from the part's envelope; authored
+  break groups per product arrive with the finished-product visuals (R4).

@@ -6,6 +6,7 @@ const event = (family: DestructionEvent["family"], severity: number): Destructio
   eventId: `x::${family}::`,
   simulationTime: 1,
   componentId: "x",
+  siteComponentId: "x",
   worldPosition: [1, 2, 3],
   worldDirection: [0, 1, 0],
   failureType: family,

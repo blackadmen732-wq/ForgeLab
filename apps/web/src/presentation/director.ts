@@ -40,6 +40,8 @@ export interface PresentationState {
   readonly warnings: readonly WarningReason[];
   /** What each machine appears to be doing (rotors, lamps, sound). */
   readonly visuals: ReadonlyMap<string, ComponentVisual>;
+  /** True while failure cinema is showing recorded frames instead of the live run. */
+  readonly replaying: boolean;
   /** Increments on every reset or new run; effects clear their state when it changes. */
   readonly runEpoch: number;
 }
@@ -49,7 +51,15 @@ export type PresentationEvent =
   | { readonly type: "stage"; readonly stage: StageProgress }
   | { readonly type: "destruction"; readonly event: DestructionEvent }
   | { readonly type: "reading"; readonly reading: PlantReading }
-  | { readonly type: "reset"; readonly epoch: number };
+  | { readonly type: "reset"; readonly epoch: number }
+  /** Clear transient effects (smoke, debris, cracks) without ending the run: replay seeks. */
+  | { readonly type: "clear-effects" };
+
+/** The part of presentation state recorded with every frame, for replay. */
+export type RecordedPresentation = Pick<
+  PresentationState,
+  "reading" | "stages" | "stage" | "facility" | "alarm" | "visuals" | "warnings"
+>;
 
 const INITIAL: PresentationState = Object.freeze({
   mode: "build",
@@ -61,6 +71,7 @@ const INITIAL: PresentationState = Object.freeze({
   destructions: [],
   warnings: [],
   visuals: new Map(),
+  replaying: false,
   runEpoch: 0,
 });
 
@@ -132,13 +143,68 @@ export class PresentationDirector {
       stage: null,
       reading: null,
       warnings: [],
+      visuals: new Map(),
+      replaying: false,
       runEpoch: epoch,
     });
+    this.#replaying = false;
     this.#emit({ type: "reset", epoch });
+  }
+
+  /* Failure cinema ------------------------------------------------------------------ */
+
+  #replaying = false;
+  #live: RecordedPresentation | null = null;
+
+  /** Stop following the live run; recorded frames are shown through `showReplay`. */
+  beginReplay(): void {
+    if (this.#replaying) return;
+    const s = this.#state;
+    this.#live = {
+      reading: s.reading,
+      stages: s.stages,
+      stage: s.stage,
+      facility: s.facility,
+      alarm: s.alarm,
+      visuals: s.visuals,
+      warnings: s.warnings,
+    };
+    this.#replaying = true;
+    this.#set({ replaying: true });
+    this.clearEffects();
+  }
+
+  /** Show the presentation state recorded with a frame. */
+  showReplay(recorded: RecordedPresentation): void {
+    if (!this.#replaying) return;
+    this.#set(recorded);
+    if (recorded.reading !== null) this.#emit({ type: "reading", reading: recorded.reading });
+  }
+
+  /** Re-issue a recorded destruction so its effects play again at replay speed. */
+  replayDestruction(event: DestructionEvent): void {
+    if (this.#replaying) this.#emit({ type: "destruction", event });
+  }
+
+  clearEffects(): void {
+    this.#emit({ type: "clear-effects" });
+  }
+
+  /** Back to the live run, exactly as it was left. */
+  endReplay(): void {
+    if (!this.#replaying) return;
+    this.#replaying = false;
+    this.clearEffects();
+    this.#set({ ...(this.#live ?? {}), replaying: false });
+    this.#live = null;
   }
 
   #sync = (): void => {
     const view = this.store.getView();
+    if (this.#replaying) {
+      if (view.mode === "build") this.endReplay();
+      else return;
+    }
     if (view.mode === "build") {
       if (this.#state.mode !== "build") {
         this.#resetRun();
@@ -182,9 +248,8 @@ export class PresentationDirector {
     const visuals = new Map<string, ComponentVisual>();
     for (const c of reading.components)
       visuals.set(c.id, visualFor(c, reading, this.#visualTracker, failing));
-    this.recorder.record(frame, fresh);
     this.#previous = reading;
-    this.#set({
+    const recorded: RecordedPresentation = {
       reading,
       stages,
       stage: currentStage(stages),
@@ -192,6 +257,10 @@ export class PresentationDirector {
       alarm: alarmTier(facility),
       warnings: warnings(reading),
       visuals,
+    };
+    this.recorder.record(frame, fresh, recorded);
+    this.#set({
+      ...recorded,
       ...(fresh.length > 0 ? { destructions: [...this.#state.destructions, ...fresh] } : {}),
     });
     this.#emit({ type: "reading", reading });

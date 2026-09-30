@@ -1,7 +1,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import { useContext, useEffect, useLayoutEffect, useMemo } from "react";
 import type { PerspectiveCamera } from "three";
-import { AudioEngineContext, PresentationContext } from "../context.js";
+import { AudioEngineContext, CinemaContext, PresentationContext } from "../context.js";
 import { tierBudget, useSettings } from "../settings.js";
 import { VfxRuntime } from "./runtime.js";
 
@@ -12,6 +12,7 @@ import { VfxRuntime } from "./runtime.js";
 export function VfxLayer() {
   const director = useContext(PresentationContext);
   const audio = useContext(AudioEngineContext);
+  const cinema = useContext(CinemaContext);
   const camera = useThree((s) => s.camera);
   const gl = useThree((s) => s.gl);
   const size = useThree((s) => s.size);
@@ -26,8 +27,9 @@ export function VfxLayer() {
   }, [runtime, size.height, fov, gl]);
   useEffect(() => {
     if (director === null) return;
+    runtime.setTimeScale(() => cinema?.timeScale() ?? 1);
     return runtime.connect(director, audio, camera, invalidate);
-  }, [runtime, director, audio, camera, invalidate]);
+  }, [runtime, director, audio, cinema, camera, invalidate]);
   // Restore the camera before the orbit controls read it (drei updates them at −1).
   useFrame(() => runtime.restoreCamera(camera), -2);
   useFrame((state) => runtime.frame(state));

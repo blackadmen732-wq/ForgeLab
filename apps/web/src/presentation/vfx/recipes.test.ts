@@ -13,6 +13,7 @@ const event = (family: FailureFamily, over: Partial<DestructionEvent> = {}): Des
   eventId: `x::${family}::`,
   simulationTime: 1,
   componentId: "x",
+  siteComponentId: "x",
   worldPosition: [0, 2, 0],
   worldDirection: [1, 0.5, 0],
   failureType: family,

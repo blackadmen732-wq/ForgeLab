@@ -282,10 +282,26 @@ export class EditorStore {
     return this.#cameraRequest;
   }
 
-  /** The newest simulation frame and the index of each component in it. */
+  /**
+   * The frame the viewport shows: the newest simulation frame, or a recorded one while
+   * failure cinema replays the run. Replay never reaches the simulation worker.
+   */
   get frame(): SessionFrame | null {
-    return this.#frame;
+    return this.#replayFrame ?? this.#frame;
   }
+
+  #replayFrame: SessionFrame | null = null;
+
+  /** Show a recorded frame instead of the live one (null returns to live). */
+  setReplayFrame = (frame: SessionFrame | null): void => {
+    if (frame === this.#replayFrame) return;
+    this.#replayFrame = frame;
+    if (frame !== null && this.#frameIndex.size !== frame.ids.length) {
+      this.#frameIndex.clear();
+      frame.ids.forEach((id, i) => this.#frameIndex.set(id, i));
+    }
+    this.#publishSim({ frameNumber: this.#sim.frameNumber + 1 });
+  };
 
   frameIndexOf(id: string): number | undefined {
     return this.#frameIndex.get(id);
@@ -1171,6 +1187,7 @@ export class EditorStore {
 
   stopSimulation = (): void => {
     if (this.#mode !== "simulate") return;
+    this.#replayFrame = null;
     this.#client?.speed(0);
     this.#mode = "build";
     this.#overlay = this.#buildOverlay;
@@ -1210,6 +1227,7 @@ export class EditorStore {
 
   resetSimulation = (): void => {
     if (this.#mode !== "simulate") return;
+    this.#replayFrame = null;
     this.#client?.reset();
     this.#publishSim({ failures: [], history: [], timeSec: 0, tick: 0 });
   };

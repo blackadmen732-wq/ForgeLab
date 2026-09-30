@@ -50,6 +50,8 @@ import {
 } from "../../presentation/settings.js";
 import { useCinematic } from "../../presentation/view.js";
 import { AudioBridge } from "../../presentation/audio/AudioBridge.js";
+import { CinemaDriver } from "../../presentation/CinemaDriver.js";
+import { PostFx } from "../../presentation/PostFx.js";
 import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
@@ -884,6 +886,8 @@ export function Viewport() {
         <ComponentAnimator />
         <AudioBridge />
         <VfxLayer />
+        <CinemaDriver />
+        <PostFx />
         <ViewportBridge store={store} controlsRef={controlsRef} />
         <InvalidateOnStore />
         {!cinematic && (

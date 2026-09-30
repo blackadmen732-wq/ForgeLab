@@ -1688,3 +1688,184 @@
   stroke: rgba(235, 242, 250, 0.6);
   vector-effect: non-scaling-stroke;
 }
+
+/* Root-cause chain under the activation strip. */
+.root-cause {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px 8px;
+  max-width: 100%;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow);
+}
+.root-cause__label {
+  font: 600 var(--fs-xs) / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fail);
+}
+.root-cause ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.root-cause li + li::before {
+  content: "→";
+  margin-right: 4px;
+  color: var(--text-faint);
+}
+.root-cause__step {
+  font-size: var(--fs-xs);
+  color: var(--text);
+  background: var(--panel-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 3px 6px;
+  cursor: pointer;
+}
+.root-cause__step:hover,
+.root-cause__step:focus-visible {
+  border-color: var(--select);
+}
+.root-cause__step--root {
+  color: #fff;
+  background: var(--fail-soft);
+}
+.root-cause__watch svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Failure cinema replaces the dock while it runs. */
+.builder--replay .timeline {
+  display: none;
+}
+.cinema {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 7;
+  width: min(1100px, calc(100% - 32px));
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(8px);
+}
+.cinema__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.cinema__badge {
+  font: 600 var(--fs-xs) / 1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--stress);
+  padding: 4px 6px;
+  background: var(--panel-3);
+  border-radius: var(--r-sm);
+}
+.cinema__time {
+  min-width: 72px;
+  color: var(--text-strong);
+}
+.cinema__spacer {
+  flex: 1;
+}
+.cinema__track {
+  position: relative;
+}
+.cinema__track input {
+  width: 100%;
+  accent-color: var(--stress);
+}
+.cinema__marker {
+  position: absolute;
+  top: -3px;
+  width: 3px;
+  height: 10px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--fail);
+  pointer-events: none;
+}
+.cinema__marker--brownout,
+.cinema__marker--flow,
+.cinema__marker--control {
+  background: var(--stress);
+}
+.builder--replay .hint {
+  display: none;
+}
+
+/* Developer effects panel (?debug). */
+.fx-debug {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 9;
+  width: 240px;
+  padding: 8px 10px;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px dashed var(--stress);
+  border-radius: var(--r-md);
+}
+.fx-debug header {
+  font-family: var(--font-mono);
+  color: var(--stress);
+  margin-bottom: 4px;
+}
+.fx-debug dl {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 1px 8px;
+  margin: 0 0 6px;
+}
+.fx-debug__row {
+  display: contents;
+}
+.fx-debug dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.fx-debug__label {
+  margin: 6px 0 3px;
+  color: var(--text-faint);
+}
+.fx-debug__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+.fx-debug__buttons button {
+  font-size: var(--fs-xs);
+  padding: 2px 5px;
+  background: var(--panel-3);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.fx-debug__buttons button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

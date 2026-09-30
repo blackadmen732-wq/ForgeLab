@@ -94,7 +94,7 @@ const box = new Box3();
 const tmp = new Vector3();
 
 function recipeContext(event: DestructionEvent): RecipeContext {
-  const handle = meshRegistry.get(event.componentId);
+  const handle = meshRegistry.get(event.siteComponentId);
   const [x, y, z] = event.worldPosition;
   if (handle === undefined) {
     const r = event.radiusM;
@@ -136,6 +136,9 @@ function obstaclesExcept(id: string): Obstacle[] {
   return out;
 }
 
+/** The live runtime, for the developer effects panel only. */
+export const vfxDebug: { runtime: VfxRuntime | null } = { runtime: null };
+
 export class VfxRuntime {
   readonly root = new Group();
   readonly systems: Record<ParticleKind, ParticleSystem>;
@@ -154,6 +157,12 @@ export class VfxRuntime {
   #director: PresentationDirector | null = null;
   #invalidate: () => void = () => {};
   #last = 0;
+  /** Presentation time scale: slow motion and pause in failure cinema. */
+  timeScale: () => number = () => 1;
+
+  setTimeScale(scale: () => number): void {
+    this.timeScale = scale;
+  }
   /** Parts that already shed debris this run: one break-up per part, however many failures it raises. */
   #broken = new Set<string>();
   #forward = new Vector3();
@@ -252,10 +261,11 @@ export class VfxRuntime {
   ): () => void {
     this.#camera = camera;
     this.#director = director;
+    vfxDebug.runtime = this;
     this.#invalidate = invalidate;
     const off = director.on((event) => {
       if (event.type === "destruction") this.execute(event.event);
-      else if (event.type === "reset") this.clearAll();
+      else if (event.type === "reset" || event.type === "clear-effects") this.clearAll();
     });
     this.debris.onImpact.length = 0;
     this.debris.onImpact.push((impact) => audio?.impact(impact.position, impact.force));
@@ -269,6 +279,7 @@ export class VfxRuntime {
     return () => {
       off();
       this.clearAll();
+      if (vfxDebug.runtime === this) vfxDebug.runtime = null;
     };
   }
 
@@ -407,7 +418,8 @@ export class VfxRuntime {
 
   frame(state: RootState): void {
     const now = performance.now();
-    const dt = this.#last === 0 ? 0.016 : Math.min(0.05, (now - this.#last) / 1000);
+    const dt =
+      (this.#last === 0 ? 0.016 : Math.min(0.05, (now - this.#last) / 1000)) * this.timeScale();
     this.#last = now;
     let busy = false;
     // Emitters.
@@ -514,6 +526,15 @@ export class VfxRuntime {
     state.gl.toneMappingExposure = this.cam.exposure;
     if (this.cam.busy) busy = true;
     if (busy) state.invalidate();
+  }
+
+  /** Particle and debris counts for the developer panel. */
+  stats(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [k, s] of Object.entries(this.systems)) out[k] = s.alive;
+    out["debris (rigid)"] = this.debris.rigidCount;
+    out["emitters"] = this.emitters.length;
+    return out;
   }
 
   dispose(): void {

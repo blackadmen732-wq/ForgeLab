@@ -253,7 +253,7 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
         const [x, y, z] = event.event.worldPosition;
         phase.current.flash = Math.max(phase.current.flash, event.event.severity);
         phase.current.flashAt.set(x, y + 2, z);
-      } else if (event.type === "reset") {
+      } else if (event.type === "reset" || event.type === "clear-effects") {
         phase.current.flash = 0;
       }
     });

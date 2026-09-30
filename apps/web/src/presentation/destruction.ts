@@ -28,6 +28,11 @@ export interface DestructionEvent {
   readonly eventId: string;
   readonly simulationTime: number;
   readonly componentId: string;
+  /**
+   * Where the effect happens, when that is not the failed part itself: a loop's boiling is
+   * attributed to its pump, but steam vents where the loop is hottest.
+   */
+  readonly siteComponentId: string;
   readonly worldPosition: readonly [number, number, number];
   readonly worldDirection: readonly [number, number, number];
   readonly failureType: string;
@@ -159,8 +164,20 @@ export function destructionEvent(
   reading: PlantReading,
   previous: PlantReading | null,
 ): DestructionEvent {
-  const part = reading.components.find((c) => c.id === failure.componentId);
-  const family = familyOf(failure, part);
+  const failedPart = reading.components.find((c) => c.id === failure.componentId);
+  const family = familyOf(failure, failedPart);
+  const loopOf = reading.loops.find((l) => l.componentIds.includes(failure.componentId));
+  // Coolant releases happen at the hottest part of the loop (published temperatures).
+  const site =
+    family === "coolant" && loopOf !== undefined
+      ? reading.components
+          .filter((c) => loopOf.componentIds.includes(c.id))
+          .reduce<ComponentReading | undefined>(
+            (hot, c) => (hot === undefined || c.temperatureK > hot.temperatureK ? c : hot),
+            undefined,
+          )
+      : failedPart;
+  const part = site ?? failedPart;
   const energy = estimateEnergyJ(family, part, previous, failure);
   const severity = severityOf(family, energy, failure.utilization);
   const position = part?.position ?? [0, 1, 0];
@@ -200,6 +217,7 @@ export function destructionEvent(
     eventId: failureKey(failure),
     simulationTime: failure.timestampSec,
     componentId: failure.componentId,
+    siteComponentId: part?.id ?? failure.componentId,
     worldPosition: position,
     worldDirection: [dx / norm, up / norm, dz / norm],
     failureType: failure.failureType,

@@ -175,3 +175,18 @@ describe("presentation settings", () => {
       ]);
   });
 });
+
+describe("effect sites", () => {
+  it(
+    "vents coolant where the loop is hottest, not at the pump it is attributed to",
+    { timeout: 120000 },
+    () => {
+      const { destructions } = run(buildScenario("coolant-boiling"), 600, (d) =>
+        d.some((e) => e.family === "coolant"),
+      );
+      const boil = destructions.find((d) => d.family === "coolant")!;
+      expect(boil.componentId).toBe("pump");
+      expect(boil.siteComponentId).not.toBe("pump");
+    },
+  );
+});

@@ -3,6 +3,7 @@ import { fmtW, type StageProgress } from "../../presentation/activation.js";
 import { usePresentation } from "../../presentation/context.js";
 import type { FacilityState } from "../../presentation/facility.js";
 import { setCinematic, useCinematic } from "../../presentation/view.js";
+import { RootCauseChain } from "./FailureCinema.js";
 
 /**
  * The activation strip: each commissioning stage as the physics reaches it, and the
@@ -92,6 +93,7 @@ export function ActivationHud() {
           <strong>{caption.label}</strong> <span>{caption.detail}</span>
         </p>
       )}
+      <RootCauseChain />
       {cinematic && (
         <button type="button" className="activation__exit" onClick={() => setCinematic(false)}>
           Exit cinematic (Esc)

@@ -33,7 +33,14 @@ import { COMMANDS, type CommandContext } from "./commands.js";
 import { Viewport } from "./scene/Viewport.js";
 import { SHOWROOM_SCENARIOS, buildScenario } from "@forgelab/reactor-components";
 import { AudioEngine } from "../presentation/audio/engine.js";
-import { AudioEngineContext, PresentationContext } from "../presentation/context.js";
+import { FailureCinema } from "../presentation/cinema.js";
+import { vfxDebug } from "../presentation/vfx/runtime.js";
+import {
+  AudioEngineContext,
+  CinemaContext,
+  PresentationContext,
+  usePresentation,
+} from "../presentation/context.js";
 import { PresentationDirector } from "../presentation/director.js";
 import { setCinematic, useCinematic } from "../presentation/view.js";
 import { EditorContext, useEditor, useEditorStore, useSim } from "./store/context.js";
@@ -44,6 +51,8 @@ import { ComponentDrawer } from "./ui/ComponentDrawer.js";
 import { HelpOverlay } from "./ui/HelpOverlay.js";
 import { Hints } from "./ui/Hints.js";
 import { ActivationHud } from "./ui/ActivationHud.js";
+import { FailureCinemaPanel } from "./ui/FailureCinema.js";
+import { EffectsDebugPanel } from "./ui/EffectsDebugPanel.js";
 import { Inspector } from "./ui/Inspector.js";
 import { PublishDialog } from "./ui/PublishDialog.js";
 import { StartDialog } from "./ui/StartDialog.js";
@@ -170,6 +179,8 @@ function Workspace({
   const building = mode === "build";
   const failureCount = useSim((s) => s.failures.length);
   const cinematic = useCinematic();
+  const replaying = usePresentation((s) => s.replaying);
+  const [debugPanel] = useState(() => new URLSearchParams(window.location.search).has("debug"));
   useEffect(() => {
     if (!cinematic) return;
     const onKey = (event: KeyboardEvent) => {
@@ -190,7 +201,9 @@ function Workspace({
   }, [building, failureCount, store]);
 
   return (
-    <div className={`builder builder--${mode}${cinematic ? " builder--cinematic" : ""}`}>
+    <div
+      className={`builder builder--${mode}${cinematic ? " builder--cinematic" : ""}${replaying ? " builder--replay" : ""}`}
+    >
       <TopBar context={context} />
       <div className={`builder__main${building ? "" : " builder__main--full"}`}>
         {building && <ToolRail />}
@@ -238,6 +251,8 @@ function Workspace({
             </div>
           )}
           <ActivationHud />
+          <FailureCinemaPanel />
+          {debugPanel && <EffectsDebugPanel />}
           <Hints />
           <StatusStrip />
           <Timeline />
@@ -268,6 +283,7 @@ export function BuilderRoute() {
   // Presentation (lighting, sound, effects) observes the store; it never writes to it.
   const [director] = useState(() => new PresentationDirector(store));
   const [audio] = useState(() => new AudioEngine(director));
+  const [cinema] = useState(() => new FailureCinema(director, store));
   useEffect(() => {
     // Browsers only allow sound after a gesture: start on the first one.
     const start = () => audio.start();
@@ -289,6 +305,8 @@ export function BuilderRoute() {
         store,
         director,
         audio,
+        cinema,
+        vfxStats: () => vfxDebug.runtime?.stats() ?? {},
         scenarios: SHOWROOM_SCENARIOS.map((s) => s.id),
         loadScenario: (id: string) => {
           store.loadFile(serializeWorld(buildScenario(id)));
@@ -296,7 +314,7 @@ export function BuilderRoute() {
         },
       };
     return () => director.stop();
-  }, [director, store, audio]);
+  }, [director, store, audio, cinema]);
   const [webgl] = useState(() => detectWebGL());
   const [narrowOk, setNarrowOk] = useState(() => window.innerWidth >= 820);
   const [busy, setBusy] = useState<string | null>(null);
@@ -871,19 +889,21 @@ export function BuilderRoute() {
     <EditorContext.Provider value={store}>
       <PresentationContext.Provider value={director}>
         <AudioEngineContext.Provider value={audio}>
-          <CollabContext.Provider value={collab}>
-            <Workspace
-              context={context}
-              teamOpen={teamOpen}
-              onLoadLatest={(versionId) => void loadLatest(versionId)}
-              onStart={(kind) => {
-                store.cloud.bind(null);
-                if (projectId !== undefined) void navigate("/app", { replace: true });
-                if (kind !== "blank") store.requestFrame(null);
-              }}
-              onCreateVersion={createVersion}
-            />
-          </CollabContext.Provider>
+          <CinemaContext.Provider value={cinema}>
+            <CollabContext.Provider value={collab}>
+              <Workspace
+                context={context}
+                teamOpen={teamOpen}
+                onLoadLatest={(versionId) => void loadLatest(versionId)}
+                onStart={(kind) => {
+                  store.cloud.bind(null);
+                  if (projectId !== undefined) void navigate("/app", { replace: true });
+                  if (kind !== "blank") store.requestFrame(null);
+                }}
+                onCreateVersion={createVersion}
+              />
+            </CollabContext.Provider>
+          </CinemaContext.Provider>
         </AudioEngineContext.Provider>
       </PresentationContext.Provider>
       <input

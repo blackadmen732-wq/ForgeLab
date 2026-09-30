@@ -1,5 +1,6 @@
 import type { SessionFrame } from "@forgelab/sim-runner";
 import type { DestructionEvent } from "./destruction.js";
+import type { RecordedPresentation } from "./director.js";
 
 /**
  * Records the frames of the current run for failure cinema.
@@ -11,6 +12,8 @@ import type { DestructionEvent } from "./destruction.js";
 export interface RecordedFrame {
   readonly frame: SessionFrame;
   readonly destructions: readonly DestructionEvent[];
+  /** What the presentation showed with this frame (facility, stages, machine states). */
+  readonly presentation: RecordedPresentation | null;
 }
 
 export const MAX_RECORDED_FRAMES = 6000;
@@ -19,10 +22,14 @@ export class RunRecorder {
   #frames: RecordedFrame[] = [];
   #revision = 0;
 
-  record(frame: SessionFrame, destructions: readonly DestructionEvent[]): void {
+  record(
+    frame: SessionFrame,
+    destructions: readonly DestructionEvent[],
+    presentation: RecordedPresentation | null = null,
+  ): void {
     const last = this.#frames[this.#frames.length - 1];
     if (last !== undefined && frame.tick <= last.frame.tick) return;
-    this.#frames.push({ frame, destructions });
+    this.#frames.push({ frame, destructions, presentation });
     if (this.#frames.length > MAX_RECORDED_FRAMES)
       this.#frames.splice(0, this.#frames.length - MAX_RECORDED_FRAMES);
     this.#revision += 1;
