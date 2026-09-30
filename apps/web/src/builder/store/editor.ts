@@ -26,6 +26,7 @@ import {
   type SimulationSettings,
   type SimulationSnapshot,
   SimulationWorld,
+  checkPortCompatibility,
   currentTransform,
   deserializeWorld,
   isLoadBearing,
@@ -1129,12 +1130,9 @@ export class EditorStore {
       .requireComponent(endpoint.componentId)
       .connectionPoints.find((p) => p.id === endpoint.connectionPointId);
     if (a === undefined || b === undefined) return;
-    if (a.connectionType !== b.connectionType) {
-      toast(
-        "warning",
-        "Those sockets don't match",
-        `A ${a.connectionType} socket can only link to another ${a.connectionType} socket.`,
-      );
+    const compatibility = checkPortCompatibility(a, b);
+    if (!compatibility.compatible) {
+      toast("warning", "Those ports can't be joined", compatibility.reason);
       return;
     }
     const exists = this.#world
@@ -1154,6 +1152,9 @@ export class EditorStore {
     this.#edit(`Connect ${a.connectionType}`, (world) => {
       world.connect(from, endpoint);
     });
+    // Joinable but mismatched ratings: the simulation decides whether the weaker side copes.
+    if (compatibility.warnings.length > 0)
+      toast("info", "Connected, with a rating mismatch", compatibility.warnings.join(" "));
   };
 
   disconnect = (connectionId: string): void => {

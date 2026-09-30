@@ -131,7 +131,8 @@ function StatusStrip() {
           {target?.socket && (
             <>
               {" "}
-              · <span className="mono">{target.socket.id}</span> ({target.socket.type})
+              · <span className="mono">{target.socket.label ?? target.socket.id}</span> (
+              {target.socket.rating ?? target.socket.type})
             </>
           )}
         </span>

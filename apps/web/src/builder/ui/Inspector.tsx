@@ -409,7 +409,7 @@ const DOMAIN_LABELS: Record<PortSpec["domain"], string> = {
   heating: "Heating",
 };
 
-function portRating(port: PortSpec): string {
+export function portRating(port: PortSpec): string {
   switch (port.domain) {
     case "electrical":
       return `${si(port.nominalVoltageV, "V")} · ${si(port.ratedCurrentA, "A")}`;

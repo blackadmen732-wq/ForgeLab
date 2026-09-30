@@ -3,7 +3,13 @@ import { useSyncExternalStore } from "react";
 /** What the pointer is over in the viewport. Kept outside the editor store: it changes constantly. */
 export interface HoverTarget {
   readonly componentId: string;
-  readonly socket?: { readonly id: string; readonly type: string };
+  readonly socket?: {
+    readonly id: string;
+    readonly type: string;
+    /** Port label and rating, e.g. "COOLANT IN" and "pressurized water · ⌀400 mm · 15.5 MPa". */
+    readonly label?: string;
+    readonly rating?: string;
+  };
 }
 
 let current: HoverTarget | null = null;

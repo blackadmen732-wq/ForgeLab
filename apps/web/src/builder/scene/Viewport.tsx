@@ -17,8 +17,6 @@ import {
   type MutableRefObject,
 } from "react";
 import {
-  BufferAttribute,
-  BufferGeometry,
   Color,
   type InstancedMesh,
   type Group,
@@ -36,9 +34,10 @@ import {
 } from "three";
 import { localPointToWorld, vec3, type Vec3 } from "@forgelab/shared";
 import {
+  checkPortCompatibility,
   currentTransform,
-  isLoadBearing,
   worldAabb,
+  type ConnectionPoint,
   type SimulationComponent,
 } from "@forgelab/sim-core";
 import { prefersReducedMotion } from "../../lib/platform.js";
@@ -54,6 +53,8 @@ import { CinemaDriver } from "../../presentation/CinemaDriver.js";
 import { PostFx } from "../../presentation/PostFx.js";
 import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
+import { portRating } from "../ui/Inspector.js";
+import { Cables } from "./Cables.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
@@ -209,54 +210,6 @@ function AppearanceDriver() {
 }
 
 /* ------------------------------------------------------------------------------------ *
- * Service connections (power, coolant, steam...) as lines between sockets
- * ------------------------------------------------------------------------------------ */
-
-function socketWorld(component: SimulationComponent, socketId: string): Vec3 | null {
-  const socket = component.connectionPoints.find((p) => p.id === socketId);
-  return socket === undefined
-    ? null
-    : localPointToWorld(currentTransform(component), socket.localPosition);
-}
-
-function Connections() {
-  const connections = useEditor((v) => v.snapshot.connections);
-  const components = useEditor((v) => v.snapshot.components);
-  const hidden = useEditor((v) => v.hidden);
-  const xray = useEditor((v) => v.xray);
-  const geometry = useMemo(() => {
-    const byId = new Map(components.map((c) => [c.id, c]));
-    const positions: number[] = [];
-    const colors: number[] = [];
-    const color = new Color();
-    for (const connection of connections) {
-      if (isLoadBearing(connection.type)) continue;
-      if (hidden.has(connection.from.componentId) || hidden.has(connection.to.componentId))
-        continue;
-      const a = byId.get(connection.from.componentId);
-      const b = byId.get(connection.to.componentId);
-      if (a === undefined || b === undefined) continue;
-      const pa = socketWorld(a, connection.from.connectionPointId);
-      const pb = socketWorld(b, connection.to.connectionPointId);
-      if (pa === null || pb === null) continue;
-      positions.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
-      color.set(CONNECTION_COLORS[connection.type] ?? "#8b96a4");
-      colors.push(color.r, color.g, color.b, color.r, color.g, color.b);
-    }
-    const g = new BufferGeometry();
-    g.setAttribute("position", new BufferAttribute(new Float32Array(positions), 3));
-    g.setAttribute("color", new BufferAttribute(new Float32Array(colors), 3));
-    return g;
-  }, [connections, components, hidden]);
-  useEffect(() => () => geometry.dispose(), [geometry]);
-  return (
-    <lineSegments geometry={geometry} renderOrder={3}>
-      <lineBasicMaterial vertexColors transparent opacity={0.85} depthTest={!xray} />
-    </lineSegments>
-  );
-}
-
-/* ------------------------------------------------------------------------------------ *
  * Sockets (connect tool and selected parts)
  * ------------------------------------------------------------------------------------ */
 
@@ -266,7 +219,18 @@ interface SocketEntry {
   readonly type: string;
   readonly position: Vec3;
   readonly radius: number;
+  readonly point: ConnectionPoint;
 }
+
+/** While connecting: can this port take the one already picked? */
+type Fit = "picked" | "ok" | "warn" | "no" | "idle";
+
+const FIT_LOOK: Readonly<Record<Exclude<Fit, "idle">, { color: string; scale: number }>> = {
+  picked: { color: "#ffffff", scale: 1.8 },
+  ok: { color: "#5eeaa0", scale: 1.5 },
+  warn: { color: "#ffb020", scale: 1.35 },
+  no: { color: "#2c3239", scale: 0.6 },
+};
 
 function Sockets() {
   const store = useEditorStore();
@@ -300,6 +264,7 @@ function Sockets() {
           type: p.connectionType,
           position: localPointToWorld(c.transform, p.localPosition),
           radius,
+          point: p,
         });
       }
     }
@@ -319,22 +284,38 @@ function Sockets() {
     if (mesh === null) return;
     const m = new Matrix4();
     const color = new Color();
+    const from =
+      connectFrom === null
+        ? null
+        : (components
+            .find((c) => c.id === connectFrom.componentId)
+            ?.connectionPoints.find((p) => p.id === connectFrom.connectionPointId) ?? null);
     entries.forEach((e, i) => {
-      const active =
-        connectFrom !== null &&
-        connectFrom.componentId === e.componentId &&
-        connectFrom.connectionPointId === e.socketId;
-      const r = e.radius * (active ? 1.8 : 1);
+      let fit: Fit = "idle";
+      if (connectFrom !== null && from !== null) {
+        if (
+          connectFrom.componentId === e.componentId &&
+          connectFrom.connectionPointId === e.socketId
+        )
+          fit = "picked";
+        else if (connectFrom.componentId === e.componentId) fit = "no";
+        else {
+          const check = checkPortCompatibility(from, e.point);
+          fit = !check.compatible ? "no" : check.warnings.length > 0 ? "warn" : "ok";
+        }
+      }
+      const look = fit === "idle" ? null : FIT_LOOK[fit];
+      const r = e.radius * (look?.scale ?? 1);
       m.makeScale(r, r, r).setPosition(e.position.x, e.position.y, e.position.z);
       mesh.setMatrixAt(i, m);
-      color.set(active ? "#ffffff" : (CONNECTION_COLORS[e.type] ?? "#8b96a4"));
+      color.set(look?.color ?? CONNECTION_COLORS[e.type] ?? "#8b96a4");
       mesh.setColorAt(i, color);
     });
     mesh.count = entries.length;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [entries, connectFrom]);
+  }, [entries, connectFrom, components]);
 
   if (entries.length === 0) return null;
   return (
@@ -354,7 +335,16 @@ function Sockets() {
       onPointerMove={(event) => {
         if (event.instanceId === undefined) return;
         const e = entries[event.instanceId];
-        if (e) hover.set({ componentId: e.componentId, socket: { id: e.socketId, type: e.type } });
+        if (e === undefined) return;
+        const port = e.point.port;
+        hover.set({
+          componentId: e.componentId,
+          socket: {
+            id: e.socketId,
+            type: e.type,
+            ...(port !== undefined ? { label: port.label, rating: portRating(port) } : {}),
+          },
+        });
       }}
       onPointerOut={() => hover.set(null)}
     />
@@ -879,7 +869,7 @@ export function Viewport() {
         <Environment showGrid={mode === "build"} />
         <CameraRig controlsRef={controlsRef} />
         <Parts />
-        <Connections />
+        <Cables />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />
