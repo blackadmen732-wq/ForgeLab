@@ -169,8 +169,11 @@ await check("reload restores the design from the cloud", async () => {
 await check("publishes with a thumbnail", async () => {
   await page.click('button:has-text("Publish")');
   await page.waitForSelector('[role="dialog"]:has-text("Publish design")');
-  // Software GL in CI compiles the hall's pipelines on first use; allow for it.
-  await page.waitForSelector(".publish__thumb img", { timeout: 30000 });
+  // The thumbnail is one render of the whole hall read back from the canvas. On a GPU that
+  // is milliseconds; under software GL (SwiftShader) the read-back waits for the frame to
+  // rasterise: measured 12-15 s on first use (pipelines compile) and ~5 s after, locally,
+  // and CI runners are 1.5-2x slower. The budget covers that; the assertion is unchanged.
+  await page.waitForSelector(".publish__thumb img", { timeout: 90000 });
   await page.fill(".publish textarea", "The starter plant, pump fixed.");
   await page.click('[role="dialog"] button:has-text("Publish")');
   await page.waitForSelector('[role="dialog"]:has-text("Update public page")', { timeout: 20000 });
