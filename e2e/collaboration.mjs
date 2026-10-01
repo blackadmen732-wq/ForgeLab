@@ -15,7 +15,11 @@
  *
  *   node e2e/collaboration.mjs [baseUrl]      (default http://localhost:3000)
  */
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { chromium } from "playwright";
+import { writeSpeechWav } from "./speech-wav.mjs";
 
 const BASE = process.argv[2] ?? process.env.FORGELAB_URL ?? "http://localhost:3000";
 const SHOTS = process.env.E2E_SHOTS ?? null;
@@ -36,8 +40,10 @@ const browser = await chromium.launch({
     "--use-gl=angle",
     "--use-angle=swiftshader",
     "--enable-unsafe-swiftshader",
-    // A synthetic microphone (a periodic tone) and no permission prompt.
+    // A synthetic microphone that sounds like speech (speech-wav.mjs; Chromium's default
+    // fake device only beeps), and no permission prompt.
     "--use-fake-device-for-media-stream",
+    `--use-file-for-fake-audio-capture=${writeSpeechWav(join(mkdtempSync(join(tmpdir(), "forgelab-voice-")), "speech.wav"))}`,
     "--use-fake-ui-for-media-stream",
     "--autoplay-policy=no-user-gesture-required",
   ],
@@ -193,16 +199,16 @@ await check("a new channel appears for everyone without reloading", async () => 
 await check("both join voice in General: connected, and speaking is shown", async () => {
   await A.page.click('button[aria-label="Join voice in General"]');
   await voiceCount(A.page, 1);
-  // Both members run in one browser with the same synthetic microphone tone. While Mark's
-  // tone plays on Andre's page, Andre's echo canceller sees the identical signal in its
-  // playout and can remove his own tone as echo, so the SFU hears silence from him. Mark
-  // stays muted until Andre has been heard; real microphones never carry one shared tone.
+  // Both members run in one browser with the same synthetic voice. While Mark's voice plays
+  // on Andre's page, Andre's echo canceller sees the identical signal in its playout and
+  // can remove his own voice as echo, so the SFU hears silence from him. Mark stays muted
+  // until Andre has been heard; real microphones never carry one shared recording.
   await A.page.click('.voicebar button[aria-label="Mute"]');
   await B.page.click('button[aria-label="Join voice in General"]');
   await voiceCount(B.page, 2);
   await voiceCount(A.page, 2);
   await A.page.waitForSelector(".voicebar__channel:has-text('GENERAL')");
-  // The synthetic microphone beeps; the SFU reports Andre as an active speaker.
+  // Andre's microphone carries speech; the SFU reports him as an active speaker.
   try {
     await A.page.waitForSelector(`.voicebar__member.is-speaking[data-tip^="${andre.username}"]`, {
       timeout: 30000,
