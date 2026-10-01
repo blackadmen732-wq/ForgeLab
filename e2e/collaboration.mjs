@@ -193,6 +193,11 @@ await check("a new channel appears for everyone without reloading", async () => 
 await check("both join voice in General: connected, and speaking is shown", async () => {
   await A.page.click('button[aria-label="Join voice in General"]');
   await voiceCount(A.page, 1);
+  // Both members run in one browser with the same synthetic microphone tone. While Mark's
+  // tone plays on Andre's page, Andre's echo canceller sees the identical signal in its
+  // playout and can remove his own tone as echo, so the SFU hears silence from him. Mark
+  // stays muted until Andre has been heard; real microphones never carry one shared tone.
+  await A.page.click('.voicebar button[aria-label="Mute"]');
   await B.page.click('button[aria-label="Join voice in General"]');
   await voiceCount(B.page, 2);
   await voiceCount(A.page, 2);
@@ -214,6 +219,7 @@ await check("both join voice in General: connected, and speaking is shown", asyn
       { cause: error },
     );
   }
+  await A.page.click('.voicebar button[aria-label="Unmute"]');
   // Presence shows who is in which channel, to everyone in the project.
   await A.page.waitForSelector(`.channel__voice >> text=${andre.username}`, { timeout: 15000 });
 });
