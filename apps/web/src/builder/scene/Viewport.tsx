@@ -57,6 +57,7 @@ import { portRating } from "../ui/Inspector.js";
 import { Cables } from "./Cables.js";
 import { damageStage, stageDarkening } from "../../presentation/damage.js";
 import { damageState } from "../../presentation/damageState.js";
+import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
@@ -229,19 +230,28 @@ function AppearanceDriver() {
         body.needsUpdate = true;
       }
       body.opacity = xray ? 0.16 : 1;
-      const planes = view.cutaway ? [cutPlaneFor(c.id)] : null;
-      if ((body.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0)) {
+      // The cutaway plane, else the breach of a part that broke up this run (fracture.ts).
+      const breach = live ? breachPlanes(c.id) : null;
+      const planes = view.cutaway ? [cutPlaneFor(c.id)] : breach;
+      const intersect = !view.cutaway && breach !== null;
+      if (
+        (body.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0) ||
+        body.clipIntersection !== intersect
+      ) {
         body.clippingPlanes = planes;
+        body.clipIntersection = intersect;
         body.needsUpdate = true;
       }
       for (const extra of handle.extras) {
         if (
           extra.transparent !== xray ||
-          (extra.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0)
+          (extra.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0) ||
+          extra.clipIntersection !== intersect
         ) {
           extra.transparent = xray;
           extra.depthWrite = !xray;
           extra.clippingPlanes = planes;
+          extra.clipIntersection = intersect;
           extra.needsUpdate = true;
         }
         extra.opacity = xray ? 0.12 : 1;
@@ -256,12 +266,22 @@ function AppearanceDriver() {
   return null;
 }
 
-/** Re-aims each part's cutaway plane at the camera on every rendered frame. */
+/**
+ * Re-aims each part's cutaway plane at the camera on every rendered frame, and moves the
+ * breach of each broken part with it.
+ */
 function CutPlaneDriver() {
   const store = useEditorStore();
   const centre = useMemo(() => new Vector3(), []);
   const orientation = useMemo(() => new ThreeQuaternion(), []);
   useFrame(({ camera }) => {
+    // Breaches follow their parts wherever they are.
+    for (const id of breachedIds()) {
+      const handle = meshRegistry.get(id);
+      if (handle === undefined) continue;
+      handle.group.updateWorldMatrix(true, false);
+      aimBreach(id, handle.group.matrixWorld);
+    }
     const view = store.getView();
     if (!view.cutaway && view.overlay !== "internals") return;
     for (const [id, handle] of meshRegistry) {

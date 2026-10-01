@@ -314,6 +314,7 @@ export function BuilderRoute() {
         audio,
         cinema,
         vfxStats: () => vfxDebug.runtime?.stats() ?? {},
+        vfx: () => vfxDebug.runtime,
         scenarios: SHOWROOM_SCENARIOS.map((s) => s.id),
         loadScenario: (id: string) => {
           store.loadFile(serializeWorld(buildScenario(id)));

@@ -1,6 +1,6 @@
 import { useFrame, useThree } from "@react-three/fiber";
-import { useEffect, useLayoutEffect, useMemo } from "react";
-import { Color, DoubleSide, MeshStandardMaterial } from "three";
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { Color, DoubleSide, type Group, MeshStandardMaterial } from "three";
 import { findFluid } from "@forgelab/materials";
 import {
   findComponentDefinition,
@@ -21,8 +21,11 @@ import {
   type Readout,
   type SurfaceMaterial,
 } from "./appearance.js";
+import { damageState } from "../../presentation/damageState.js";
 import { cutPlaneFor } from "./cutPlanes.js";
+import { breachPlanes } from "./fracture.js";
 import { hasBespokeInternals, internalModel } from "./internalModels.js";
+import { meshRegistry } from "./meshes.js";
 import { regionHighlight, useRegionHighlight } from "./regionHighlight.js";
 
 export { layerScales } from "./internalModels.js";
@@ -30,7 +33,8 @@ export { layerScales } from "./internalModels.js";
 /**
  * The inside of finished machines (see internalModels.ts — schematic). Shown:
  *  - in Cutaway, for the selected parts, cut by the same plane as their casings;
- *  - in the Internal Systems view, for every machine, cut the same way, casings ghosted.
+ *  - in the Internal Systems view, for every machine, cut the same way, casings ghosted;
+ *  - through the breach of a part that broke up this run, cut by the breach's planes.
  *
  * Colours: Normal shows each region's own material (fluids translucent); Internal
  * Systems colours regions by system; a physics view lights only the regions its quantity
@@ -209,9 +213,17 @@ function Section({ component }: { component: SimulationComponent }) {
     };
   }, [meshes, component.id]);
 
+  // Follow the part's live pose (a broken part may have fallen).
+  const group = useRef<Group>(null);
+  useFrame(() => {
+    const live = meshRegistry.get(component.id)?.group;
+    if (live === undefined || group.current === null) return;
+    group.current.position.copy(live.position);
+    group.current.quaternion.copy(live.quaternion);
+  });
   const { positionM: p, rotation: q } = component.state.physical;
   return (
-    <group position={[p.x, p.y, p.z]} quaternion={[q.x, q.y, q.z, q.w]}>
+    <group ref={group} position={[p.x, p.y, p.z]} quaternion={[q.x, q.y, q.z, q.w]}>
       {meshes.map((m) => (
         <mesh
           key={m.region.id}
@@ -239,9 +251,14 @@ export function InternalsSection() {
   const highlight = useRegionHighlight();
   const invalidate = useThree((s) => s.invalidate);
 
+  const damageVersion = useSyncExternalStore(damageState.subscribe, damageState.version);
   const systems = overlay === "internals";
   const shown = components.filter(
-    (c) => showsInternals(c.type) && (systems || (cutaway && selection.includes(c.id))),
+    (c) =>
+      showsInternals(c.type) &&
+      (systems ||
+        (cutaway && selection.includes(c.id)) ||
+        (damageVersion > 0 && damageState.isFractured(c.id))),
   );
 
   useEffect(() => {
@@ -255,9 +272,11 @@ export function InternalsSection() {
     };
     const a = store.subscribe(mark);
     const b = store.subscribeSim(mark);
+    const c = damageState.subscribe(mark);
     return () => {
       a();
       b();
+      c();
     };
   }, [store, invalidate]);
 
@@ -276,6 +295,20 @@ export function InternalsSection() {
       const readout =
         live && index !== undefined ? readoutFromFrame(frame, index, c) : readoutFromComponent(c);
       const mine = picked?.componentId === c.id ? picked.regionId : null;
+      // Cut like the casing: by the cut view's plane, else by the part's breach.
+      const breach = view.cutaway || view.overlay === "internals" ? null : breachPlanes(c.id);
+      const planes = breach ?? [cutPlaneFor(c.id)];
+      for (const region of regions) {
+        const m = region.material;
+        if (
+          m.clippingPlanes?.length !== planes.length ||
+          m.clipIntersection !== (breach !== null)
+        ) {
+          m.clippingPlanes = planes;
+          m.clipIntersection = breach !== null;
+          m.needsUpdate = true;
+        }
+      }
       for (const region of regions)
         paintRegion(
           view.overlay,

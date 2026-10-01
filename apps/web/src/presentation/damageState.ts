@@ -4,12 +4,16 @@
  */
 const fractured = new Set<string>();
 const listeners = new Set<() => void>();
+let version = 0;
 const changed = () => {
+  version += 1;
   for (const l of listeners) l();
 };
 
 export const damageState = {
   isFractured: (componentId: string): boolean => fractured.has(componentId),
+  /** Changes whenever the set does (for useSyncExternalStore). */
+  version: (): number => version,
   markFractured(componentId: string): void {
     if (fractured.has(componentId)) return;
     fractured.add(componentId);

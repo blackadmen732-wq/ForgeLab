@@ -203,7 +203,8 @@ export class DebrisField {
 
   /**
    * Breaks `count` rigid and `simpleCount` simple fragments off a part centred at
-   * `origin` with half extents `half`, thrown along `direction`.
+   * `origin` with half extents `half`, thrown along `direction`. `colorOf` picks each
+   * fragment's colour (the materials the part is made of).
    */
   spawn(
     origin: V3,
@@ -213,7 +214,7 @@ export class DebrisField {
     pieceM: number,
     count: number,
     simpleCount: number,
-    color: Color,
+    colorOf: () => Color,
   ): void {
     const rnd = this.#random;
     const inside = (): Vector3 =>
@@ -266,6 +267,7 @@ export class DebrisField {
           body,
         );
         const slot = this.#rigid.length;
+        const color = colorOf();
         this.#rigid.push({ body, half: h, slot, color });
         this.rigidMesh.setColorAt(slot, color);
       }
@@ -275,7 +277,7 @@ export class DebrisField {
     for (let i = 0; i < simpleCount && this.#simple.length < this.#simpleCapacity; i += 1) {
       const at = inside();
       const h = size().map((x) => x * 0.5) as unknown as V3;
-      this.simpleMesh.setColorAt(this.#simple.length, color);
+      this.simpleMesh.setColorAt(this.#simple.length, colorOf());
       this.#simple.push({
         pos: at,
         vel: velocity(at).multiplyScalar(1.2),

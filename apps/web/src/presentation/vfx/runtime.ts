@@ -9,9 +9,11 @@ import {
   Group,
   Line,
   LineBasicMaterial,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   PointLight,
+  Quaternion,
   type Camera,
   type Object3D,
   type Scene,
@@ -21,7 +23,14 @@ import {
   Vector3,
 } from "three";
 import { HALL } from "../../builder/scene/environment/hall/geometry.js";
-import { materialColor } from "../../builder/scene/appearance.js";
+import {
+  breachFor,
+  clearBreaches,
+  fragmentPalette,
+  pickColor,
+  setBreach,
+  type FragmentColor,
+} from "../../builder/scene/fracture.js";
 import { meshRegistry } from "../../builder/scene/meshes.js";
 import type { AudioEngine } from "../audio/engine.js";
 import type { PresentationDirector } from "../director.js";
@@ -384,12 +393,17 @@ export class VfxRuntime {
         case "debris": {
           if (this.#broken.has(cmd.componentId)) break;
           this.#broken.add(cmd.componentId);
+          // Open the part where it broke, then mark it destroyed (the scene repaints).
+          this.#breach(cmd.componentId, cmd.direction, cmd.amount);
           damageState.markFractured(cmd.componentId);
-          // The part's own material colour (the live mesh may be tinted red as failed).
+          // Fragments in the materials the part is made of — casing and what was inside.
           const part = this.#director
             ?.getState()
             .reading?.components.find((c) => c.id === cmd.componentId);
-          const color = part !== undefined ? materialColor(part.materialId) : new Color("#8a939e");
+          const palette: FragmentColor[] =
+            part !== undefined
+              ? fragmentPalette(part.type, part.materialId)
+              : [{ color: new Color("#8a939e"), weight: 1 }];
           const ctx = recipeContext(event);
           const half: V3 = [
             Math.max(0.3, Math.abs(ctx.ends[1][0] - ctx.ends[0][0]) / 2),
@@ -408,7 +422,7 @@ export class VfxRuntime {
               cmd.pieceM,
               rigid,
               simple,
-              color,
+              () => pickColor(palette, this.random()),
             );
             this.#invalidate();
           });
@@ -453,6 +467,35 @@ export class VfxRuntime {
       }
     }
     this.#invalidate();
+  }
+
+  /** A jagged opening in the part on the side its debris was thrown (fracture.ts). */
+  #breach(componentId: string, direction: V3, amount: number): void {
+    const group = meshRegistry.get(componentId)?.group;
+    if (group === undefined) return;
+    group.updateMatrixWorld(true);
+    const toLocal = new Matrix4().copy(group.matrixWorld).invert();
+    const local = new Box3();
+    const m = new Matrix4();
+    group.traverse((o) => {
+      if (!(o instanceof Mesh) || !o.visible) return;
+      if (o.geometry.boundingBox === null) o.geometry.computeBoundingBox();
+      local.union(
+        o.geometry.boundingBox!.clone().applyMatrix4(m.multiplyMatrices(toLocal, o.matrixWorld)),
+      );
+    });
+    if (local.isEmpty()) return;
+    const centre = local.getCenter(new Vector3());
+    const half = local.getSize(new Vector3()).multiplyScalar(0.5);
+    const q = group.getWorldQuaternion(new Quaternion()).invert();
+    const d = new Vector3(...direction).applyQuaternion(q);
+    const breach = breachFor([half.x, half.y, half.z], [d.x, d.y, d.z], amount, this.random);
+    setBreach(componentId, {
+      normals: breach.normals,
+      points: breach.points.map(
+        (p) => [p[0] + centre.x, p[1] + centre.y, p[2] + centre.z] as const,
+      ),
+    });
   }
 
   #start(cmd: Delayable): void {
@@ -506,6 +549,7 @@ export class VfxRuntime {
 
   clearAll(): void {
     this.#broken.clear();
+    clearBreaches();
     damageState.clear();
     this.emitters.length = 0;
     this.#delayed.length = 0;
