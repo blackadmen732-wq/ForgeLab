@@ -56,7 +56,87 @@ export interface TorusGeometry {
   readonly wallThicknessM?: Meters;
 }
 
-export type ComponentGeometry = BoxGeometry | CylinderGeometry | TorusGeometry;
+/**
+ * A bent tube: a circular tube of outer radius `radiusM` whose centreline is an arc of
+ * radius `bendRadiusM` sweeping `sweepRad` (0 < sweep ≤ π) about the local `axis`.
+ * The local origin is the midpoint of the centreline, where the tube runs along the
+ * arc's tangent axis; the centre of curvature lies at −bendRadius along the radial axis
+ * (see `arcFrame`). With `wallThicknessM` it is hollow — a vacuum-chamber bend or a
+ * toroidal segment. Its two ends are open (flanged in a finished part).
+ *
+ * Mass, volumes and areas are exact (Pappus, swept fraction). The bounding box is made
+ * symmetric about the origin (`geometryLocalHalfExtentsM`): on the inner side of the bend
+ * it over-reaches by the bend's sagitta R(1 − cos(sweep/2)); the centre of mass is taken
+ * at the origin, off by less than that sagitta. Documented approximations.
+ */
+export interface ArcGeometry {
+  readonly kind: "arc";
+  readonly bendRadiusM: Meters;
+  readonly sweepRad: number;
+  readonly radiusM: Meters;
+  readonly axis: GeometryAxis;
+  readonly wallThicknessM?: Meters;
+}
+
+export type ComponentGeometry = BoxGeometry | CylinderGeometry | TorusGeometry | ArcGeometry;
+
+export function arcGeometry(
+  bendRadiusM: Meters,
+  sweepRad: number,
+  radiusM: Meters,
+  axis: GeometryAxis = "y",
+  wallThicknessM?: Meters,
+): ArcGeometry {
+  assertPositive(bendRadiusM, "arcGeometry.bendRadiusM");
+  assertPositive(radiusM, "arcGeometry.radiusM");
+  if (!(sweepRad > 0 && sweepRad <= Math.PI + 1e-12))
+    throw new RangeError("arcGeometry.sweepRad must be in (0, π].");
+  if (!(radiusM < bendRadiusM))
+    throw new RangeError("arcGeometry.radiusM must be smaller than bendRadiusM.");
+  if (wallThicknessM === undefined)
+    return Object.freeze({ kind: "arc", bendRadiusM, sweepRad, radiusM, axis });
+  assertPositive(wallThicknessM, "arcGeometry.wallThicknessM");
+  return Object.freeze({ kind: "arc", bendRadiusM, sweepRad, radiusM, axis, wallThicknessM });
+}
+
+/**
+ * The local frame of an arc: `radial` points from the centre of curvature to the
+ * centreline midpoint (the origin), `tangent` is the centreline direction there, and
+ * `axis` is the axis the bend turns about. Right-handed: tangent = axis × radial.
+ */
+export function arcFrame(geometry: ArcGeometry): {
+  readonly radial: Vec3;
+  readonly tangent: Vec3;
+  readonly axis: Vec3;
+  readonly centre: Vec3;
+} {
+  const radial = geometry.axis === "x" ? vec3(0, 1, 0) : vec3(1, 0, 0);
+  const axis =
+    geometry.axis === "x" ? vec3(1, 0, 0) : geometry.axis === "y" ? vec3(0, 1, 0) : vec3(0, 0, 1);
+  const tangent = Vec3Math.cross(axis, radial);
+  return { radial, tangent, axis, centre: Vec3Math.scale(radial, -geometry.bendRadiusM) };
+}
+
+/** A point on the arc's centreline at angle t ∈ [−sweep/2, sweep/2] (0 = origin), local. */
+export function arcPoint(geometry: ArcGeometry, t: number): Vec3 {
+  const f = arcFrame(geometry);
+  return Vec3Math.add(
+    f.centre,
+    Vec3Math.add(
+      Vec3Math.scale(f.radial, geometry.bendRadiusM * Math.cos(t)),
+      Vec3Math.scale(f.tangent, geometry.bendRadiusM * Math.sin(t)),
+    ),
+  );
+}
+
+/** The centreline direction at angle t (towards increasing t), local. */
+export function arcTangent(geometry: ArcGeometry, t: number): Vec3 {
+  const f = arcFrame(geometry);
+  return Vec3Math.add(
+    Vec3Math.scale(f.radial, -Math.sin(t)),
+    Vec3Math.scale(f.tangent, Math.cos(t)),
+  );
+}
 
 export function torusGeometry(
   majorRadiusM: Meters,
@@ -96,6 +176,10 @@ export function geometryInteriorVolumeM3(geometry: ComponentGeometry): CubicMete
       const ia = Math.max(0, geometry.minorRadiusM - t);
       return 2 * Math.PI ** 2 * geometry.majorRadiusM * ia * ia;
     }
+    case "arc": {
+      const ia = Math.max(0, geometry.radiusM - t);
+      return Math.PI * ia * ia * geometry.bendRadiusM * geometry.sweepRad;
+    }
   }
 }
 
@@ -119,6 +203,10 @@ export function geometryInteriorSurfaceM2(geometry: ComponentGeometry): SquareMe
       const ia = Math.max(0, geometry.minorRadiusM - t);
       return 4 * Math.PI ** 2 * geometry.majorRadiusM * ia;
     }
+    case "arc": {
+      const ia = Math.max(0, geometry.radiusM - t);
+      return 2 * Math.PI * ia * geometry.bendRadiusM * geometry.sweepRad;
+    }
   }
 }
 
@@ -135,6 +223,8 @@ export function geometryOuterSurfaceM2(geometry: ComponentGeometry): SquareMeter
     }
     case "torus":
       return 4 * Math.PI ** 2 * geometry.majorRadiusM * geometry.minorRadiusM;
+    case "arc":
+      return 2 * Math.PI * geometry.radiusM * geometry.bendRadiusM * geometry.sweepRad;
   }
 }
 
@@ -203,6 +293,15 @@ export function geometryVolumeM3(geometry: ComponentGeometry): CubicMeters {
       if (ia <= 0) return outer;
       return outer - 2 * Math.PI ** 2 * R * ia * ia;
     }
+    case "arc": {
+      const { bendRadiusM: R, sweepRad: s, radiusM: a } = geometry;
+      const outer = Math.PI * a * a * R * s;
+      const t = geometry.wallThicknessM;
+      if (t === undefined) return outer;
+      const ia = a - t;
+      if (ia <= 0) return outer;
+      return outer - Math.PI * ia * ia * R * s;
+    }
   }
 }
 
@@ -234,6 +333,21 @@ export function geometryLocalHalfExtentsM(geometry: ComponentGeometry): Vec3 {
         case "z":
           return vec3(outer, outer, a);
       }
+    }
+    // eslint-disable-next-line no-fallthrough
+    case "arc": {
+      const { bendRadiusM: R, sweepRad: s, radiusM: a } = geometry;
+      const f = arcFrame(geometry);
+      const radial = R * (1 - Math.cos(s / 2)) + a;
+      const tangent = R * Math.sin(Math.min(s, Math.PI) / 2) + a;
+      const h = Vec3Math.add(
+        Vec3Math.add(
+          Vec3Math.scale(Vec3Math.abs(f.radial), radial),
+          Vec3Math.scale(Vec3Math.abs(f.tangent), tangent),
+        ),
+        Vec3Math.scale(Vec3Math.abs(f.axis), a),
+      );
+      return h;
     }
   }
 }
@@ -316,6 +430,14 @@ export function sectionAreaPerpendicularToLocalAxis(
       if (tube !== undefined) return 2 * Math.PI * a * a;
       const ia = a - t!;
       return 2 * Math.PI * (a * a - ia * ia);
+    }
+    case "arc": {
+      // The tube's own annulus, whichever way it is cut (a bend is a short member).
+      const a = geometry.radiusM;
+      const t = geometry.wallThicknessM;
+      if (t === undefined || t >= a) return Math.PI * a * a;
+      const ia = a - t;
+      return Math.PI * (a * a - ia * ia);
     }
   }
 }

@@ -6,6 +6,7 @@ import { compositionError } from "../component.js";
 import { parsePortSpec, type PortSpec } from "../ports.js";
 import {
   boxGeometry,
+  arcGeometry,
   cylinderGeometry,
   torusGeometry,
   type ComponentGeometry,
@@ -132,6 +133,16 @@ function serializeGeometry(geometry: ComponentGeometry): SerializedGeometry {
     return {
       kind: "box",
       sizeM: serializeVec3(geometry.sizeM),
+      ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
+    };
+  }
+  if (geometry.kind === "arc") {
+    return {
+      kind: "arc",
+      bendRadiusM: geometry.bendRadiusM,
+      sweepRad: geometry.sweepRad,
+      radiusM: geometry.radiusM,
+      axis: geometry.axis,
       ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
     };
   }
@@ -309,6 +320,15 @@ function deserializeGeometry(geometry: SerializedGeometry): ComponentGeometry {
   if (geometry.kind === "box") {
     return boxGeometry(toVec3(geometry.sizeM), geometry.wallThicknessM);
   }
+  if (geometry.kind === "arc") {
+    return arcGeometry(
+      geometry.bendRadiusM,
+      geometry.sweepRad,
+      geometry.radiusM,
+      geometry.axis,
+      geometry.wallThicknessM,
+    );
+  }
   if (geometry.kind === "torus") {
     return torusGeometry(
       geometry.majorRadiusM,
@@ -470,6 +490,22 @@ function validateGeometry(value: unknown, path: string): SerializedGeometry {
       kind: "cylinder",
       radiusM: requireFinite(value["radiusM"], `${path}.radiusM`),
       heightM: requireFinite(value["heightM"], `${path}.heightM`),
+      axis,
+      ...(typeof value["wallThicknessM"] === "number"
+        ? { wallThicknessM: value["wallThicknessM"] }
+        : {}),
+    };
+  }
+  if (kind === "arc") {
+    const axis = value["axis"];
+    if (axis !== "x" && axis !== "y" && axis !== "z") {
+      throw new AssemblyFileError(`${path}.axis must be "x", "y" or "z".`);
+    }
+    return {
+      kind: "arc",
+      bendRadiusM: requireFinite(value["bendRadiusM"], `${path}.bendRadiusM`),
+      sweepRad: requireFinite(value["sweepRad"], `${path}.sweepRad`),
+      radiusM: requireFinite(value["radiusM"], `${path}.radiusM`),
       axis,
       ...(typeof value["wallThicknessM"] === "number"
         ? { wallThicknessM: value["wallThicknessM"] }

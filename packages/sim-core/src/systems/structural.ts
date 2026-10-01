@@ -562,7 +562,9 @@ function analyseMember(input: MemberInput): MemberResult {
   const rotation = component.state.physical.rotation;
   if (input.mode === "free") return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
   // A torus (vessel, coil set, blanket) is a closed ring: V0.1 checks direct stress only.
-  if (geometry.kind === "torus") return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
+  // An arc segment of a curved chamber is likewise checked for direct stress only.
+  if (geometry.kind === "torus" || geometry.kind === "arc")
+    return { role: "block", lengthM: 0, ...NO_MEMBER_EFFECTS };
 
   const localUp = QuaternionMath.inverseRotateVec3(rotation, UP);
   const verticalAxis = dominantLocalAxis(localUp);

@@ -1,5 +1,5 @@
 import { MaterialIds, type MaterialId } from "@forgelab/materials";
-import { type Vec3, vec3 } from "@forgelab/shared";
+import { type Vec3, Vec3Math, vec3 } from "@forgelab/shared";
 import {
   type ComponentGeometry,
   type ComponentSpec,
@@ -7,6 +7,7 @@ import {
   type PlantRole,
   boxGeometry,
   cylinderGeometry,
+  geometryLocalHalfExtentsM,
   torusGeometry,
 } from "@forgelab/sim-core";
 import { V01_PORTS, V01_PRODUCTS, type PortSource } from "./products.js";
@@ -128,6 +129,8 @@ function sizeOf(geometry: ComponentGeometry): Vec3 {
       const outer = 2 * (geometry.majorRadiusM + geometry.minorRadiusM);
       return vec3(outer, 2 * geometry.minorRadiusM, outer);
     }
+    case "arc":
+      return Vec3Math.scale(geometryLocalHalfExtentsM(geometry), 2);
   }
 }
 

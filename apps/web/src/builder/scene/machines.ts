@@ -9,7 +9,13 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { ComponentGeometry, ConnectionPoint } from "@forgelab/sim-core";
+import {
+  type ArcGeometry,
+  type ComponentGeometry,
+  type ConnectionPoint,
+  arcFrame,
+  geometryLocalHalfExtentsM,
+} from "@forgelab/sim-core";
 
 /**
  * Finished machine models. Presentation only: each is drawn inside (or just around) the
@@ -108,7 +114,41 @@ export function halfExtents(g: ComponentGeometry): V {
       const a = g.minorRadiusM;
       return g.axis === "x" ? [a, R, R] : g.axis === "z" ? [R, R, a] : [R, a, R];
     }
+    case "arc": {
+      const h = geometryLocalHalfExtentsM(g);
+      return [h.x, h.y, h.z];
+    }
   }
+}
+
+/**
+ * A bent tube along an arc part's centreline (sim-core `arcFrame`): three's torus sector,
+ * swept symmetrically about the origin and carried into the part's radial / tangent / axis
+ * frame. `tubeRadius` lets callers draw the bore or an inner band.
+ */
+export function arcTube(
+  g: ArcGeometry,
+  tubeRadius: number,
+  radialSegments = 24,
+  tubularSegments = 48,
+): BufferGeometry {
+  const tube = new TorusGeometry(
+    g.bendRadiusM,
+    tubeRadius,
+    radialSegments,
+    tubularSegments,
+    g.sweepRad,
+  );
+  // Native: centre of curvature at the origin, sweep from +x towards +y about +z.
+  tube.rotateZ(-g.sweepRad / 2);
+  tube.translate(-g.bendRadiusM, 0, 0);
+  const f = arcFrame(g);
+  const basis = new Matrix4().makeBasis(
+    new Vector3(f.radial.x, f.radial.y, f.radial.z),
+    new Vector3(f.tangent.x, f.tangent.y, f.tangent.z),
+    new Vector3(f.axis.x, f.axis.y, f.axis.z),
+  );
+  return tube.applyMatrix4(basis);
 }
 
 /* ------------------------------------------------------------------------------------ *

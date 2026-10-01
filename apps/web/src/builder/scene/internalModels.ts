@@ -9,7 +9,7 @@ import {
 } from "three";
 import type { ProductInternal } from "@forgelab/reactor-components";
 import type { ComponentGeometry } from "@forgelab/sim-core";
-import { box, cyl, halfExtents, merge, ring, type V } from "./machines.js";
+import { arcTube, box, cyl, halfExtents, merge, ring, type V } from "./machines.js";
 
 /**
  * What is inside each finished machine, as geometry: one mesh per internal region of its
@@ -353,6 +353,8 @@ function band(geometry: ComponentGeometry, scale: number): BufferGeometry {
       if (geometry.axis === "x") g.rotateY(Math.PI / 2);
       return g;
     }
+    case "arc":
+      return arcTube(geometry, geometry.radiusM * scale, 20, 40);
   }
 }
 

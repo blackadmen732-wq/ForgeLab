@@ -74,6 +74,14 @@ export type SerializedGeometry =
       readonly minorRadiusM: number;
       readonly axis: "x" | "y" | "z";
       readonly wallThicknessM?: number;
+    }
+  | {
+      readonly kind: "arc";
+      readonly bendRadiusM: number;
+      readonly sweepRad: number;
+      readonly radiusM: number;
+      readonly axis: "x" | "y" | "z";
+      readonly wallThicknessM?: number;
     };
 
 export interface SerializedConnectionPoint {

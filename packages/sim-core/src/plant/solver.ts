@@ -2699,7 +2699,7 @@ function resistiveCoilOhm(coil: SimulationComponent, temperatureK: number): numb
       ? 2 *
         Math.PI *
         (torusWinding(coil) === "loop" ? geometry.majorRadiusM : geometry.minorRadiusM)
-      : geometry.kind === "cylinder"
+      : geometry.kind === "cylinder" || geometry.kind === "arc"
         ? 2 * Math.PI * geometry.radiusM
         : 2 * (geometry.sizeM.x + geometry.sizeM.z);
   return (resistivityAt("copper", temperatureK) * turns * turnLengthM) / area;

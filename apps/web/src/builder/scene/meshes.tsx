@@ -13,8 +13,12 @@ import {
   TorusGeometry,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { ComponentGeometry, SimulationComponent } from "@forgelab/sim-core";
-import { machineModel } from "./machines.js";
+import {
+  type ComponentGeometry,
+  type SimulationComponent,
+  geometryLocalHalfExtentsM,
+} from "@forgelab/sim-core";
+import { arcTube, machineModel } from "./machines.js";
 
 /**
  * Procedural presentation meshes.
@@ -80,6 +84,8 @@ function halfExtents(geometry: ComponentGeometry): { x: number; y: number; z: nu
           ? { x: R, y: R, z: a }
           : { x: R, y: a, z: R };
     }
+    case "arc":
+      return geometryLocalHalfExtentsM(geometry);
   }
 }
 
@@ -175,6 +181,13 @@ export function bodyGeometry(geometry: ComponentGeometry): BufferGeometry {
         new TorusGeometry(geometry.majorRadiusM, geometry.minorRadiusM, 32, 96),
         geometry.axis,
         "z",
+      );
+    case "arc":
+      return arcTube(
+        geometry,
+        geometry.radiusM,
+        32,
+        Math.max(12, Math.round(geometry.sweepRad * 24)),
       );
   }
 }

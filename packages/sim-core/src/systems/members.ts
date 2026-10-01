@@ -1,5 +1,9 @@
 import type { Meters, Newtons, Pascals } from "@forgelab/shared";
-import type { ComponentGeometry, GeometryAxis } from "../geometry.js";
+import {
+  type ComponentGeometry,
+  type GeometryAxis,
+  geometryLocalHalfExtentsM,
+} from "../geometry.js";
 
 /**
  * Member mechanics for Structural 0.1: section properties, beam bending and column
@@ -30,6 +34,7 @@ export interface SectionProperties {
 /** Local extent of the geometry along one of its axes, m. */
 export function extentAlongAxis(geometry: ComponentGeometry, axis: GeometryAxis): Meters {
   if (geometry.kind === "box") return geometry.sizeM[axis];
+  if (geometry.kind === "arc") return 2 * geometryLocalHalfExtentsM(geometry)[axis];
   if (geometry.kind === "torus") {
     return axis === geometry.axis
       ? 2 * geometry.minorRadiusM

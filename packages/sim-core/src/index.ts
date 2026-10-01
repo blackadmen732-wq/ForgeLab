@@ -26,6 +26,10 @@ export {
   loadBearingAreaM2,
   sectionAreaPerpendicularToLocalAxis,
   torusGeometry,
+  arcGeometry,
+  arcFrame,
+  arcPoint,
+  arcTangent,
   worldAabb,
   worldBottomY,
   type Aabb,
@@ -34,6 +38,7 @@ export {
   type CylinderGeometry,
   type GeometryAxis,
   type TorusGeometry,
+  type ArcGeometry,
 } from "./geometry.js";
 
 export {
