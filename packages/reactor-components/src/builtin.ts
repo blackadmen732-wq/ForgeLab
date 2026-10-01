@@ -5,6 +5,7 @@ import {
   type ComponentSpec,
   type ConnectionType,
   type PlantRole,
+  arcGeometry,
   boxGeometry,
   cylinderGeometry,
   geometryLocalHalfExtentsM,
@@ -364,6 +365,154 @@ export const REACTOR_CHAMBER = define({
       : {},
   presets: { channelDiameterM: 0.3, channelLengthM: 10 },
   keyProperty: "Ø3 m · 21 m³",
+});
+
+/*
+ * Chamber segments: build a vacuum chamber of any shape. Segments joined flange to flange
+ * share one vacuum; a closed ring holds a toroidal plasma, a capped column a linear one
+ * (sim-core plant/chamber.ts). An end flange left open lets the hall's air in. Tubes run
+ * along local z (straight) or bend about local y (bends), so a radial array of bends round
+ * the vertical axis closes a horizontal ring.
+ */
+const SEGMENT_DIMS = [
+  dim("tubeRadiusM", "Tube radius", 1, 0.2, 5),
+  dim("wallM", "Wall thickness", 0.04, 0.005, 0.3),
+];
+
+/**
+ * Sockets common to every segment, round the tube's middle cross-section (x outboard,
+ * y up): a foot, wall cooling on the inboard side, and spare service ports outboard —
+ * pumping low, fuel high, heating on the midplane, diagnostics on top. A pump, injector
+ * or heater on any segment serves the whole chamber; unused ports are blanked off.
+ */
+function segmentServices(r: number): SocketTemplate[] {
+  const k = Math.SQRT1_2;
+  return [
+    structural("foot", vec3(0, -r, 0), DOWN),
+    socket("coolant-in", "coolant", vec3(-r, 0.25 * r, 0), NX),
+    socket("coolant-out", "coolant", vec3(-r, -0.25 * r, 0), NX),
+    socket("vacuum", "vacuum", vec3(k * r, -k * r, 0), vec3(k, -k, 0)),
+    socket("fuel", "fuel", vec3(k * r, k * r, 0), vec3(k, k, 0)),
+    socket("heating", "port", vec3(r, 0, 0), PX),
+    socket("sensor", "control", vec3(0, r, 0), UP),
+  ];
+}
+
+function straightShape(d: Readonly<Record<string, number>>) {
+  const r = d["tubeRadiusM"]!;
+  const L = d["lengthM"]!;
+  const t = Math.min(d["wallM"]!, r / 3, L / 6);
+  return {
+    geometry: cylinderGeometry(r, L, "z", t),
+    r,
+    L,
+    ends: [
+      socket("flange-a", "vacuum", vec3(0, 0, -L / 2), NZ),
+      socket("flange-b", "vacuum", vec3(0, 0, L / 2), PZ),
+    ],
+  };
+}
+
+const straightDims = (g: ComponentGeometry) =>
+  g.kind === "cylinder"
+    ? { tubeRadiusM: g.radiusM, lengthM: g.heightM, wallM: g.wallThicknessM ?? 0.04 }
+    : {};
+
+/** Small-machine plasma defaults: a 15 MA ITER current would tear a 2 m ring apart. */
+const SEGMENT_PRESETS = {
+  plasmaCurrentA: 1e6,
+  coolantConductanceWK: 2e6,
+  channelDiameterM: 0.15,
+  channelLengthM: 6,
+} as const;
+
+export const CHAMBER_STRAIGHT = define({
+  type: "chamber-straight",
+  name: "Straight Chamber Segment",
+  description:
+    "A flanged 316L vacuum tube, 2 m long and 1 m in radius by default. Join segments end to end: a closed ring holds a toroidal plasma, a capped column a linear one. An open end flange lets air in. Spare ports take a pump, fuel, heating or diagnostics for the whole chamber.",
+  category: "Chambers",
+  role: "vacuum-vessel",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [dim("lengthM", "Length", 2, 0.3, 20), ...SEGMENT_DIMS],
+  shape: (d) => {
+    const { geometry, r, ends } = straightShape(d);
+    return { geometry, sockets: [...ends, ...segmentServices(r)] };
+  },
+  dimensionsOf: straightDims,
+  presets: SEGMENT_PRESETS,
+  keyProperty: "2 m · flanged",
+});
+
+export const CHAMBER_BEND = define({
+  type: "chamber-bend",
+  name: "Bend Segment",
+  description:
+    "A curved, flanged 316L vacuum tube: 45° of a 4 m bend radius by default. Eight of them, radially arrayed, close a ring — a toroidal chamber you built yourself.",
+  category: "Chambers",
+  role: "vacuum-vessel",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("bendRadiusM", "Bend radius", 4, 0.6, 20),
+    dim("sweepDeg", "Sweep angle", 45, 5, 180),
+    ...SEGMENT_DIMS,
+  ],
+  shape: (d) => {
+    const R = d["bendRadiusM"]!;
+    const s = (d["sweepDeg"]! * Math.PI) / 180;
+    const r = Math.min(d["tubeRadiusM"]!, 0.8 * R);
+    const t = Math.min(d["wallM"]!, r / 3);
+    // Bends about local y: radial +x, tangent −z (sim-core arcFrame). The ends sit at
+    // ±sweep/2 from the origin, facing out along the centreline.
+    const c = Math.cos(s / 2);
+    const n = Math.sin(s / 2);
+    return {
+      geometry: arcGeometry(R, s, r, "y", t),
+      sockets: [
+        socket("flange-a", "vacuum", vec3(-R + R * c, 0, R * n), vec3(-n, 0, c)),
+        socket("flange-b", "vacuum", vec3(-R + R * c, 0, -R * n), vec3(-n, 0, -c)),
+        ...segmentServices(r),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "arc"
+      ? {
+          bendRadiusM: g.bendRadiusM,
+          sweepDeg: (g.sweepRad * 180) / Math.PI,
+          tubeRadiusM: g.radiusM,
+          wallM: g.wallThicknessM ?? 0.04,
+        }
+      : {},
+  presets: SEGMENT_PRESETS,
+  keyProperty: "45° · R 4 m",
+});
+
+export const CHAMBER_END_CAP = define({
+  type: "chamber-end-cap",
+  name: "Chamber End Cap",
+  description:
+    "A dished 316L head that closes one end of a chamber column. Fit one to each open end of a linear chamber.",
+  category: "Chambers",
+  role: "vacuum-vessel",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [...SEGMENT_DIMS],
+  shape: (d) => {
+    const r = d["tubeRadiusM"]!;
+    const L = Math.max(0.2, 0.3 * r);
+    const t = Math.min(d["wallM"]!, r / 3, L / 6);
+    return {
+      geometry: cylinderGeometry(r, L, "z", t),
+      sockets: [
+        socket("flange", "vacuum", vec3(0, 0, L / 2), PZ),
+        structural("foot", vec3(0, -r, 0), DOWN),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder" ? { tubeRadiusM: g.radiusM, wallM: g.wallThicknessM ?? 0.04 } : {},
+  presets: SEGMENT_PRESETS,
+  keyProperty: "blank end",
 });
 
 /** Feet under a torus and cradles in its bore, so nested tori stack on each other. */
@@ -933,6 +1082,9 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   REACTOR_CHAMBER,
   EQUIPMENT_BLOCK,
   TOKAMAK_VESSEL,
+  CHAMBER_STRAIGHT,
+  CHAMBER_BEND,
+  CHAMBER_END_CAP,
   TF_COIL_SET,
   CIRCULAR_COIL,
   SOLENOID_COIL,

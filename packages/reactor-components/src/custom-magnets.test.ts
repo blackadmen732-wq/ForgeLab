@@ -67,6 +67,17 @@ describe("player-built magnets", () => {
     expect(codes).not.toContain("COIL_SERVES_NO_PLASMA");
   });
 
+  it("starts a plasma: coils that serve it through their geometry count as its magnet", () => {
+    const world = ringPlant(18);
+    const phases = new Set<string>();
+    for (let s = 0; s < 30; s += 1) {
+      world.stepMany(60);
+      phases.add(vessel(world).plasma.phase);
+      expect(vessel(world).plasma.statusText).not.toMatch(/no coil/);
+    }
+    expect([...phases].some((p) => p !== "off")).toBe(true);
+  });
+
   it("is deterministic", () => {
     const a = ringPlant(12);
     const b = ringPlant(12);

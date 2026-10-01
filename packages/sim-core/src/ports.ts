@@ -17,6 +17,11 @@ interface PortBase {
   /** Short engineering label shown on the port, e.g. "POWER IN" or "COOLANT OUT". */
   readonly label: string;
   readonly direction: PortDirection;
+  /**
+   * True for a port that is blanked off when unused (a spare port on a vessel sector):
+   * leaving it unconnected is a choice, not an oversight, so preflight does not flag it.
+   */
+  readonly optional?: boolean;
 }
 
 export interface StructuralPort extends PortBase {
@@ -44,6 +49,12 @@ export interface VacuumPort extends PortBase {
   readonly domain: "vacuum";
   /** Nominal flange bore (ISO-K / CF "DN"). */
   readonly flangeDiameterM: number;
+  /**
+   * "chamber-end": the open end of a vessel segment. The flange spans the bore, so the
+   * chamber is open to the hall there until it is joined to another segment, blanked off
+   * or fitted with a pump.
+   */
+  readonly opening?: "chamber-end";
 }
 
 export interface FuelPort extends PortBase {
@@ -313,7 +324,10 @@ export function parsePortSpec(value: unknown): PortSpec | null {
     typeof r[key] === "number" && Number.isFinite(r[key]) && (r[key] as number) > 0
       ? (r[key] as number)
       : null;
-  const base = { label, direction } as const;
+  const base =
+    r["optional"] === true
+      ? ({ label, direction, optional: true } as const)
+      : ({ label, direction } as const);
   switch (r["domain"]) {
     case "structural":
       return { ...base, domain: "structural" };
@@ -350,7 +364,11 @@ export function parsePortSpec(value: unknown): PortSpec | null {
     }
     case "vacuum": {
       const d = positive("flangeDiameterM");
-      return d === null ? null : { ...base, domain: "vacuum", flangeDiameterM: d };
+      if (d === null) return null;
+      if (r["opening"] === undefined) return { ...base, domain: "vacuum", flangeDiameterM: d };
+      return r["opening"] === "chamber-end"
+        ? { ...base, domain: "vacuum", flangeDiameterM: d, opening: "chamber-end" }
+        : null;
     }
     case "fuel":
       return r["medium"] === "D-T gas" ? { ...base, domain: "fuel", medium: "D-T gas" } : null;

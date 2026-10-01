@@ -52,6 +52,7 @@
   --conf-supported: #7fbf8f;
   --conf-approximate: #e2a53d;
   --conf-experimental: #c084fc;
+  --conf-unsupported: #94a3b8;
 
   /* Type */
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

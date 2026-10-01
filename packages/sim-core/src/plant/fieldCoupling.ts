@@ -1,5 +1,11 @@
 import { numberParameter } from "./roles.js";
-import { type AxisCoupling, coilSegments, ripple, vesselAxisCoupling } from "./biotSavart.js";
+import {
+  type AxisCoupling,
+  centrelineCoupling,
+  coilSegments,
+  ripple,
+  vesselAxisCoupling,
+} from "./biotSavart.js";
 import type { PlantTopology } from "./topology.js";
 
 /**
@@ -29,7 +35,7 @@ export interface GeometricCoupling {
 
 export function geometricCouplings(topology: PlantTopology): Map<string, GeometricCoupling> {
   const out = new Map<string, GeometricCoupling>();
-  const vessels = topology.vessels.map((v) => topology.byId.get(v.vesselId)!);
+  const vessels = topology.vessels;
   if (vessels.length === 0) return out;
   for (const coilId of topology.orphanCoilIds) {
     const coil = topology.byId.get(coilId)!;
@@ -37,11 +43,15 @@ export function geometricCouplings(topology: PlantTopology): Map<string, Geometr
     if (segments.length === 0) continue;
     const rated = numberParameter(coil.parameters, "currentA");
     let best: GeometricCoupling | null = null;
-    for (const vessel of vessels) {
-      const coupling = vesselAxisCoupling(vessel, segments);
+    for (const layout of vessels) {
+      // An assembled chamber's axis is its centreline; a single vessel's is analytic.
+      const coupling =
+        layout.chamber.centreline.length > 0
+          ? centrelineCoupling(layout.chamber.centreline, segments)
+          : vesselAxisCoupling(topology.byId.get(layout.vesselId)!, segments);
       if (coupling === null) continue;
       if (best === null || Math.abs(coupling.meanTPerA) > Math.abs(best.coupling.meanTPerA))
-        best = { coilId, vesselId: vessel.id, coupling, ripple: ripple(coupling) };
+        best = { coilId, vesselId: layout.vesselId, coupling, ripple: ripple(coupling) };
     }
     if (best !== null && Math.abs(best.coupling.meanTPerA * rated) >= GEOMETRIC_FIELD_MIN_T)
       out.set(coilId, best);

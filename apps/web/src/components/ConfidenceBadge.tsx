@@ -13,6 +13,10 @@ const TEXT: Record<ConfidenceLevel, { label: string; tip: string }> = {
     label: "Experimental",
     tip: "Physics outside what ForgeLab models well. Not eligible for leaderboards.",
   },
+  unsupported: {
+    label: "Unsupported",
+    tip: "ForgeLab cannot calculate part of this design yet, and says so rather than invent a number. Not eligible for leaderboards.",
+  },
 };
 
 export function ConfidenceBadge({

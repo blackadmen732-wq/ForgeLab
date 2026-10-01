@@ -210,9 +210,15 @@ export function runVerification(
     .filter((c) => c.state.plant.vessel !== null)
     .map((c) => c.state.plant.vessel!.plasma.phase);
 
-  const experimental = worstConfidence === "experimental";
+  const experimental = worstConfidence === "experimental" || worstConfidence === "unsupported";
   const base = experimental
-    ? { eligible: false, reason: "Experimental designs are not eligible for verified rankings." }
+    ? {
+        eligible: false,
+        reason:
+          worstConfidence === "unsupported"
+            ? "Designs ForgeLab cannot fully calculate are not eligible for verified rankings."
+            : "Experimental designs are not eligible for verified rankings.",
+      }
     : { eligible: true };
 
   const scores: CategoryScore[] = [

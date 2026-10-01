@@ -264,6 +264,7 @@ export {
 } from "./plant/solver.js";
 export { worstLevel, RIPPLE_EXPERIMENTAL } from "./plant/confidence.js";
 export {
+  centrelineCoupling,
   coilSegments,
   fieldAt,
   fieldPerAmp,
@@ -282,6 +283,15 @@ export {
   geometricCouplings,
   type GeometricCoupling,
 } from "./plant/fieldCoupling.js";
+export {
+  buildChambers,
+  openingConductanceM3PerS,
+  type CentrelineSample,
+  type ChamberOpening,
+  type ChamberPath,
+  type ChamberShape,
+} from "./plant/chamber.js";
+export { buildTopology, type PlantTopology, type VesselLayout } from "./plant/topology.js";
 export {
   preflight,
   type PreflightCode,

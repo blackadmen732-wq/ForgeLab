@@ -33,6 +33,8 @@ export type PreflightCode =
   | "UNPUMPED_COOLANT_LOOP"
   | "PIPE_PRESSURE_LIMIT"
   | "NO_VACUUM_PUMP"
+  | "OPEN_CHAMBER"
+  | "BRANCHED_CHAMBER"
   | "NO_FUEL"
   | "NO_HEATING"
   | "NO_CONFINING_FIELD"
@@ -123,6 +125,9 @@ function unconnectedPorts(
         p.port !== undefined &&
         SERVICE_DOMAINS.has(p.port.domain) &&
         !(cryoCooled && p.port.domain === "fluid") &&
+        // An open chamber end is reported as such (OPEN_CHAMBER), with its consequence.
+        !(p.port.domain === "vacuum" && p.port.opening === "chamber-end") &&
+        p.port.optional !== true &&
         !used.has(`${component.id}/${p.id}`),
     );
     if (open.length === 0) continue;
@@ -282,6 +287,23 @@ function plasmaSystems(
   const geometric = geometricCouplings(topology);
   for (const vessel of topology.vessels) {
     const name = label(topology.byId.get(vessel.vesselId)!);
+    const { openings, memberIds, path } = vessel.chamber;
+    if (openings.length > 0)
+      out.push({
+        code: "OPEN_CHAMBER",
+        system: "vacuum",
+        severity: "warning",
+        componentIds: [...new Set(openings.map((o) => o.componentId))],
+        message: `${name} is open to the hall at ${openings.length === 1 ? "one end flange" : `${openings.length} end flanges`}: air flows in faster than any pump can remove it, so it cannot reach vacuum.`,
+      });
+    if (path === "branched")
+      out.push({
+        code: "BRANCHED_CHAMBER",
+        system: "vacuum",
+        severity: "warning",
+        componentIds: [...memberIds],
+        message: `${name}'s ${memberIds.length} segments branch rather than forming one ring or one column: ForgeLab computes its vacuum but cannot estimate a plasma in it.`,
+      });
     if (vessel.pumpIds.length === 0)
       out.push({
         code: "NO_VACUUM_PUMP",

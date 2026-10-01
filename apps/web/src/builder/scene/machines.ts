@@ -38,6 +38,7 @@ export interface MachineModel {
 
 export type V = readonly [number, number, number];
 const Y = new Vector3(0, 1, 0);
+const Z = new Vector3(0, 0, 1);
 
 export function box(sx: number, sy: number, sz: number, x = 0, y = 0, z = 0): BufferGeometry {
   return new BoxGeometry(Math.max(sx, 1e-3), Math.max(sy, 1e-3), Math.max(sz, 1e-3)).translate(
@@ -168,6 +169,21 @@ function fittings(
   for (const p of points) {
     const at: V = [p.localPosition.x, p.localPosition.y, p.localPosition.z];
     const dir: V = [p.localDirection.x, p.localDirection.y, p.localDirection.z];
+    if (p.port?.domain === "vacuum" && p.port.opening === "chamber-end") {
+      // A chamber segment's end flange: a bolted collar round the bore, flush with the end.
+      const d = new Vector3(...dir).normalize();
+      const q = new Quaternion().setFromUnitVectors(Z, d);
+      const r = p.port.flangeDiameterM / 2;
+      const collar = new TorusGeometry(r + 0.09, 0.06, 8, 48).applyMatrix4(
+        new Matrix4().compose(
+          new Vector3(...at).addScaledVector(d, -0.06),
+          q,
+          new Vector3(1, 1, 0.8),
+        ),
+      );
+      trim.push(collar);
+      continue;
+    }
     const bore =
       p.port?.domain === "fluid"
         ? p.port.innerDiameterM / 2 + 0.03

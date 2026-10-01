@@ -177,7 +177,7 @@ export interface CoolantLoopSummary {
   readonly heatRejectedW: number;
 }
 
-export type ConfidenceLevel = "supported" | "approximate" | "experimental";
+export type ConfidenceLevel = "supported" | "approximate" | "experimental" | "unsupported";
 
 export interface SubsystemConfidence {
   readonly subsystem: string;

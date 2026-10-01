@@ -5,6 +5,7 @@ import { CONNECTION_SNAP_TOLERANCE_M } from "../connections.js";
 import { cylinderSurroundsCoaxially, coaxialRelation, torusEnclosesTorus } from "./magnetics.js";
 import type { PlantRole } from "./roles.js";
 import { torusWinding } from "./biotSavart.js";
+import { type ChamberShape, buildChambers } from "./chamber.js";
 
 /** A plant link: one connection with both endpoints resolved and its physical length. */
 export interface PlantLink {
@@ -18,8 +19,16 @@ export interface PlantLink {
 }
 
 export interface VesselLayout {
+  /** The chamber's lead segment (lowest id): it carries the chamber's state. */
   readonly vesselId: string;
+  /**
+   * The plasma model the chamber's shape calls for, derived from geometry: a closed ring
+   * ("tokamak": toroidal, plasma current driven) or an open column ("linear"); "none" when
+   * ForgeLab has no plasma model for the shape.
+   */
   readonly configuration: "tokamak" | "linear" | "none";
+  /** Every segment of the chamber (lead first) and how they join (chamber.ts). */
+  readonly chamber: ChamberShape;
   /** Coils whose field ForgeLab can compute at this vessel's plasma. */
   readonly coilIds: readonly string[];
   readonly blanketIds: readonly string[];
@@ -105,15 +114,26 @@ export function buildTopology(
   });
 
   const partial = { byId, links } as unknown as PlantTopology;
-  const vessels: VesselLayout[] = vesselComponents.map((vessel) => {
+  const chambers = buildChambers(vesselComponents, links.get("vacuum") ?? [], byId);
+  const vessels: VesselLayout[] = chambers.map((chamber) => {
+    const vessel = byId.get(chamber.memberIds[0]!)!;
     const configuration =
-      vessel.geometry.kind === "torus"
-        ? "tokamak"
-        : vessel.geometry.kind === "cylinder"
-          ? "linear"
-          : "none";
+      chamber.path === "single"
+        ? vessel.geometry.kind === "torus"
+          ? "tokamak"
+          : vessel.geometry.kind === "cylinder"
+            ? "linear"
+            : "none"
+        : chamber.path === "loop"
+          ? "tokamak"
+          : chamber.path === "chain"
+            ? "linear"
+            : "none";
+    // The analytic field and blanket models describe a single torus or cylinder; coils
+    // round an assembled chamber reach it through their computed field (fieldCoupling.ts).
+    const analytic = chamber.path === "single";
     const coilIds: string[] = [];
-    for (const coil of coils) {
+    for (const coil of analytic ? coils : []) {
       if (coilVessel.has(coil.id)) continue;
       // Only a toroidal winding makes the toroidal field the analytic model assumes; a
       // loop-wound torus (a circular coil) is handled geometrically (fieldCoupling.ts).
@@ -131,7 +151,7 @@ export function buildTopology(
       }
     }
     const blanketIds: string[] = [];
-    for (const blanket of blankets) {
+    for (const blanket of analytic ? blankets : []) {
       if (blanketVessel.has(blanket.id)) continue;
       const encloses =
         configuration === "tokamak"
@@ -146,11 +166,19 @@ export function buildTopology(
         blanketVessel.set(blanket.id, vessel.id);
       }
     }
+    // Pumps, injectors and heaters fitted to any segment serve the whole chamber.
     const linked = (type: ConnectionType, role: PlantRole) =>
-      neighbours(partial, type, vessel.id).filter((id) => byId.get(id)?.role === role);
+      [
+        ...new Set(
+          chamber.memberIds.flatMap((m) =>
+            neighbours(partial, type, m).filter((id) => byId.get(id)?.role === role),
+          ),
+        ),
+      ].sort();
     return {
       vesselId: vessel.id,
       configuration,
+      chamber,
       coilIds,
       blanketIds,
       heaterIds: linked("port", "plasma-heater"),

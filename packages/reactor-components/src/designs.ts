@@ -18,6 +18,7 @@ interface PlaceOptions {
   readonly materialId?: MaterialId;
   readonly additionalMassKg?: number;
   readonly parameters?: Readonly<Record<string, unknown>>;
+  readonly dimensions?: Readonly<Record<string, number>>;
   readonly label?: string;
 }
 
@@ -32,6 +33,7 @@ export function placePart(world: SimulationWorld, type: string, options: PlaceOp
         ? {}
         : { additionalMassKg: options.additionalMassKg }),
       ...(options.parameters === undefined ? {} : { parameters: options.parameters }),
+      ...(options.dimensions === undefined ? {} : { dimensions: options.dimensions }),
       label: options.label ?? definition.name,
     }),
   );

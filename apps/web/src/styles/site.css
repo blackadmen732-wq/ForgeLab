@@ -135,6 +135,11 @@
   color: var(--conf-experimental);
   border-color: rgba(192, 132, 252, 0.4);
 }
+.badge--conf-unsupported {
+  color: var(--conf-unsupported);
+  border-color: rgba(148, 163, 184, 0.45);
+  border-style: dashed;
+}
 
 /* ---------- menus ---------- */
 

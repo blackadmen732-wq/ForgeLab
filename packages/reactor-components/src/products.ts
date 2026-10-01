@@ -58,6 +58,19 @@ export const vacuum = (direction: "in" | "out" | "both", flangeM: number): PortS
   flangeDiameterM: flangeM,
 });
 
+/** An end flange of a chamber segment: it spans the bore and is open until joined. */
+export const chamberEnd = (d: Readonly<Record<string, number>>): PortSpec => {
+  const r = d["tubeRadiusM"] ?? 1;
+  const t = Math.min(d["wallM"] ?? 0.04, r / 3);
+  return {
+    domain: "vacuum",
+    label: "CHAMBER FLANGE",
+    direction: "both",
+    flangeDiameterM: 2 * (r - t),
+    opening: "chamber-end",
+  };
+};
+
 export const fuel = (direction: "in" | "out"): PortSpec => ({
   domain: "fuel",
   label: direction === "in" ? "FUEL IN" : "FUEL OUT",
@@ -95,6 +108,20 @@ export type PortSource = PortSpec | ((d: Readonly<Record<string, number>>) => Po
 const pipeBore = (d: Readonly<Record<string, number>>) =>
   2 * ((d["outerRadiusM"] ?? 0.39) - Math.min(d["wallM"] ?? 0.06, (d["outerRadiusM"] ?? 0.39) / 3));
 
+/** A spare service port on a chamber segment, blanked off when unused. */
+const spare = (port: PortSpec): PortSpec => ({ ...port, optional: true });
+
+const SEGMENT_PORTS: Readonly<Record<string, PortSource>> = {
+  "flange-a": chamberEnd,
+  "flange-b": chamberEnd,
+  "coolant-in": water("in", 0.15),
+  "coolant-out": water("out", 0.15),
+  vacuum: spare(vacuum("in", 0.4)),
+  fuel: spare(fuel("in")),
+  heating: spare(heating("in", 50e6)),
+  sensor: spare(control("measurement", "DIAGNOSTICS")),
+};
+
 export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSource>>>> = {
   "reactor-chamber": {
     vacuum: vacuum("in", 0.25),
@@ -111,6 +138,11 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
     "coolant-in": water("in", 0.8),
     "coolant-out": water("out", 0.8),
     sensor: control("measurement", "DIAGNOSTICS"),
+  },
+  "chamber-straight": SEGMENT_PORTS,
+  "chamber-bend": SEGMENT_PORTS,
+  "chamber-end-cap": {
+    flange: chamberEnd,
   },
   "tf-coil-set": {
     power: power("in", 400, "CRYOPLANT POWER"),
@@ -239,6 +271,60 @@ const structuralSheet = (
   animations: [],
 });
 
+/** A section of a player-assembled vacuum chamber (sim-core plant/chamber.ts). */
+const segmentSheet = (summary: string): ProductInfo => ({
+  summary,
+  internals: [
+    {
+      id: "wall",
+      name: "Chamber wall",
+      kind: "structure",
+      substanceId: "stainless-steel",
+      purpose: "Holds the vacuum against atmospheric pressure; the first wall of this section.",
+    },
+    {
+      id: "flanges",
+      name: "End flanges and metal seals",
+      kind: "structure",
+      substanceId: "stainless-steel",
+      purpose: "Bolt to the next section. Left open, the chamber breathes the hall's air.",
+    },
+    {
+      id: "plasma",
+      name: "Plasma volume",
+      kind: "vacuum",
+      substanceId: "dt-fuel",
+      purpose: "Shared with every section it is joined to.",
+    },
+  ],
+  internalsSetMass: false,
+  capabilities: ["structural", "thermal", "vacuum", "plasma", "fluid"],
+  ratings: (p) => [rating("Leak rate", `${n(p, "leakRatePaM3PerS").toExponential(1)} Pa·m³/s`)],
+  failureModes: [
+    {
+      id: "open",
+      name: "Open to air",
+      system: "vacuum",
+      description: "An unjoined end flange lets air in faster than pumps can remove it.",
+    },
+    {
+      id: "overheat",
+      name: "Wall over-temperature",
+      system: "thermal",
+      description: "Plasma exhaust lands on this section faster than its cooling removes it.",
+    },
+    {
+      id: "disruption",
+      name: "Disruption",
+      system: "plasma",
+      description: "The plasma's energy strikes the chamber wall within milliseconds.",
+    },
+  ],
+  audio: "vessel",
+  visual: "linear-chamber",
+  animations: [{ id: "glow", source: "plasma.temperatureKeV" }],
+});
+
 export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
   "structural-beam": structuralSheet(
     "Square hollow section for frames, columns and supports.",
@@ -300,6 +386,31 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     audio: "vessel",
     visual: "linear-chamber",
     animations: [{ id: "glow", source: "plasma.temperatureKeV" }],
+  },
+  "chamber-straight": segmentSheet(
+    "Straight flanged section of a vacuum chamber you assemble yourself.",
+  ),
+  "chamber-bend": segmentSheet(
+    "Curved flanged section of a vacuum chamber: close a ring of them for a toroidal plasma.",
+  ),
+  "chamber-end-cap": {
+    ...segmentSheet("Dished head closing one end of a chamber column."),
+    internals: [
+      {
+        id: "head",
+        name: "Dished head",
+        kind: "structure",
+        substanceId: "stainless-steel",
+        purpose: "Closes the chamber against atmospheric pressure.",
+      },
+      {
+        id: "seal",
+        name: "Metal seal",
+        kind: "structure",
+        substanceId: "copper-ofhc",
+        purpose: "Copper gasket crushed between the flanges: an ultra-high-vacuum seal.",
+      },
+    ],
   },
   "tokamak-vessel": {
     summary:

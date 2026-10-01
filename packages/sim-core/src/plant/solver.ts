@@ -80,6 +80,7 @@ import {
   loopPeakFieldT,
 } from "./magnetics.js";
 import { torusWinding } from "./biotSavart.js";
+import { openingConductanceM3PerS, wallShares } from "./chamber.js";
 import { type GeometricCoupling, geometricCouplings } from "./fieldCoupling.js";
 import {
   LOW_Q_KINK_LIMIT,
@@ -397,7 +398,6 @@ export class PlantSolver {
 
     for (const layout of topology.vessels) {
       if (this.#vessels.has(layout.vesselId)) continue;
-      const vessel = topology.byId.get(layout.vesselId)!;
       let pressurePa = STANDARD_ATMOSPHERE_PA;
       if (settings.initialVacuumState === "pumped-down") {
         const speed = layout.pumpIds.reduce((sum, id) => {
@@ -409,7 +409,10 @@ export class PlantSolver {
               : 0)
           );
         }, 0);
-        if (speed > 0) pressurePa = baseGasLoad(vessel) / speed;
+        const open = openingConductanceM3PerS(layout.chamber.openings);
+        if (speed + open > 0)
+          pressurePa =
+            (baseGasLoad(layout, topology) + open * STANDARD_ATMOSPHERE_PA) / (speed + open);
       }
       this.#vessels.set(layout.vesselId, {
         pressurePa,
@@ -860,7 +863,10 @@ export class PlantSolver {
     const p = vessel.parameters;
 
     // --- Vacuum -----------------------------------------------------------------------
-    const interiorVolumeM3 = geometryInteriorVolumeM3(vessel.geometry);
+    const interiorVolumeM3 = layout.chamber.memberIds.reduce(
+      (sum, id) => sum + geometryInteriorVolumeM3(topology.byId.get(id)!.geometry),
+      0,
+    );
     let pumpingSpeedM3PerS = 0;
     for (const pumpId of layout.pumpIds) {
       const pump = topology.byId.get(pumpId)!;
@@ -870,14 +876,18 @@ export class PlantSolver {
         Math.min(1, work.supply.get(pumpId) ?? 0);
     }
     const exhaustGasPaM3PerS = runtime.exhaustPerS * BOLTZMANN_J_PER_K * vesselThermal.temperatureK;
-    const gasLoadPaM3PerS = baseGasLoad(vessel) + exhaustGasPaM3PerS;
+    const gasLoadPaM3PerS = baseGasLoad(layout, topology) + exhaustGasPaM3PerS;
+    // An unjoined end flange lets the hall's air in: a conductance to atmosphere that acts
+    // like a pump running backwards (chamber.ts). Zero for a sealed chamber.
+    const openingM3PerS = openingConductanceM3PerS(layout.chamber.openings);
+    const outflowM3PerS = pumpingSpeedM3PerS + openingM3PerS;
     if (dt > 0 && interiorVolumeM3 > 0) {
-      if (pumpingSpeedM3PerS > 0) {
-        const equilibrium = gasLoadPaM3PerS / pumpingSpeedM3PerS;
+      if (outflowM3PerS > 0) {
+        const equilibrium =
+          (gasLoadPaM3PerS + openingM3PerS * STANDARD_ATMOSPHERE_PA) / outflowM3PerS;
         runtime.pressurePa =
           equilibrium +
-          (runtime.pressurePa - equilibrium) *
-            Math.exp((-pumpingSpeedM3PerS * dt) / interiorVolumeM3);
+          (runtime.pressurePa - equilibrium) * Math.exp((-outflowM3PerS * dt) / interiorVolumeM3);
       } else {
         runtime.pressurePa = Math.min(
           STANDARD_ATMOSPHERE_PA,
@@ -887,11 +897,17 @@ export class PlantSolver {
     }
     if (layout.pumpIds.length === 0)
       addWarning(work, vessel.id, "No vacuum pump is linked to this vessel.");
+    for (const opening of layout.chamber.openings)
+      addWarning(
+        work,
+        opening.componentId,
+        `Flange "${opening.connectionPointId}" is open to the hall: the chamber cannot hold a vacuum until it is joined, blanked or pumped.`,
+      );
 
     // --- Plasma geometry and field -------------------------------------------------------
     // Geometric contributions are signed; the plasma model needs the magnitude.
     const fieldT = Math.abs(work.vesselField.get(vessel.id) ?? 0);
-    const geometry = plasmaGeometry(vessel);
+    const geometry = plasmaGeometry(layout, vessel);
     const targetCurrentA =
       layout.configuration === "tokamak" ? numberParameter(p, "plasmaCurrentA") : 0;
     const heaterIds = layout.heaterIds.filter((id) => !this.#components.get(id)!.disabled);
@@ -924,7 +940,12 @@ export class PlantSolver {
         );
       });
       const reasons: string[] = [];
-      if (layout.coilIds.length === 0) reasons.push("no coil encloses the vessel");
+      const servingCoils =
+        layout.coilIds.length +
+        [...this.#geometricCouplings(topology).values()].filter(
+          (g) => g.vesselId === layout.vesselId,
+        ).length;
+      if (servingCoils === 0) reasons.push("no coil's field reaches the plasma");
       else if (fieldT < minField)
         reasons.push(
           `field ${fieldT.toFixed(2)} T is below the ${minField} T needed for breakdown`,
@@ -1151,7 +1172,7 @@ export class PlantSolver {
 
     // Deposit plasma exhaust and neutrons.
     if (dt > 0) {
-      addHeat(work, vessel.id, wallEnergyJ / dt);
+      addWallHeat(work, layout, wallEnergyJ / dt);
       const neutrons = work.outputs.get(vessel.id) ?? {};
       neutrons["neutronPowerW"] = (neutrons["neutronPowerW"] ?? 0) + neutronEnergyJ / dt;
       work.outputs.set(vessel.id, neutrons);
@@ -1182,7 +1203,7 @@ export class PlantSolver {
           ? 0.5 * plasmaInductanceH(geometry.majorRadiusM, geometry.minorRadiusM) * Ip * Ip
           : 0;
         const dumpedJ = runtime.energyJ + magneticJ;
-        addHeat(work, vessel.id, dumpedJ / dt);
+        addWallHeat(work, layout, dumpedJ / dt);
         this.#raise(work, {
           componentId: vessel.id,
           system: "plasma",
@@ -1274,21 +1295,32 @@ export class PlantSolver {
       "over_temperature",
       "supply_shortfall",
     ]);
-    const vesselRuntime = this.#components.get(vesselId)!;
-    const vessel = work.topology.byId.get(vesselId)!;
-    const wallLimitK = getMaterial(vessel.materialId).maxOperatingTemperatureK;
+    // The segment of the wall furthest over its material's limit (the lead alone for a
+    // single vessel).
+    let hot: { id: string; temperatureK: number; limitK: number } | undefined;
+    for (const id of layout.chamber.memberIds) {
+      const temperatureK = this.#components.get(id)!.temperatureK;
+      const limitK = getMaterial(work.topology.byId.get(id)!.materialId).maxOperatingTemperatureK;
+      if (
+        temperatureK > limitK &&
+        (hot === undefined || temperatureK - limitK > hot.temperatureK - hot.limitK)
+      )
+        hot = { id, temperatureK, limitK };
+    }
 
-    if (vesselRuntime.temperatureK > wallLimitK) {
+    if (hot !== undefined) {
+      const wall =
+        hot.id === vesselId ? `vessel "${vesselId}"` : `segment "${hot.id}" of "${vesselId}"`;
       return {
-        summary: `Overheated wall of "${vesselId}" poisoned the plasma`,
+        summary: `Overheated wall of "${hot.id}" poisoned the plasma`,
         cause:
-          `The wall of vessel "${vesselId}" reached ${formatQuantity(vesselRuntime.temperatureK, "K")}, above its ` +
-          `${formatQuantity(wallLimitK, "K")} operating limit. V0.1 treats an overheated first wall as releasing enough ` +
+          `The wall of ${wall} reached ${formatQuantity(hot.temperatureK, "K")}, above its ` +
+          `${formatQuantity(hot.limitK, "K")} operating limit. V0.1 treats an overheated first wall as releasing enough ` +
           `impurities to collapse the plasma.`,
         unit: "K",
-        measured: vesselRuntime.temperatureK,
-        limit: wallLimitK,
-        causeKeys: this.#activeKeysFor([vesselId], ["over_temperature"]),
+        measured: hot.temperatureK,
+        limit: hot.limitK,
+        causeKeys: this.#activeKeysFor([hot.id], ["over_temperature"]),
       };
     }
     if (runtime.pressurePa > DISRUPTION_PRESSURE_PA) {
@@ -1384,13 +1416,20 @@ export class PlantSolver {
       const neutronW = outputs?.["neutronPowerW"] ?? 0;
       if (!(neutronW > 0)) continue;
       const vessel = topology.byId.get(layout.vesselId)!;
-      const wallM = vessel.geometry.wallThicknessM ?? 0;
-      const throughWall = Math.exp(-wallM / NEUTRON_ATTENUATION_LENGTH_M);
-      addHeat(work, vessel.id, neutronW * (1 - throughWall));
+      // Each segment of the wall intercepts neutrons in proportion to its area and
+      // absorbs according to its own thickness.
+      let wallHeatingW = 0;
+      let transmitted = 0;
+      for (const { id, share } of wallShares(layout.chamber.memberIds, topology.byId)) {
+        const wallM = topology.byId.get(id)!.geometry.wallThicknessM ?? 0;
+        const throughWall = Math.exp(-wallM / NEUTRON_ATTENUATION_LENGTH_M);
+        addHeat(work, id, neutronW * share * (1 - throughWall));
+        wallHeatingW += neutronW * share * (1 - throughWall);
+        transmitted += neutronW * share * throughWall;
+      }
       const vesselRecord = work.outputs.get(vessel.id) ?? {};
-      vesselRecord["neutronHeatingW"] = neutronW * (1 - throughWall);
+      vesselRecord["neutronHeatingW"] = wallHeatingW;
       work.outputs.set(vessel.id, vesselRecord);
-      let transmitted = neutronW * throughWall;
 
       for (const blanketId of layout.blanketIds) {
         const blanket = topology.byId.get(blanketId)!;
@@ -2545,19 +2584,52 @@ function sensorUnit(quantity: string): string {
   }
 }
 
-/** Gas load from outgassing and leaks, Pa·m³/s. */
-function baseGasLoad(vessel: SimulationComponent): number {
-  return (
-    numberParameter(vessel.parameters, "outgassingPaM3PerSM2") *
-      geometryInteriorSurfaceM2(vessel.geometry) +
-    numberParameter(vessel.parameters, "leakRatePaM3PerS")
-  );
+/** Gas load from outgassing and leaks of every segment of a chamber, Pa·m³/s. */
+function baseGasLoad(layout: VesselLayout, topology: PlantTopology): number {
+  let load = 0;
+  for (const id of layout.chamber.memberIds) {
+    const segment = topology.byId.get(id)!;
+    load +=
+      numberParameter(segment.parameters, "outgassingPaM3PerSM2") *
+        geometryInteriorSurfaceM2(segment.geometry) +
+      numberParameter(segment.parameters, "leakRatePaM3PerS");
+  }
+  return load;
 }
 
-function plasmaGeometry(vessel: SimulationComponent): PlasmaGeometry {
+/** Splits heat landing on a chamber's wall across its segments by wall area. */
+function addWallHeat(work: Work, layout: VesselLayout, watts: number): void {
+  for (const { id, share } of wallShares(layout.chamber.memberIds, work.topology.byId))
+    addHeat(work, id, watts * share);
+}
+
+function plasmaGeometry(layout: VesselLayout, vessel: SimulationComponent): PlasmaGeometry {
   const geometry = vessel.geometry;
   const fill = numberParameter(vessel.parameters, "plasmaFillFraction");
   const t = geometry.wallThicknessM ?? 0;
+  const chamber = layout.chamber;
+  // An assembled chamber: the plasma follows the centreline and fills the narrowest bore.
+  if (chamber.path === "loop") {
+    const minorRadiusM = chamber.boreRadiusM * fill;
+    return {
+      majorRadiusM: chamber.majorRadiusM,
+      minorRadiusM,
+      volumeM3: toroidalPlasmaVolumeM3(
+        chamber.majorRadiusM,
+        minorRadiusM,
+        numberParameter(vessel.parameters, "elongation"),
+      ),
+    };
+  }
+  if (chamber.path === "chain") {
+    const minorRadiusM = chamber.boreRadiusM * fill;
+    return {
+      majorRadiusM: 0,
+      minorRadiusM,
+      volumeM3: cylindricalPlasmaVolumeM3(minorRadiusM, chamber.lengthM),
+    };
+  }
+  if (chamber.path === "branched") return { majorRadiusM: 0, minorRadiusM: 0, volumeM3: 0 };
   if (geometry.kind === "torus") {
     const minorRadiusM = Math.max(0, (geometry.minorRadiusM - t) * fill);
     return {

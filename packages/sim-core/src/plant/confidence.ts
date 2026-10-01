@@ -26,14 +26,22 @@ import { getCoolantFluid } from "./fluids.js";
  *                 beyond its envelope or is only an order-of-magnitude estimate.
  *  experimental — a configuration ForgeLab's models were not built for. Results are
  *                 illustrative only and never represent a validated real-world design.
+ *  unsupported  — ForgeLab cannot calculate this at all (e.g. a plasma in a branched
+ *                 chamber). It says so rather than invent a number; the quantity is
+ *                 reported as absent, not as zero-by-physics.
  *
- * The overall level is the worst subsystem level. Experimental designs are not eligible
- * for verified leaderboards.
+ * The overall level is the worst subsystem level. Experimental and unsupported designs are
+ * not eligible for verified leaderboards.
  */
 /** Above this peak-to-mean field ripple along the plasma axis, confinement is experimental. */
 export const RIPPLE_EXPERIMENTAL = 0.05;
 
-const ORDER: Record<ConfidenceLevel, number> = { supported: 0, approximate: 1, experimental: 2 };
+const ORDER: Record<ConfidenceLevel, number> = {
+  supported: 0,
+  approximate: 1,
+  experimental: 2,
+  unsupported: 3,
+};
 
 export function worstLevel(levels: readonly ConfidenceLevel[]): ConfidenceLevel {
   let worst: ConfidenceLevel = "supported";
@@ -167,6 +175,32 @@ export function assessConfidence(input: {
     // (heating or fuelling attached, or a plasma already formed); an empty chamber is not.
     const attempted =
       layout.heaterIds.length > 0 || layout.injectorIds.length > 0 || plasma.phase !== "off";
+    const chamber = layout.chamber;
+    const n = chamber.memberIds.length;
+    if (chamber.path === "branched" && attempted) {
+      level = "unsupported";
+      reasons.push(
+        `Chamber "${layout.vesselId}" (${n} segments) branches: ForgeLab has no plasma model for a branched chamber. Its vacuum is computed; a plasma in it is not.`,
+      );
+    }
+    if (chamber.path === "loop") {
+      level = worstLevel([level, "approximate"]);
+      reasons.push(
+        `Chamber "${layout.vesselId}" is assembled from ${n} segments into a closed ring: the plasma model treats it as a torus of major radius ${chamber.majorRadiusM.toFixed(2)} m (centreline length / 2π) filling the narrowest bore.`,
+      );
+      if (!chamber.regular) {
+        level = worstLevel([level, "experimental"]);
+        reasons.push(
+          `Its centreline departs ${chamber.departureM.toFixed(2)} m from a flat circle; the toroidal model assumes a circular axis, so confinement there is illustrative only.`,
+        );
+      }
+    }
+    if (chamber.path === "chain" && !chamber.regular && attempted) {
+      level = worstLevel([level, "experimental"]);
+      reasons.push(
+        `Chamber "${layout.vesselId}" bends (its centreline strays ${chamber.departureM.toFixed(2)} m from straight); the linear model assumes a straight column.`,
+      );
+    }
     if (layout.configuration === "linear" && attempted) {
       level = "experimental";
       reasons.push(

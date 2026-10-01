@@ -275,6 +275,25 @@ export function vesselAxisCoupling(
   };
 }
 
+/**
+ * The same coupling along an arbitrary centreline — a chamber assembled from segments
+ * (chamber.ts): the field's component along the local centreline direction at each sample.
+ */
+export function centrelineCoupling(
+  samples: readonly { readonly point: Vec3; readonly tangent: Vec3 }[],
+  segments: readonly CurrentSegment[],
+): AxisCoupling | null {
+  if (samples.length === 0) return null;
+  const values = samples.map((s) => Vec3Math.dot(fieldPerAmp(segments, s.point), s.tangent));
+  const mean = values.reduce((sum, x) => sum + x, 0) / values.length;
+  return {
+    samplesTPerA: values,
+    meanTPerA: mean,
+    minTPerA: Math.min(...values),
+    maxTPerA: Math.max(...values),
+  };
+}
+
 /** Peak-to-mean ripple of a field along an axis: (max − min)/(max + min), 0 for none. */
 export function ripple(c: AxisCoupling): number {
   const sum = Math.abs(c.maxTPerA) + Math.abs(c.minTPerA);
