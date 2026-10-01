@@ -55,6 +55,8 @@ import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { portRating } from "../ui/Inspector.js";
 import { Cables } from "./Cables.js";
+import { damageStage, stageDarkening } from "../../presentation/damage.js";
+import { damageState } from "../../presentation/damageState.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
@@ -64,6 +66,7 @@ import {
   CONNECTION_COLORS,
   PALETTE,
   appearanceFor,
+  surfaceMaterial,
   ghostedIn,
   materialColor,
   plasmaGlow,
@@ -143,10 +146,12 @@ function AppearanceDriver() {
     const a = store.subscribe(mark);
     const b = store.subscribeSim(mark);
     const c = hover.subscribe(mark);
+    const d = damageState.subscribe(mark);
     return () => {
       a();
       b();
       c();
+      d();
     };
   }, [store, invalidate]);
 
@@ -159,6 +164,12 @@ function AppearanceDriver() {
     const live = view.mode === "simulate" && frame !== null;
     const selected = new Set(view.selection);
     const hovered = hover.get()?.componentId;
+    const failureTypes = new Map<string, string[]>();
+    for (const f of store.getSim().failures) {
+      const list = failureTypes.get(f.componentId) ?? [];
+      list.push(f.failureType);
+      failureTypes.set(f.componentId, list);
+    }
     for (const c of view.snapshot.components) {
       const handle = meshRegistry.get(c.id);
       if (handle === undefined) continue;
@@ -178,7 +189,28 @@ function AppearanceDriver() {
         }
       }
       const body = handle.body;
-      let emissive = appearanceFor(view.overlay, readout, baseColor(c.materialId), body);
+      let emissive = appearanceFor(
+        view.overlay,
+        readout,
+        baseColor(c.materialId),
+        body,
+        surfaceMaterial(c.materialId),
+      );
+      // Damage shows in the Normal view: surfaces darken and dull as the part degrades.
+      if (live && view.overlay === "none") {
+        const stage = damageStage({
+          utilization: readout.utilization,
+          temperatureK: readout.temperatureK,
+          limitTemperatureK: readout.limitTemperatureK,
+          hoopUtilization: readout.hoopUtilization,
+          headFraction: readout.headFraction,
+          disabled: readout.disabled,
+          failureTypes: failureTypes.get(c.id) ?? [],
+          fractured: damageState.isFractured(c.id),
+        }).stage;
+        const k = stageDarkening(stage);
+        if (k > 0) body.color.multiplyScalar(1 - k);
+      }
       if (selected.has(c.id)) {
         body.emissive.lerp(PALETTE.select, emissive > 0.3 ? 0.3 : 1);
         emissive = Math.max(emissive, 0.2);

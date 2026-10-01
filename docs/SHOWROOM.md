@@ -135,6 +135,39 @@ If a cascade happens, it is because `sim-core` propagated it (causal chains, sup
 field collapse). A physically coupled debris → damage model belongs in `sim-core` and is
 out of scope here.
 
+## Damage progression and materials when hot
+
+Every part has a **condition** read from published values (`presentation/damage.ts`):
+normal → stressed (≥ 70 % of its structural allowable or wall yield, within 15 % of its
+temperature limit) → local damage (a failure raised on it, over its limit, cavitating) →
+severe (15 % over its limit, under half its pump head) → ruptured / failed (pipe rupture,
+quench, structural or casing failure, burned out) → destroyed (it broke up). The Inspector
+shows the condition and the value behind it; the Normal view darkens and dulls damaged
+surfaces. Nothing here decides a failure.
+
+The **Normal view stays realistic**: failed parts are no longer flagged red there (the
+engineering views and the Failures view still do). Instead each material shows its own
+response to heat, chosen by its library response class with thresholds from its own data:
+
+| Response       | Materials                   | What it looks like hot                                                              |
+| -------------- | --------------------------- | ----------------------------------------------------------------------------------- |
+| steel          | carbon and stainless steels | oxide temper colours (straw → brown → purple → blue → grey, ~200–360 °C), then glow |
+| copper         | C11000, OFHC                | tarnish to reddish Cu₂O, then black CuO; glow only above the Draper point           |
+| light alloy    | aluminium alloys, beryllium | little change; low emissivity keeps glow faint (it melts before it visibly glows)   |
+| refractory     | tungsten, molybdenum        | full black-body glow above ≈ 798 K                                                  |
+| char           | G-10CR, Kapton, XLPE        | scorch then char between its service limit and ignition temperature                 |
+| ceramic        | alumina, graphite, SiC      | glow, no oxide colours                                                              |
+| superconductor | NbTi, Nb₃Sn, REBCO          | no surface change: a quench shows as resistive heating inside the winding           |
+
+Internal regions in a cutaway use their own material's response at the part's lumped
+temperature, so insulation chars and copper windings blacken while the steel case only
+takes its temper colours.
+
+**Damage marks** stay on surfaces until the run is reset: scorch where an arc struck, soot
+above burning insulation, frost where cold helium vented, cracks where a member failed, a
+torn opening where a pipe ruptured. Each is a decal projected onto the part's surface at
+the destruction event's site (`vfx/marks.ts`); the count is a quality-tier budget.
+
 ## Audio
 
 `presentation/audio/`: the director's events are the bus; `rules.ts` (pure, tested) turns

@@ -16,7 +16,10 @@ import {
   materialColor,
   readoutFromComponent,
   readoutFromFrame,
+  surfaceMaterial,
+  thermalSurface,
   type Readout,
+  type SurfaceMaterial,
 } from "./appearance.js";
 import { cutPlaneFor } from "./cutPlanes.js";
 import { hasBespokeInternals, internalModel } from "./internalModels.js";
@@ -86,6 +89,8 @@ interface RegionMesh {
   readonly kind: RegionKind;
   readonly base: Color;
   readonly fluid: boolean;
+  /** How the region's own material looks hot (insulation chars, copper blackens). */
+  readonly surface: SurfaceMaterial;
   readonly material: MeshStandardMaterial;
 }
 
@@ -99,7 +104,7 @@ function baseColor(internal: ProductInternal): Color {
 /** Paints one region for the current view. Pure apart from writing into `m`. */
 export function paintRegion(
   overlay: Overlay,
-  region: Pick<RegionMesh, "kind" | "base" | "fluid">,
+  region: Pick<RegionMesh, "kind" | "base" | "fluid" | "surface">,
   readout: Readout,
   picked: boolean | null,
   m: MeshStandardMaterial,
@@ -111,7 +116,10 @@ export function paintRegion(
     m.color.copy(SYSTEM_COLOR.get(SYSTEM_OF[region.kind])!);
     if (region.fluid && region.kind !== "vacuum") opacity = 0.6;
   } else if (overlay === "none") {
-    m.color.copy(region.base);
+    // The part's lumped temperature on each region's own material: insulation chars and
+    // copper windings blacken while the steel case only takes its temper colours.
+    if (region.fluid) m.color.copy(region.base);
+    else emissive = thermalSurface(region.surface, readout.temperatureK, region.base, m);
   } else if (overlay === "temperature" || overlay === "failures") {
     emissive = appearanceFor(overlay, readout, region.base, m);
   } else if (LIT_BY[overlay]?.includes(region.kind) === true) {
@@ -173,6 +181,7 @@ function Section({ component }: { component: SimulationComponent }) {
         kind: internal.kind,
         base: baseColor(internal),
         fluid,
+        surface: surfaceMaterial(internal.substanceId),
         material: new MeshStandardMaterial({
           roughness: fluid ? 0.2 : 0.6,
           metalness: fluid ? 0 : 0.25,

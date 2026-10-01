@@ -25,10 +25,12 @@ import { meshRegistry } from "../../builder/scene/meshes.js";
 import type { AudioEngine } from "../audio/engine.js";
 import type { PresentationDirector } from "../director.js";
 import type { DestructionEvent } from "../destruction.js";
+import { damageState } from "../damageState.js";
 import { getSettings, motionAllowed, type TierBudget } from "../settings.js";
 import { CameraEffects } from "./camera.js";
 import { addCrack, clearCracks } from "./cracks.js";
 import { DebrisField, type Obstacle } from "./debris.js";
+import { MarkLayer } from "./marks.js";
 import { ParticleSystem } from "./particles.js";
 import {
   recipeFor,
@@ -150,6 +152,7 @@ export class VfxRuntime {
   readonly rings: Timed[];
   readonly flashes: Timed[];
   readonly cam = new CameraEffects();
+  readonly marks: MarkLayer;
   readonly emitters: Emitter[] = [];
   #seeded = mulberry32(1);
   #budget: TierBudget;
@@ -184,6 +187,7 @@ export class VfxRuntime {
     );
     const root = this.root;
     root.name = "vfx";
+    this.marks = new MarkLayer(root, budget.marks);
     for (const s of Object.values(this.systems)) root.add(s.points);
     root.add(this.debris.rigidMesh, this.debris.simpleMesh);
     const arcMaterial = (this.#arcMaterial = new LineBasicMaterial({
@@ -351,6 +355,7 @@ export class VfxRuntime {
         case "debris": {
           if (this.#broken.has(cmd.componentId)) break;
           this.#broken.add(cmd.componentId);
+          damageState.markFractured(cmd.componentId);
           // The part's own material colour (the live mesh may be tinted red as failed).
           const part = this.#director
             ?.getState()
@@ -380,6 +385,30 @@ export class VfxRuntime {
           });
           break;
         }
+        case "mark": {
+          const target = meshRegistry.get(cmd.componentId)?.group;
+          if (target === undefined) break;
+          box.setFromObject(target);
+          const centre = box.getCenter(new Vector3());
+          const reach = Math.max(1, box.getSize(new Vector3()).length());
+          const from = new Vector3(...cmd.origin).addScaledVector(
+            new Vector3(...cmd.direction),
+            reach,
+          );
+          // Aim at the event point first; fall back to the part's centre.
+          if (
+            !this.marks.add(
+              cmd.kind,
+              target,
+              from,
+              new Vector3(...cmd.origin),
+              cmd.sizeM,
+              this.random,
+            )
+          )
+            this.marks.add(cmd.kind, target, from, centre, cmd.sizeM, this.random);
+          break;
+        }
         case "camera":
           this.cam.add(
             cmd.origin,
@@ -399,9 +428,11 @@ export class VfxRuntime {
 
   clearAll(): void {
     this.#broken.clear();
+    damageState.clear();
     this.emitters.length = 0;
     for (const s of Object.values(this.systems)) s.clear();
     this.debris.clear();
+    this.marks.clear();
     for (const a of this.arcs) {
       a.age = a.duration = 0;
       a.line.visible = false;
@@ -560,6 +591,7 @@ export class VfxRuntime {
     const out: Record<string, number> = {};
     for (const [k, s] of Object.entries(this.systems)) out[k] = s.alive;
     out["debris (rigid)"] = this.debris.rigidCount;
+    out["marks"] = this.marks.count;
     out["emitters"] = this.emitters.length;
     return out;
   }

@@ -169,6 +169,7 @@ describe("presentation settings", () => {
         "debrisSimple",
         "haze",
         "lightPools",
+        "marks",
         "particles",
         "pixelRatio",
         "props",

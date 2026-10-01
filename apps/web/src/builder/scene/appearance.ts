@@ -1,7 +1,7 @@
 import { Color } from "three";
 import type { SimulationComponent, VesselState } from "@forgelab/sim-core";
 import { frameScalar, type SessionFrame } from "@forgelab/sim-runner";
-import { MATERIAL_LIBRARY } from "@forgelab/materials";
+import { MATERIAL_LIBRARY, findMaterialRecord, type ThermalResponse } from "@forgelab/materials";
 import type { Overlay } from "../store/editor.js";
 
 /**
@@ -21,6 +21,10 @@ export interface Readout {
   readonly role: string;
   /** Fusion-neutron energy deposited in the part, W. */
   readonly neutronHeatingW: number;
+  /** Pipe pressure boundary or magnet casing: stress ÷ yield. */
+  readonly hoopUtilization: number;
+  /** Pump head left by cavitation (1 when not cavitating). */
+  readonly headFraction: number;
   readonly disabled: boolean;
   readonly free: boolean;
   readonly isLoad: boolean;
@@ -43,6 +47,8 @@ export function readoutFromComponent(component: SimulationComponent): Readout {
     fieldT: p.magnet?.fieldAtPlasmaT ?? p.vessel?.plasma.fieldT ?? 0,
     role: component.role,
     neutronHeatingW: p.outputs["neutronHeatingW"] ?? 0,
+    hoopUtilization: p.outputs["hoopUtilization"] ?? p.magnet?.hoopUtilization ?? 0,
+    headFraction: p.outputs["headFraction"] ?? 1,
     disabled: p.disabled,
     free: component.state.support.mode === "free",
     isLoad: (p.electrical?.demandW ?? 0) > 0,
@@ -69,6 +75,8 @@ export function readoutFromFrame(
     fieldT: frameScalar(frame, index, "fieldT"),
     role: component.role,
     neutronHeatingW: frameScalar(frame, index, "neutronHeatingW"),
+    hoopUtilization: frameScalar(frame, index, "hoopUtilization"),
+    headFraction: frameScalar(frame, index, "headFraction"),
     disabled: frameScalar(frame, index, "disabled") > 0,
     free: frameScalar(frame, index, "free") > 0,
     // Whether a part is a load is a property of its role, not of this tick.
@@ -150,6 +158,127 @@ export function incandescence(temperatureK: number, out: Color): number {
   return 0.25 + 1.6 * t * t;
 }
 
+/* ------------------------------------------------------------------------------------ *
+ * How each material looks hot (library presentation data)
+ * ------------------------------------------------------------------------------------ */
+
+export interface SurfaceMaterial {
+  readonly response: ThermalResponse;
+  readonly maxServiceK: number | null;
+  readonly meltingK: number | null;
+  readonly ignitionK: number | null;
+}
+
+const surfaceCache = new Map<string, SurfaceMaterial>();
+
+export function surfaceMaterial(materialId: string | null): SurfaceMaterial {
+  const key = materialId ?? "";
+  let m = surfaceCache.get(key);
+  if (m === undefined) {
+    const record = materialId === null ? undefined : findMaterialRecord(materialId);
+    const combustible = record?.presentation.combustible;
+    m = {
+      response: record?.presentation.thermalResponse ?? "ceramic",
+      maxServiceK: record?.thermal?.maxService?.value ?? null,
+      meltingK: record?.thermal?.melting?.value ?? record?.thermal?.decomposition?.value ?? null,
+      ignitionK:
+        combustible === undefined || combustible === false ? null : combustible.ignition.value,
+    };
+    surfaceCache.set(key, m);
+  }
+  return m;
+}
+
+/**
+ * Oxide temper colours of steel heated in air: the thin oxide film's interference colour
+ * goes straw → brown → purple → blue → grey between about 200 and 350 °C (the standard
+ * temper-colour chart; the exact shade depends on time at temperature and alloy).
+ */
+const TEMPER_STOPS: readonly (readonly [number, Color])[] = [
+  [453, new Color("#000000")], // below ~180 °C: no visible film (alpha 0)
+  [493, new Color("#e5cf86")], // pale straw ~220 °C
+  [513, new Color("#c8a04a")], // dark straw ~240 °C
+  [528, new Color("#93613a")], // brown ~255 °C
+  [543, new Color("#764677")], // purple ~270 °C
+  [563, new Color("#2f4384")], // dark blue ~290 °C
+  [593, new Color("#6f8fae")], // pale blue ~320 °C
+  [633, new Color("#8a8f96")], // grey ~360 °C and above
+];
+
+function temperTint(temperatureK: number, out: Color): number {
+  if (temperatureK <= TEMPER_STOPS[0]![0]) return 0;
+  for (let i = 1; i < TEMPER_STOPS.length; i += 1) {
+    const [t1, c1] = TEMPER_STOPS[i]!;
+    if (temperatureK <= t1) {
+      const [t0, c0] = TEMPER_STOPS[i - 1]!;
+      const f = (temperatureK - t0) / (t1 - t0);
+      if (i === 1) {
+        out.copy(c1);
+        return 0.55 * f;
+      }
+      out.copy(c0).lerp(c1, f);
+      return 0.55;
+    }
+  }
+  out.copy(TEMPER_STOPS[TEMPER_STOPS.length - 1]![1]);
+  return 0.55;
+}
+
+const CU2O = new Color("#8a4a33");
+const CUO = new Color("#2b201d");
+const CHAR = new Color("#1d1814");
+const SCORCHED = new Color("#4a3a26");
+const tint = new Color();
+
+/**
+ * The Normal view's colour for a material at temperature: oxide and char colours from
+ * the material's own response class, then black-body glow above the Draper point
+ * (≈ 798 K) for materials that can reach it while solid. Thresholds are the material's own
+ * service, melting and ignition temperatures from the library. Returns the emissive
+ * intensity; writes the colour and emissive into `out`.
+ */
+export function thermalSurface(
+  m: SurfaceMaterial,
+  temperatureK: number,
+  base: Color,
+  out: { color: Color; emissive: Color },
+): number {
+  out.color.copy(base);
+  out.emissive.setRGB(0, 0, 0);
+  switch (m.response) {
+    case "steel": {
+      const a = temperTint(temperatureK, tint);
+      if (a > 0) out.color.lerp(tint, a);
+      return incandescence(temperatureK, out.emissive);
+    }
+    case "copper": {
+      // Tarnish from ~150 °C to reddish Cu₂O, black CuO above ~350 °C.
+      if (temperatureK > 423) {
+        const f = Math.min(1, (temperatureK - 423) / 200);
+        out.color.lerp(f < 0.5 ? CU2O : CUO, f < 0.5 ? f * 2 * 0.7 : 0.7 + (f - 0.5) * 0.5);
+      }
+      return incandescence(temperatureK, out.emissive);
+    }
+    case "light-alloy":
+      // Low emissivity: aluminium softens and melts before it visibly glows.
+      return 0.15 * incandescence(temperatureK, out.emissive);
+    case "char": {
+      const start = m.maxServiceK ?? 400;
+      const end = m.ignitionK ?? start + 250;
+      if (temperatureK > start) {
+        const f = Math.min(1, (temperatureK - start) / Math.max(10, end - start));
+        out.color.lerp(f < 0.6 ? SCORCHED : CHAR, f < 0.6 ? f / 0.6 : 1);
+      }
+      return 0;
+    }
+    case "superconductor":
+      return 0;
+    case "refractory":
+    case "ceramic":
+      return incandescence(temperatureK, out.emissive);
+  }
+}
+
 export interface Appearance {
   readonly color: Color;
   readonly emissive: Color;
@@ -165,14 +294,18 @@ export function appearanceFor(
   r: Readout,
   base: Color,
   out: { color: Color; emissive: Color },
+  surface?: SurfaceMaterial,
 ): number {
   const failed = r.status === 2 || r.disabled;
   out.emissive.setRGB(0, 0, 0);
   let emissive = 0;
   switch (overlay) {
     case "none":
-      out.color.copy(base);
-      emissive = incandescence(r.temperatureK, out.emissive);
+      if (surface !== undefined) emissive = thermalSurface(surface, r.temperatureK, base, out);
+      else {
+        out.color.copy(base);
+        emissive = incandescence(r.temperatureK, out.emissive);
+      }
       break;
     case "stress":
       // 0 → neutral, 0.5 → green, 0.8 → amber, ≥1 → red.
@@ -267,7 +400,8 @@ export function appearanceFor(
       out.color.copy(failed ? PALETTE.fail : r.status === 1 ? PALETTE.stress : PALETTE.dim);
       break;
   }
-  if (failed && overlay !== "failures") {
+  // Engineering views flag failed parts red; the Normal view shows only physical damage.
+  if (failed && overlay !== "failures" && overlay !== "none") {
     out.color.lerp(PALETTE.fail, 0.6);
     out.emissive.copy(PALETTE.fail);
     emissive = Math.max(emissive, 0.35);

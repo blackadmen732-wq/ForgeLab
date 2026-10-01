@@ -21,7 +21,7 @@ import {
   Trash2,
   Unlink,
 } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Euler, Quaternion } from "three";
 import { ConfidenceBadge } from "../../components/ConfidenceBadge.js";
 import {
@@ -40,6 +40,8 @@ import { CONNECTION_LABELS } from "../scene/appearance.js";
 import { useEditor, useEditorStore, useSim } from "../store/context.js";
 import { hasBespokeInternals } from "../scene/internalModels.js";
 import { regionHighlight, useRegionHighlight } from "../scene/regionHighlight.js";
+import { STAGE_LABELS, damageStage } from "../../presentation/damage.js";
+import { damageState } from "../../presentation/damageState.js";
 import { materialLab } from "./materialLab.js";
 import { PartIcon } from "./PartIcon.js";
 
@@ -236,6 +238,35 @@ function ParameterField({
 /* ------------------------------------------------------------------------------------ *
  * Live readouts
  * ------------------------------------------------------------------------------------ */
+
+/** The part's condition this run, and the published value behind it (see damage.ts). */
+function Condition({ component }: { component: SimulationComponent }) {
+  const failures = useSim((v) => v.failures);
+  const fractured = useSyncExternalStore(
+    damageState.subscribe,
+    () => damageState.isFractured(component.id),
+    () => false,
+  );
+  const p = component.state.plant;
+  const reading = damageStage({
+    utilization: component.state.structural.utilization,
+    temperatureK: p.thermal.temperatureK,
+    limitTemperatureK: Number.isFinite(p.thermal.limitTemperatureK)
+      ? p.thermal.limitTemperatureK
+      : 0,
+    hoopUtilization: p.outputs["hoopUtilization"] ?? p.magnet?.hoopUtilization ?? 0,
+    headFraction: p.outputs["headFraction"] ?? 1,
+    disabled: p.disabled,
+    failureTypes: failures.filter((f) => f.componentId === component.id).map((f) => f.failureType),
+    fractured,
+  });
+  return (
+    <div className={`insp-condition insp-condition--${reading.stage}`} role="status">
+      <span className="insp-condition__stage">{STAGE_LABELS[reading.stage]}</span>
+      <span className="dim">{reading.reason}</span>
+    </div>
+  );
+}
 
 function StateReadouts({ component }: { component: SimulationComponent }) {
   const s = component.state.structural;
@@ -676,6 +707,7 @@ function PartPanel({ component }: { component: SimulationComponent }) {
         </p>
       )}
 
+      {locked && <Condition component={live} />}
       <StateReadouts component={live} />
 
       {definition && <ProductPanel component={component} product={definition.product} />}

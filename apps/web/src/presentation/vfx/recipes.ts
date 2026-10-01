@@ -1,4 +1,5 @@
 import type { DestructionEvent } from "../destruction.js";
+import type { MarkKind } from "./marks.js";
 
 /**
  * What each failure family looks like, as a list of effect commands. Pure and tested:
@@ -67,6 +68,17 @@ export type EffectCommand =
       readonly origin: V3;
       readonly radius: number;
       readonly amount: number;
+    }
+  | {
+      /** A damage mark left on the part's surface for the rest of the run. */
+      readonly type: "mark";
+      readonly componentId: string;
+      readonly kind: MarkKind;
+      /** Where on the part: the mark is projected onto the surface facing out from here. */
+      readonly origin: V3;
+      /** Outward direction from the part at that point. */
+      readonly direction: V3;
+      readonly sizeM: number;
     }
   | {
       readonly type: "camera";
@@ -152,6 +164,9 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
           delay: 0.3,
         }),
         { type: "camera", origin: centre, trauma: 0.15 + 0.2 * s, kick: 0.1, flash: 0.35 * s },
+        // The arc scorches the conductor where it struck; burning insulation soots above it.
+        mark(event, "scorch", centre, dir, 0.6 + 1.2 * s),
+        ...(event.combustible ? [mark(event, "soot", ctx.top, UP, 1.2 + 1.5 * s)] : []),
       ];
       if (event.combustible && s > 0.5)
         out.push(
@@ -171,6 +186,9 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
     case "coolant":
       // Relief-valve release: a jet of steam from the hottest point, rising and spreading.
       return [
+        ...(event.failureType === "pipe_rupture"
+          ? [mark(event, "tear", ctx.top, dir, Math.max(0.4, event.radiusM * 0.8))]
+          : []),
         emit("steam", ctx.top, dir, {
           spread: 0.18,
           speed: [9, 20],
@@ -195,6 +213,7 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
     case "cryogenic":
       // Cold helium venting: dense white vapour that falls and spreads over the floor.
       return [
+        mark(event, "frost", ctx.top, UP, r * 0.4),
         emit("vapor", ctx.top, UP, {
           spread: 0.6,
           speed: [1, 4],
@@ -220,6 +239,8 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
         { type: "shock", origin: base, radius: 8 + 10 * s, duration: 0.9 },
         { type: "ceiling-dust", origin: at, radius: 6 + 6 * s, amount: 0.3 + 0.4 * s },
         { type: "camera", origin: at, trauma: 0.3 + 0.35 * s, kick: 0.3, flash: 0.15 },
+        // Cold helium venting frosts the casing around the vent.
+        mark(event, "frost", ctx.top, UP, r * 0.6),
         ...(event.structuralState !== "intact" && event.structuralState !== "damaged"
           ? [debris(event, 0.2 + 0.3 * s, [4, 12], r * 0.08)]
           : []),
@@ -248,6 +269,7 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
       ];
     case "structural":
       return [
+        mark(event, "crack", at, dir, r * 0.5),
         debris(event, 0.4 + 0.6 * s, [1, 6 + 8 * s], r * 0.15),
         emit("dust", base, UP, {
           spread: 1.5,
@@ -265,6 +287,7 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
     case "thermal":
       return event.combustible && event.temperature > 600
         ? [
+            mark(event, "soot", ctx.top, UP, 1.5),
             emit("smoke", ctx.top, UP, {
               spread: 0.3,
               speed: [0.4, 1.2],
@@ -284,6 +307,23 @@ export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCo
       // Lighting, alarms and machine states carry these; nothing breaks visibly.
       return [];
   }
+}
+
+function mark(
+  event: DestructionEvent,
+  kind: MarkKind,
+  origin: V3,
+  direction: V3,
+  sizeM: number,
+): EffectCommand {
+  return {
+    type: "mark",
+    componentId: event.siteComponentId,
+    kind,
+    origin,
+    direction,
+    sizeM: Math.min(4, Math.max(0.25, sizeM)),
+  };
 }
 
 function debris(

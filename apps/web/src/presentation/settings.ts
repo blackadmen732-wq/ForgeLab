@@ -41,6 +41,8 @@ export interface TierBudget {
   readonly props: boolean;
   /** Additive floor and wall light pools under fixtures. */
   readonly lightPools: boolean;
+  /** Damage marks (scorch, soot, frost, cracks, tears) kept on surfaces for the run. */
+  readonly marks: number;
 }
 
 export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.freeze({
@@ -54,6 +56,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     haze: false,
     props: false,
     lightPools: false,
+    marks: 12,
   },
   MEDIUM: {
     pixelRatio: 1.25,
@@ -65,6 +68,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     haze: false,
     props: true,
     lightPools: true,
+    marks: 24,
   },
   HIGH: {
     pixelRatio: 1.75,
@@ -76,6 +80,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     haze: true,
     props: true,
     lightPools: true,
+    marks: 40,
   },
   ULTRA: {
     pixelRatio: 2,
@@ -87,6 +92,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     haze: true,
     props: true,
     lightPools: true,
+    marks: 64,
   },
 });
 

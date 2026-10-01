@@ -86,3 +86,22 @@ describe("failure effect recipes", () => {
     expect(recipeFor(event("control"), ctx)).toEqual([]);
   });
 });
+
+describe("damage marks", () => {
+  const marks = (family: FailureFamily, over?: Partial<DestructionEvent>) =>
+    recipeFor(event(family, over), ctx).flatMap((c) => (c.type === "mark" ? [c.kind] : []));
+
+  it("leaves the mark each physical event leaves, on the part where it happened", () => {
+    expect(marks("electrical")).toEqual(["scorch"]);
+    expect(marks("electrical", { combustible: true })).toEqual(["scorch", "soot"]);
+    expect(marks("quench")).toEqual(["frost"]);
+    expect(marks("cryogenic")).toEqual(["frost"]);
+    expect(marks("structural")).toEqual(["crack"]);
+    expect(marks("coolant", { failureType: "pipe_rupture" })).toEqual(["tear"]);
+    // A relief-valve steam release does not tear anything.
+    expect(marks("coolant", { failureType: "coolant_boiling" })).toEqual([]);
+    expect(marks("disruption")).toEqual([]);
+    for (const c of recipeFor(event("electrical"), ctx))
+      if (c.type === "mark") expect(c.componentId).toBe("x");
+  });
+});

@@ -42,6 +42,13 @@ export const FRAME_FIELDS = Object.freeze([
   "electricalPowerW", // delivered to a load, or supplied by a source
   "fieldT",
   "neutronHeatingW", // fusion-neutron energy deposited in the part
+  "hoopUtilization", // pipe pressure boundary or magnet casing: stress / yield
+  "headFraction", // pump head left by cavitation, 1 when not cavitating
+  "internalPressurePa", // pipes: pressure held by the wall
+  "storedEnergyJ", // magnets: ½ L I²
+  "dumpPowerW", // magnets: power into the dump resistor
+  "heliumBoilOffKgS", // superconducting magnets
+  "quenchAgeS", // magnets: seconds since quench, −1 if none
 ] as const);
 export type FrameField = (typeof FRAME_FIELDS)[number];
 const FIELD_COUNT = FRAME_FIELDS.length;
@@ -248,6 +255,14 @@ export class SimulationSession {
         electrical === null ? 0 : Math.max(electrical.deliveredW, electrical.suppliedW);
       scalars[o + 10] = plant.magnet?.fieldAtPlasmaT ?? plant.vessel?.plasma.fieldT ?? 0;
       scalars[o + 11] = plant.outputs["neutronHeatingW"] ?? 0;
+      const magnet = plant.magnet;
+      scalars[o + 12] = plant.outputs["hoopUtilization"] ?? magnet?.hoopUtilization ?? 0;
+      scalars[o + 13] = plant.outputs["headFraction"] ?? 1;
+      scalars[o + 14] = plant.outputs["internalPressurePa"] ?? 0;
+      scalars[o + 15] = magnet?.storedEnergyJ ?? 0;
+      scalars[o + 16] = magnet?.dumpPowerW ?? 0;
+      scalars[o + 17] = magnet?.heliumBoilOffKgS ?? 0;
+      scalars[o + 18] = magnet?.quenchAgeS ?? -1;
       if (plant.vessel !== null) vessels[component.id] = plant.vessel;
     });
     const newFailures = snapshot.failures.slice(this.#failuresSent);
