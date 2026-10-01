@@ -166,10 +166,17 @@ export class SimulationWorld {
    * Components
    * ---------------------------------------------------------------------------------- */
 
-  /** Deterministic id generator: no randomness anywhere in the engine. */
+  /**
+   * Deterministic id generator: no randomness anywhere in the engine. Skips ids already
+   * taken (an editor may name parts itself), so a generated id never collides.
+   */
   nextId(prefix: string): string {
-    this.#idCounter += 1;
-    return `${prefix}-${this.#idCounter}`;
+    let id: string;
+    do {
+      this.#idCounter += 1;
+      id = `${prefix}-${this.#idCounter}`;
+    } while (this.#components.has(id) || this.#connections.has(id));
+    return id;
   }
 
   addComponent(spec: ComponentSpec): SimulationComponent {

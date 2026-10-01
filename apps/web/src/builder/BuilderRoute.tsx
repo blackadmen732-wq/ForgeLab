@@ -57,6 +57,8 @@ import { MaterialLab } from "./ui/MaterialLab.js";
 import { InternalsNotice } from "./ui/InternalsNotice.js";
 import { EffectsDebugPanel } from "./ui/EffectsDebugPanel.js";
 import { Inspector } from "./ui/Inspector.js";
+import { PatternDialog } from "./ui/PatternDialog.js";
+import { PreflightDialog } from "./ui/PreflightDialog.js";
 import { PublishDialog } from "./ui/PublishDialog.js";
 import { StartDialog } from "./ui/StartDialog.js";
 import { SubmitDialog } from "./ui/SubmitDialog.js";
@@ -270,6 +272,8 @@ function Workspace({
       {dialog === "submit" && <SubmitDialog />}
       {dialog === "versions" && <VersionsDialog onNewVersion={context.newVersion} />}
       {dialog === "version-name" && <VersionNameDialog onCreate={onCreateVersion} />}
+      {dialog === "preflight" && <PreflightDialog />}
+      {dialog === "pattern" && <PatternDialog />}
       {showHelp && <HelpOverlay />}
       {showPalette && <CommandPalette context={context} />}
       {manage && <ManageDialog onClose={() => setManage(false)} />}

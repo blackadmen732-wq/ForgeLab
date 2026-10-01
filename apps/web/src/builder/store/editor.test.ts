@@ -113,6 +113,43 @@ describe("editor store", () => {
     expect(linked(store, copyA!, copyB!)).toBe(true);
   });
 
+  it("rings a coil round an axis in one undoable edit", () => {
+    const store = new EditorStore();
+    const coil = store.addPart("solenoid-coil", vec3(6, 0, 0))!;
+    store.select([coil]);
+    store.patternSelected({ kind: "radial", origin: vec3(0, 0, 0), axis: vec3(0, 1, 0), count: 6 });
+    const coils = store.getView().snapshot.components;
+    expect(coils).toHaveLength(6);
+    // All six sit on the same 6 m ring, 60° apart.
+    for (const c of coils)
+      expect(Math.hypot(c.transform.positionM.x, c.transform.positionM.z)).toBeCloseTo(6, 6);
+    expect(store.getView().selection).toHaveLength(6);
+    store.undo();
+    expect(store.getView().snapshot.components).toHaveLength(1);
+  });
+
+  it("rows and mirrors a linked selection, copying its links into each instance", () => {
+    const { store, platform } = setup();
+    const block = store.addPart("equipment-block", vec3(0.2, 0, 0.1))!;
+    store.select([platform, block]);
+    store.patternSelected({ kind: "linear", step: vec3(0, 0, 6), count: 3 });
+    const view = store.getView();
+    expect(view.snapshot.components).toHaveLength(6);
+    const copies = view.selection.slice(2);
+    expect(linked(store, copies[0]!, copies[1]!)).toBe(true);
+    expect(linked(store, copies[2]!, copies[3]!)).toBe(true);
+    // Nothing is linked across instances.
+    expect(linked(store, platform, copies[0]!)).toBe(false);
+
+    const mirror = new EditorStore();
+    const part = mirror.addPart("structural-platform", vec3(4, 0, 1))!;
+    mirror.select([part]);
+    mirror.patternSelected({ kind: "mirror", point: vec3(0, 0, 0), normal: vec3(1, 0, 0) });
+    const [a, b] = mirror.getView().snapshot.components;
+    expect(b!.transform.positionM.x).toBeCloseTo(-a!.transform.positionM.x, 9);
+    expect(b!.transform.positionM.z).toBeCloseTo(a!.transform.positionM.z, 9);
+  });
+
   it("keeps parameters as engine-validated SI values", () => {
     const store = new EditorStore();
     const pump = store.addPart("coolant-pump", vec3(0, 0, 0))!;

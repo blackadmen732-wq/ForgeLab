@@ -14,6 +14,7 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
+  RotateCw,
   FlaskConical,
   Focus,
   Pin,
@@ -683,6 +684,15 @@ function PartPanel({ component }: { component: SimulationComponent }) {
           type="button"
           className="btn btn--sm btn--ghost"
           disabled={locked}
+          onClick={() => store.openDialog("pattern")}
+          data-tip="Pattern: array or mirror (Ctrl Shift A)"
+        >
+          <RotateCw />
+        </button>
+        <button
+          type="button"
+          className="btn btn--sm btn--ghost"
+          disabled={locked}
           onClick={() => store.setAnchored([component.id], !component.anchored)}
           data-tip={component.anchored ? "Release (P)" : "Pin in place (P)"}
         >
@@ -950,6 +960,14 @@ function MultiPanel({ components }: { components: readonly SimulationComponent[]
           onClick={store.duplicateSelected}
         >
           <Copy /> Duplicate
+        </button>
+        <button
+          type="button"
+          className="btn btn--sm"
+          disabled={locked}
+          onClick={() => store.openDialog("pattern")}
+        >
+          <RotateCw /> Pattern…
         </button>
         <button
           type="button"

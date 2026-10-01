@@ -297,7 +297,7 @@ export function TopBar({ context }: { context: CommandContext }) {
             role="tab"
             aria-selected={!building}
             className={!building ? "is-active" : ""}
-            onClick={() => building && store.startSimulation()}
+            onClick={() => building && store.requestActivation()}
           >
             Simulate
           </button>
@@ -306,7 +306,7 @@ export function TopBar({ context }: { context: CommandContext }) {
           <button
             type="button"
             className="btn btn--primary simulate-btn"
-            onClick={() => store.startSimulation()}
+            onClick={() => store.requestActivation()}
             data-tip="Activate the plant: start the simulation clock (Tab)"
           >
             <Zap /> ACTIVATE

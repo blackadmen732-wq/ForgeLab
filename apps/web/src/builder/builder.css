@@ -2504,3 +2504,91 @@
 .insp-condition--destroyed .insp-condition__stage {
   color: var(--fail);
 }
+
+/* Preflight ------------------------------------------------------------------------- */
+.preflight__note {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+}
+.preflight {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.preflight__row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.preflight__row svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+.preflight__row.is-ok svg {
+  color: var(--ok);
+}
+.preflight__row.is-warn svg {
+  color: var(--warn, #ffb020);
+}
+.preflight__show {
+  margin-left: 6px;
+}
+.preflight__skip {
+  margin-right: auto;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+
+/* Pattern tools ---------------------------------------------------------------------- */
+.pattern__kinds {
+  margin-bottom: 12px;
+}
+.pattern__kinds svg {
+  width: 14px;
+  height: 14px;
+}
+.pattern {
+  display: grid;
+  gap: 10px;
+}
+.pattern__field {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.pattern__field input,
+.pattern__field select {
+  min-width: 0;
+}
+.pattern__vec {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.pattern__vec .pattern__field {
+  grid-template-columns: 1.2rem minmax(0, 1fr) auto;
+}
+.pattern__label {
+  font-size: var(--fs-sm);
+}
+.pattern__check {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: var(--fs-sm);
+}
+.pattern__summary {
+  margin: 0;
+  font-size: var(--fs-sm);
+}

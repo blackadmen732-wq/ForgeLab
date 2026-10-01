@@ -17,6 +17,7 @@ import {
   type MutableRefObject,
 } from "react";
 import {
+  BackSide,
   Color,
   type InstancedMesh,
   type Group,
@@ -309,11 +310,18 @@ interface SocketEntry {
 /** While connecting: can this port take the one already picked? */
 type Fit = "picked" | "ok" | "warn" | "no" | "idle";
 
-const FIT_LOOK: Readonly<Record<Exclude<Fit, "idle">, { color: string; scale: number }>> = {
-  picked: { color: "#ffffff", scale: 1.8 },
-  ok: { color: "#5eeaa0", scale: 1.5 },
-  warn: { color: "#ffb020", scale: 1.35 },
-  no: { color: "#2c3239", scale: 0.6 },
+/**
+ * While connecting, each port keeps its domain colour (so green never reads as a domain)
+ * and wears a halo for sim-core's verdict: green compatible, amber warning, red
+ * incompatible (the port itself dims), white for the port picked first.
+ */
+const FIT_LOOK: Readonly<
+  Record<Exclude<Fit, "idle">, { halo: string; scale: number; dim: number }>
+> = {
+  picked: { halo: "#ffffff", scale: 1.6, dim: 1 },
+  ok: { halo: "#5eeaa0", scale: 1.35, dim: 1 },
+  warn: { halo: "#ffb020", scale: 1.25, dim: 1 },
+  no: { halo: "#e5484d", scale: 0.7, dim: 0.3 },
 };
 
 function Sockets() {
@@ -325,6 +333,7 @@ function Sockets() {
   const hidden = useEditor((v) => v.hidden);
   const connectFrom = useEditor((v) => v.connectFrom);
   const ref = useRef<InstancedMesh>(null);
+  const haloRef = useRef<InstancedMesh>(null);
 
   const entries = useMemo<SocketEntry[]>(() => {
     if (mode !== "build") return [];
@@ -360,12 +369,25 @@ function Sockets() {
     () => new MeshBasicMaterial({ depthTest: false, transparent: true, opacity: 0.95 }),
     [],
   );
+  const haloMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.42,
+        side: BackSide,
+      }),
+    [],
+  );
   useEffect(() => () => sphere.dispose(), [sphere]);
   useEffect(() => () => material.dispose(), [material]);
+  useEffect(() => () => haloMaterial.dispose(), [haloMaterial]);
 
   useEffect(() => {
     const mesh = ref.current;
-    if (mesh === null) return;
+    const halo = haloRef.current;
+    if (mesh === null || halo === null) return;
     const m = new Matrix4();
     const color = new Color();
     const from =
@@ -384,54 +406,72 @@ function Sockets() {
           fit = "picked";
         else if (connectFrom.componentId === e.componentId) fit = "no";
         else {
-          const check = checkPortCompatibility(from, e.point);
-          fit = !check.compatible ? "no" : check.warnings.length > 0 ? "warn" : "ok";
+          // sim-core decides; the scene only shows its three states.
+          const state = checkPortCompatibility(from, e.point).state;
+          fit = state === "incompatible" ? "no" : state === "warning" ? "warn" : "ok";
         }
       }
       const look = fit === "idle" ? null : FIT_LOOK[fit];
-      const r = e.radius * (look?.scale ?? 1);
+      const r = e.radius * (look !== null && fit === "no" ? look.scale : 1);
       m.makeScale(r, r, r).setPosition(e.position.x, e.position.y, e.position.z);
       mesh.setMatrixAt(i, m);
-      color.set(look?.color ?? CONNECTION_COLORS[e.type] ?? "#8b96a4");
+      color.set(CONNECTION_COLORS[e.type] ?? "#8b96a4").multiplyScalar(look?.dim ?? 1);
       mesh.setColorAt(i, color);
+      const h = look === null ? 0 : e.radius * (fit === "no" ? 1.2 : 1.9) * look.scale;
+      m.makeScale(h, h, h).setPosition(e.position.x, e.position.y, e.position.z);
+      halo.setMatrixAt(i, m);
+      color.set(look?.halo ?? "#000000");
+      halo.setColorAt(i, color);
     });
-    mesh.count = entries.length;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.computeBoundingSphere();
+    for (const target of [mesh, halo]) {
+      target.count = entries.length;
+      target.instanceMatrix.needsUpdate = true;
+      if (target.instanceColor) target.instanceColor.needsUpdate = true;
+      target.computeBoundingSphere();
+    }
   }, [entries, connectFrom, components]);
 
   if (entries.length === 0) return null;
+  const capacity = Math.max(entries.length, entries.length > 512 ? 4096 : 512);
   return (
-    <instancedMesh
-      key={entries.length > 512 ? "large" : "small"}
-      ref={ref}
-      args={[sphere, material, Math.max(entries.length, entries.length > 512 ? 4096 : 512)]}
-      renderOrder={10}
-      onClick={(event) => {
-        if (event.delta > 4 || event.instanceId === undefined) return;
-        event.stopPropagation();
-        const e = entries[event.instanceId];
-        if (e === undefined) return;
-        if (store.getView().tool !== "connect") store.setTool("connect");
-        store.pickSocket({ componentId: e.componentId, connectionPointId: e.socketId });
-      }}
-      onPointerMove={(event) => {
-        if (event.instanceId === undefined) return;
-        const e = entries[event.instanceId];
-        if (e === undefined) return;
-        const port = e.point.port;
-        hover.set({
-          componentId: e.componentId,
-          socket: {
-            id: e.socketId,
-            type: e.type,
-            ...(port !== undefined ? { label: port.label, rating: portRating(port) } : {}),
-          },
-        });
-      }}
-      onPointerOut={() => hover.set(null)}
-    />
+    <>
+      <instancedMesh
+        key={`halo-${entries.length > 512 ? "large" : "small"}`}
+        ref={haloRef}
+        args={[sphere, haloMaterial, capacity]}
+        renderOrder={9}
+        raycast={() => null}
+      />
+      <instancedMesh
+        key={entries.length > 512 ? "large" : "small"}
+        ref={ref}
+        args={[sphere, material, capacity]}
+        renderOrder={10}
+        onClick={(event) => {
+          if (event.delta > 4 || event.instanceId === undefined) return;
+          event.stopPropagation();
+          const e = entries[event.instanceId];
+          if (e === undefined) return;
+          if (store.getView().tool !== "connect") store.setTool("connect");
+          store.pickSocket({ componentId: e.componentId, connectionPointId: e.socketId });
+        }}
+        onPointerMove={(event) => {
+          if (event.instanceId === undefined) return;
+          const e = entries[event.instanceId];
+          if (e === undefined) return;
+          const port = e.point.port;
+          hover.set({
+            componentId: e.componentId,
+            socket: {
+              id: e.socketId,
+              type: e.type,
+              ...(port !== undefined ? { label: port.label, rating: portRating(port) } : {}),
+            },
+          });
+        }}
+        onPointerOut={() => hover.set(null)}
+      />
+    </>
   );
 }
 

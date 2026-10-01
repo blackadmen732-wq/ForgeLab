@@ -56,8 +56,15 @@ page.on("pageerror", (e) => pageErrors.push(e.message));
 page.on("console", (m) => m.type() === "error" && pageErrors.push(m.text()));
 
 const text = (selector) => page.locator(selector).first().innerText();
-const sim = async (speed = "Max") => {
+/** ACTIVATE; when preflight has findings, read them and activate anyway. */
+const activate = async () => {
   await page.click("button.simulate-btn");
+  const dialog = page.locator('[role="dialog"]:has-text("Preflight")');
+  if (await dialog.isVisible({ timeout: 1500 }).catch(() => false))
+    await dialog.locator('button:has-text("Activate anyway")').click();
+};
+const sim = async (speed = "Max") => {
+  await activate();
   await page.click(`.segmented--sm button:has-text("${speed}")`);
 };
 const stop = () => page.click("button.simulate-btn:has-text('STOP')");

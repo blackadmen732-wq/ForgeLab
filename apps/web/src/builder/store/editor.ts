@@ -6,10 +6,17 @@ import {
 } from "@forgelab/reactor-components";
 import {
   QuaternionMath,
+  type LinearPattern,
+  type MirrorPlane,
   type Quaternion,
+  type RadialPattern,
+  type Transform,
   type Vec3,
   Vec3Math,
+  linearCopies,
   localPointToWorld,
+  mirrorCopies,
+  radialCopies,
   snapScalar,
   transform as makeTransform,
   vec3,
@@ -27,6 +34,7 @@ import {
   type SimulationSnapshot,
   SimulationWorld,
   checkPortCompatibility,
+  preflight,
   currentTransform,
   deserializeWorld,
   isLoadBearing,
@@ -165,7 +173,14 @@ export interface EditorView {
   readonly blueprintId: string | null;
 }
 
-export type EditorDialog = "start" | "publish" | "versions" | "submit" | "version-name";
+export type EditorDialog =
+  "start" | "publish" | "versions" | "submit" | "version-name" | "preflight" | "pattern";
+
+/** A pattern-tool request (see `patternSelected`). */
+export type SelectionPattern =
+  | ({ readonly kind: "radial" } & RadialPattern)
+  | ({ readonly kind: "linear" } & LinearPattern)
+  | ({ readonly kind: "mirror"; readonly replace?: boolean } & MirrorPlane);
 
 export type SimStatus = "idle" | "loading" | "ready" | "error";
 
@@ -827,7 +842,7 @@ export class EditorStore {
   duplicateSelected = (): void => {
     const ids = [...this.#selection];
     if (ids.length === 0) return;
-    const created: string[] = [];
+    let created: string[] = [];
     this.#edit(
       ids.length === 1 ? `Duplicate ${this.#labelOf(ids[0]!)}` : `Duplicate ${ids.length} parts`,
       (world) => {
@@ -839,36 +854,12 @@ export class EditorStore {
         const minX = Math.min(...boxes.map((b) => b.minM.x));
         const maxX = Math.max(...boxes.map((b) => b.maxM.x));
         const dx = snapScalar(maxX - minX + 1, this.#gridM) || 1;
-        const map = new Map<string, string>();
-        for (const id of ids) {
-          const source = world.requireComponent(id);
-          const copy = world.duplicateComponent(
-            id,
-            makeTransform(
-              Vec3Math.add(source.transform.positionM, vec3(dx, 0, 0)),
-              source.transform.rotation,
-            ),
-          );
-          // Deterministic ids from the world's counter, re-keyed to stay type-prefixed.
-          map.set(id, copy.id);
-          created.push(copy.id);
-        }
-        // Copy links that were internal to the selection.
-        for (const connection of world.listConnections()) {
-          const a = map.get(connection.from.componentId);
-          const b = map.get(connection.to.componentId);
-          if (a !== undefined && b !== undefined) {
-            world.connect(
-              { componentId: a, connectionPointId: connection.from.connectionPointId },
-              { componentId: b, connectionPointId: connection.to.connectionPointId },
-              {
-                type: connection.type,
-                ...(connection.maxLoadN === undefined ? {} : { maxLoadN: connection.maxLoadN }),
-              },
-            );
-          }
-        }
-        this.#reconcile(world, created, false);
+        const placements = ids.map((id) => world.requireComponent(id).transform);
+        created = this.#copies(
+          world,
+          ids,
+          linearCopies(placements, { step: vec3(dx, 0, 0), count: 2 }),
+        );
       },
     );
     if (created.length > 0) {
@@ -876,6 +867,73 @@ export class EditorStore {
       this.#publish();
     }
   };
+
+  /**
+   * Copies the selection into a ring, a row or its mirror image (pattern tools). Links
+   * between selected parts are copied into every instance; nothing is linked across
+   * instances. Mirror copies keep the originals unless `replace` is set.
+   */
+  patternSelected = (pattern: SelectionPattern): void => {
+    const ids = [...this.#selection];
+    if (ids.length === 0) return;
+    let created: string[] = [];
+    const what = ids.length === 1 ? this.#labelOf(ids[0]!) : `${ids.length} parts`;
+    const label =
+      pattern.kind === "radial"
+        ? `Radial array of ${what} ×${pattern.count}`
+        : pattern.kind === "linear"
+          ? `Linear array of ${what} ×${pattern.count}`
+          : `Mirror ${what}`;
+    this.#edit(label, (world) => {
+      const placements = ids.map((id) => world.requireComponent(id).transform);
+      const copies =
+        pattern.kind === "radial"
+          ? radialCopies(placements, pattern)
+          : pattern.kind === "linear"
+            ? linearCopies(placements, pattern)
+            : [mirrorCopies(placements, pattern)];
+      created = this.#copies(world, ids, copies);
+      if (pattern.kind === "mirror" && pattern.replace === true)
+        for (const id of ids) world.removeComponent(id);
+    });
+    if (created.length > 0) {
+      this.#selection =
+        pattern.kind === "mirror" && pattern.replace === true ? created : [...ids, ...created];
+      this.#publish();
+    }
+  };
+
+  /** Places copies of `ids` at `copies[k][i]` and re-creates their internal links. */
+  #copies(
+    world: SimulationWorld,
+    ids: readonly string[],
+    copies: readonly Transform[][],
+  ): string[] {
+    const created: string[] = [];
+    for (const placements of copies) {
+      const map = new Map<string, string>();
+      ids.forEach((id, i) => {
+        const copy = world.duplicateComponent(id, placements[i]!);
+        map.set(id, copy.id);
+        created.push(copy.id);
+      });
+      for (const connection of world.listConnections()) {
+        const a = map.get(connection.from.componentId);
+        const b = map.get(connection.to.componentId);
+        if (a !== undefined && b !== undefined)
+          world.connect(
+            { componentId: a, connectionPointId: connection.from.connectionPointId },
+            { componentId: b, connectionPointId: connection.to.connectionPointId },
+            {
+              type: connection.type,
+              ...(connection.maxLoadN === undefined ? {} : { maxLoadN: connection.maxLoadN }),
+            },
+          );
+      }
+    }
+    this.#reconcile(world, created, false);
+    return created;
+  }
 
   /**
    * Commits a gizmo drag or numeric edit. Grid snapping, socket snapping and automatic
@@ -1194,6 +1252,31 @@ export class EditorStore {
    * Simulation
    * ---------------------------------------------------------------------------------- */
 
+  /** Skip the preflight dialog for the rest of this session (the player chose to). */
+  #skipPreflight = false;
+
+  get skipPreflight(): boolean {
+    return this.#skipPreflight;
+  }
+
+  setSkipPreflight = (skip: boolean): void => {
+    this.#skipPreflight = skip;
+  };
+
+  /**
+   * ACTIVATE: run sim-core's preflight first. Findings open the preflight dialog, which
+   * always offers Activate anyway; a design with nothing to report starts at once.
+   */
+  requestActivation = (): void => {
+    if (this.#mode === "simulate") return;
+    const report = preflight(this.#snapshot.components, this.#snapshot.connections);
+    if (!report.canActivate || this.#skipPreflight || report.items.length === 0) {
+      this.startSimulation();
+      return;
+    }
+    this.openDialog("preflight");
+  };
+
   startSimulation = (speed: SessionSpeed = 1): void => {
     if (this.#snapshot.components.length === 0) {
       toast("info", "Nothing to simulate yet", "Add parts from the drawer first.");
@@ -1227,7 +1310,7 @@ export class EditorStore {
 
   toggleSimulation = (): void => {
     if (this.#mode === "simulate") this.stopSimulation();
-    else this.startSimulation();
+    else this.requestActivation();
   };
 
   setSpeed = (speed: SessionSpeed): void => {

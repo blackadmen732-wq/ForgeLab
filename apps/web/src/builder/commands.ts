@@ -131,6 +131,15 @@ export const COMMANDS: readonly Command[] = [
     run: (c) => c.store.duplicateSelected(),
   },
   {
+    id: "pattern",
+    label: "Pattern: radial array, linear array, mirror…",
+    group: "Edit",
+    keys: `${MOD} Shift A`,
+    match: (e) => mod(e) && e.shiftKey && e.key.toLowerCase() === "a",
+    enabled: editable,
+    run: (c) => c.store.openDialog("pattern"),
+  },
+  {
     id: "delete",
     label: "Delete selection",
     group: "Edit",

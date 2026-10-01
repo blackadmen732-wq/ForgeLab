@@ -285,7 +285,7 @@ export function Timeline() {
                   type="button"
                   className="btn btn--primary"
                   disabled={count === 0}
-                  onClick={() => store.startSimulation()}
+                  onClick={() => store.requestActivation()}
                 >
                   <Zap /> Simulate
                 </button>

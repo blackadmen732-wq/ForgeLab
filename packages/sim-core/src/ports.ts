@@ -92,7 +92,35 @@ export const PORT_DOMAIN_CONNECTION_TYPES: Readonly<Record<PortDomain, readonly 
     heating: ["port"],
   });
 
+/** Machine-readable reason codes (stable: the UI and tests key on them). */
+export type CompatibilityCode =
+  | "NETWORK_MISMATCH"
+  | "DOMAIN_MISMATCH"
+  | "SAME_DIRECTION"
+  | "VOLTAGE_MISMATCH"
+  | "CURRENT_RATING_MISMATCH"
+  | "FLUID_MISMATCH"
+  | "BORE_MISMATCH"
+  | "PRESSURE_RATING_MISMATCH"
+  | "TEMPERATURE_RATING_MISMATCH"
+  | "FLANGE_MISMATCH"
+  | "POWER_RATING_MISMATCH";
+
+export interface CompatibilityReason {
+  readonly code: CompatibilityCode;
+  /** "error" makes the link impossible; "warning" allows it with a consequence. */
+  readonly severity: "error" | "warning";
+  /** The compared quantity on each side, in SI units, when there is one. */
+  readonly source?: number | string;
+  readonly target?: number | string;
+  readonly message: string;
+}
+
+export type CompatibilityState = "compatible" | "warning" | "incompatible";
+
 export interface PortCompatibility {
+  readonly state: CompatibilityState;
+  readonly reasons: readonly CompatibilityReason[];
   readonly compatible: boolean;
   /** Why the two cannot be joined (when `compatible` is false). */
   readonly reason?: string;
@@ -102,80 +130,143 @@ export interface PortCompatibility {
 
 const pct = (a: number, b: number) => Math.abs(a - b) / Math.max(Math.abs(a), Math.abs(b), 1e-12);
 
+function result(reasons: readonly CompatibilityReason[]): PortCompatibility {
+  const error = reasons.find((r) => r.severity === "error");
+  if (error !== undefined)
+    return {
+      state: "incompatible",
+      reasons: [error],
+      compatible: false,
+      reason: error.message,
+      warnings: [],
+    };
+  return {
+    state: reasons.length > 0 ? "warning" : "compatible",
+    reasons,
+    compatible: true,
+    warnings: reasons.map((r) => r.message),
+  };
+}
+
 /**
- * Whether two connection points may be joined, and what to watch out for.
+ * Whether two connection points may be joined, and what to watch out for. This is the one
+ * authority on compatibility: the editor only displays the result.
  *
- * Hard incompatibilities are the ones no real installation would allow: different
+ * Hard incompatibilities (errors) are the ones no real installation allows: different
  * networks, two outlets or two inlets facing each other, different working fluids,
- * different supply voltages. Rating differences (bore, pressure, current, flange size)
- * are warnings: real plants use reducers and adapters, and the simulation decides whether
- * the undersized side survives.
+ * different supply voltages (there is no transformer in a link). Rating differences —
+ * bore, pressure, temperature, current, flange size, power — are warnings: real plants
+ * use reducers and adapters, and the simulation decides whether the weaker side survives.
+ * Rules and thresholds:
+ *  - voltage: more than 10 % apart → error;  current: more than 25 % apart → warning
+ *  - bore and flange: more than 5 % apart → warning; pressure: more than 10 % → warning
+ *  - temperature rating: more than 10 % apart → warning; shaft/heating power: 25 % → warning
  */
 export function checkPortCompatibility(a: ConnectionPoint, b: ConnectionPoint): PortCompatibility {
-  if (!sameNetwork(a.connectionType, b.connectionType)) {
-    return {
-      compatible: false,
-      reason: `${a.connectionType} and ${b.connectionType} interfaces belong to different systems.`,
-      warnings: [],
-    };
-  }
+  if (!sameNetwork(a.connectionType, b.connectionType))
+    return result([
+      {
+        code: "NETWORK_MISMATCH",
+        severity: "error",
+        source: a.connectionType,
+        target: b.connectionType,
+        message: `${a.connectionType} and ${b.connectionType} interfaces belong to different systems.`,
+      },
+    ]);
   const pa = a.port;
   const pb = b.port;
-  if (pa === undefined || pb === undefined) return { compatible: true, warnings: [] };
-  if (pa.domain !== pb.domain) {
-    return {
-      compatible: false,
-      reason: `A ${pa.domain} port cannot join a ${pb.domain} port.`,
-      warnings: [],
-    };
-  }
-  if (pa.direction !== "both" && pa.direction === pb.direction) {
-    return {
-      compatible: false,
-      reason: `Both ends are ${pa.direction === "in" ? "inlets" : "outlets"} (${pa.label} and ${pb.label}).`,
-      warnings: [],
-    };
-  }
-  const warnings: string[] = [];
+  if (pa === undefined || pb === undefined) return result([]);
+  if (pa.domain !== pb.domain)
+    return result([
+      {
+        code: "DOMAIN_MISMATCH",
+        severity: "error",
+        source: pa.domain,
+        target: pb.domain,
+        message: `A ${pa.domain} port cannot join a ${pb.domain} port.`,
+      },
+    ]);
+  if (pa.direction !== "both" && pa.direction === pb.direction)
+    return result([
+      {
+        code: "SAME_DIRECTION",
+        severity: "error",
+        source: pa.direction,
+        target: pb.direction,
+        message: `Both ends are ${pa.direction === "in" ? "inlets" : "outlets"} (${pa.label} and ${pb.label}).`,
+      },
+    ]);
+  const reasons: CompatibilityReason[] = [];
+  const warn = (
+    code: CompatibilityCode,
+    source: number | string,
+    target: number | string,
+    message: string,
+  ) => reasons.push({ code, severity: "warning", source, target, message });
   switch (pa.domain) {
     case "electrical": {
       const other = pb as ElectricalPort;
-      if (pct(pa.nominalVoltageV, other.nominalVoltageV) > 0.1) {
-        return {
-          compatible: false,
-          reason: `Voltage mismatch: ${fmtV(pa.nominalVoltageV)} against ${fmtV(other.nominalVoltageV)}.`,
-          warnings: [],
-        };
-      }
+      if (pct(pa.nominalVoltageV, other.nominalVoltageV) > 0.1)
+        return result([
+          {
+            code: "VOLTAGE_MISMATCH",
+            severity: "error",
+            source: pa.nominalVoltageV,
+            target: other.nominalVoltageV,
+            message: `Voltage mismatch: ${fmtV(pa.nominalVoltageV)} against ${fmtV(other.nominalVoltageV)}. A transformer or converter is needed.`,
+          },
+        ]);
       if (pct(pa.ratedCurrentA, other.ratedCurrentA) > 0.25)
-        warnings.push(
+        warn(
+          "CURRENT_RATING_MISMATCH",
+          pa.ratedCurrentA,
+          other.ratedCurrentA,
           `Current ratings differ (${fmtA(pa.ratedCurrentA)} vs ${fmtA(other.ratedCurrentA)}): the lower one limits the link.`,
         );
       break;
     }
     case "fluid": {
       const other = pb as FluidPort;
-      if (pa.fluid !== other.fluid) {
-        return {
-          compatible: false,
-          reason: `Different working fluids: ${pa.fluid} and ${other.fluid}.`,
-          warnings: [],
-        };
-      }
+      if (pa.fluid !== other.fluid)
+        return result([
+          {
+            code: "FLUID_MISMATCH",
+            severity: "error",
+            source: pa.fluid,
+            target: other.fluid,
+            message: `Different working fluids: ${pa.fluid} and ${other.fluid}.`,
+          },
+        ]);
       if (pct(pa.innerDiameterM, other.innerDiameterM) > 0.05)
-        warnings.push(
+        warn(
+          "BORE_MISMATCH",
+          pa.innerDiameterM,
+          other.innerDiameterM,
           `Bores differ (${fmtMm(pa.innerDiameterM)} vs ${fmtMm(other.innerDiameterM)}): a reducer restricts flow to the smaller bore.`,
         );
       if (pct(pa.ratedPressurePa, other.ratedPressurePa) > 0.1)
-        warnings.push(
-          `Pressure ratings differ (${fmtMPa(pa.ratedPressurePa)} vs ${fmtMPa(other.ratedPressurePa)}).`,
+        warn(
+          "PRESSURE_RATING_MISMATCH",
+          pa.ratedPressurePa,
+          other.ratedPressurePa,
+          `Pressure ratings differ (${fmtMPa(pa.ratedPressurePa)} vs ${fmtMPa(other.ratedPressurePa)}): the lower one limits the loop.`,
+        );
+      if (pct(pa.ratedTemperatureK, other.ratedTemperatureK) > 0.1)
+        warn(
+          "TEMPERATURE_RATING_MISMATCH",
+          pa.ratedTemperatureK,
+          other.ratedTemperatureK,
+          `Temperature ratings differ (${pa.ratedTemperatureK.toFixed(0)} K vs ${other.ratedTemperatureK.toFixed(0)} K): the lower one limits the loop.`,
         );
       break;
     }
     case "vacuum": {
       const other = pb as VacuumPort;
       if (pct(pa.flangeDiameterM, other.flangeDiameterM) > 0.05)
-        warnings.push(
+        warn(
+          "FLANGE_MISMATCH",
+          pa.flangeDiameterM,
+          other.flangeDiameterM,
           `Flange sizes differ (DN${Math.round(pa.flangeDiameterM * 1000)} vs DN${Math.round(other.flangeDiameterM * 1000)}): the adapter limits conductance.`,
         );
       break;
@@ -184,7 +275,10 @@ export function checkPortCompatibility(a: ConnectionPoint, b: ConnectionPoint): 
     case "heating": {
       const other = pb as ShaftPort | HeatingPort;
       if (pct(pa.ratedPowerW, other.ratedPowerW) > 0.25)
-        warnings.push(
+        warn(
+          "POWER_RATING_MISMATCH",
+          pa.ratedPowerW,
+          other.ratedPowerW,
           `Power ratings differ (${fmtMW(pa.ratedPowerW)} vs ${fmtMW(other.ratedPowerW)}).`,
         );
       break;
@@ -192,7 +286,7 @@ export function checkPortCompatibility(a: ConnectionPoint, b: ConnectionPoint): 
     default:
       break;
   }
-  return { compatible: true, warnings };
+  return result(reasons);
 }
 
 function sameNetwork(a: ConnectionType, b: ConnectionType): boolean {

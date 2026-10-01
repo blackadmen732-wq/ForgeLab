@@ -11,6 +11,7 @@ import {
   parseAssemblyFile,
   serializeWorld,
   type ConnectionPoint,
+  type FluidPort as FluidPortSpec,
   type MaterialRegion,
   type PortSpec,
 } from "./index.js";
@@ -153,6 +154,8 @@ describe("typed port compatibility", () => {
 
   it("joins an outlet to an inlet of the same service", () => {
     expect(checkPortCompatibility(power(400, 1e4, "out"), power(400))).toEqual({
+      state: "compatible",
+      reasons: [],
       compatible: true,
       warnings: [],
     });
@@ -183,6 +186,44 @@ describe("typed port compatibility", () => {
     const current = checkPortCompatibility(power(400, 20_000, "out"), power(400, 5_000));
     expect(current.compatible).toBe(true);
     expect(current.warnings[0]).toMatch(/Current ratings/);
+  });
+
+  it("returns three states with machine-readable reason codes", () => {
+    const code = (a: ConnectionPoint, b: ConnectionPoint) => {
+      const r = checkPortCompatibility(a, b);
+      return [r.state, ...r.reasons.map((x) => x.code)].join(" ");
+    };
+    const water = (d: number, dir: "in" | "out", over: Partial<FluidPortSpec> = {}) => ({
+      ...pipe("pressurized-water", d, dir),
+      port: { ...(pipe("pressurized-water", d, dir).port as FluidPortSpec), ...over },
+    });
+    // water out → water in
+    expect(code(water(0.4, "out"), water(0.4, "in"))).toBe("compatible");
+    // water → helium
+    expect(
+      code(water(0.4, "out"), {
+        ...pipe("cryogenic-helium", 0.4, "in"),
+        connectionType: "coolant",
+      }),
+    ).toBe("incompatible FLUID_MISMATCH");
+    // fluid → electrical
+    expect(code(water(0.4, "out"), power(400))).toBe("incompatible NETWORK_MISMATCH");
+    // matching and mismatched voltages
+    expect(code(power(20_000, 1e4, "out"), power(20_000))).toBe("compatible");
+    expect(code(power(20_000, 1e4, "out"), power(400))).toBe("incompatible VOLTAGE_MISMATCH");
+    // 400 mm → 300 mm
+    const reducer = checkPortCompatibility(water(0.4, "out"), water(0.3, "in"));
+    expect(reducer.state).toBe("warning");
+    expect(reducer.reasons[0]).toMatchObject({ code: "BORE_MISMATCH", source: 0.4, target: 0.3 });
+    // pressure and temperature ratings below the other side
+    expect(code(water(0.4, "out"), water(0.4, "in", { ratedPressurePa: 5e6 }))).toBe(
+      "warning PRESSURE_RATING_MISMATCH",
+    );
+    expect(code(water(0.4, "out"), water(0.4, "in", { ratedTemperatureK: 400 }))).toBe(
+      "warning TEMPERATURE_RATING_MISMATCH",
+    );
+    // two outlets
+    expect(code(water(0.4, "out"), water(0.4, "out"))).toBe("incompatible SAME_DIRECTION");
   });
 
   it("treats ports without a specification as network-typed sockets", () => {

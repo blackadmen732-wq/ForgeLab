@@ -62,6 +62,9 @@ export {
   type FluidPort,
   type FuelPort,
   type HeatingPort,
+  type CompatibilityCode,
+  type CompatibilityReason,
+  type CompatibilityState,
   type PortCompatibility,
   type PortDirection,
   type PortDomain,
@@ -255,6 +258,13 @@ export {
   type PlantStepResult,
 } from "./plant/solver.js";
 export { worstLevel } from "./plant/confidence.js";
+export {
+  preflight,
+  type PreflightCode,
+  type PreflightItem,
+  type PreflightReport,
+  type PreflightSystem,
+} from "./plant/preflight.js";
 export {
   deratingNote,
   resistivityAt,

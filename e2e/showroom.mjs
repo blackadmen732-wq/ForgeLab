@@ -72,9 +72,17 @@ async function loadScenario(id) {
   await page.evaluate((scenario) => window.__forgelab.loadScenario(scenario), id);
   await page.waitForTimeout(600);
 }
+/** ACTIVATE; returns the preflight findings shown (empty when there were none). */
 async function activate(speed) {
   await page.click("button.simulate-btn");
+  const dialog = page.locator('[role="dialog"]:has-text("Preflight")');
+  let findings = "";
+  if (await dialog.isVisible({ timeout: 1500 }).catch(() => false)) {
+    findings = await dialog.innerText();
+    await dialog.locator('button:has-text("Activate anyway")').click();
+  }
   await page.evaluate((s) => window.__forgelab.store.setSpeed(s), speed);
+  return findings;
 }
 async function waitFor(predicate, arg, timeout = 120000) {
   await page.waitForFunction(predicate, arg, { timeout, polling: 250 });
@@ -149,7 +157,9 @@ for (const scenario of SCENARIOS) {
           .getView()
           .snapshot.components.map((c) => [c.id, c.state.physical.positionM]),
       );
-      await activate(scenario.speed);
+      const findings = await activate(scenario.speed);
+      if (scenario.id === "pipe-rupture")
+        expect(/hoop stress/.test(findings), `preflight did not name the thin pipe: ${findings}`);
       await waitFor(
         (family) =>
           window.__forgelab.director.getState().destructions.some((d) => d.family === family),
