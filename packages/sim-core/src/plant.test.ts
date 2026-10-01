@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { findFluid } from "@forgelab/materials";
 import {
   BREMSSTRAHLUNG_COEFFICIENT,
   DT_ALPHA_FRACTION,
@@ -273,6 +274,20 @@ describe("hydraulics and heat transfer", () => {
     const half = pumpCurve({ ratedHeadM: 100, ratedMassFlowKgS: 1000, speedFraction: 0.5, fluid });
     expect(half.shutoffPressurePa / full.shutoffPressurePa).toBeCloseTo(0.25, 12);
     expect(half.runoutMassFlowKgS / full.runoutMassFlowKgS).toBeCloseTo(0.5, 12);
+  });
+
+  it("uses exactly the library's coolant states", () => {
+    const pairs = [
+      ["pressurized-water", "water", "PWR primary"],
+      ["helium", "helium", "DEMO blanket"],
+    ] as const;
+    for (const [coolantId, fluidId, label] of pairs) {
+      const coolant = getCoolantFluid(coolantId);
+      const state = findFluid(fluidId)!.states.find((st) => st.label.includes(label))!;
+      expect(coolant.densityKgM3).toBe(state.density!.value);
+      expect(coolant.specificHeatJkgK).toBe(state.specificHeat!.value);
+      expect(coolant.dynamicViscosityPaS).toBe(state.viscosity!.value);
+    }
   });
 
   it("gives effectiveness 1 - exp(-NTU)", () => {

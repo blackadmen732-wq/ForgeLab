@@ -1,14 +1,12 @@
-import type { MaterialDefinition, MaterialId } from "./types.js";
-import { MATERIAL_CATALOG } from "./catalog.js";
+import { FLUID_LIBRARY } from "./fluids.js";
+import { MATERIAL_LIBRARY } from "./library.js";
+import type { FluidRecord, MaterialRecord } from "./schema.js";
+import type { MaterialId } from "./types.js";
 
 /**
- * Substances: what the inside of a finished component is made of.
- *
- * Structural materials (catalog.ts) are substances with a complete engineering data set,
- * because the structural solver needs every one of their numbers. The substances below
- * appear only as internal regions of finished components (a magnet's superconductor, its
- * insulation). They carry only the property groups we have sources for; a group that is
- * not listed is unknown, never zero. See docs/material-sources.md.
+ * Substances: what the inside of a finished component is made of — any library material
+ * (structural or not). A compact view of a library record for the solvers; the full
+ * record, with every value's source, is `getMaterialRecord`.
  */
 export interface SuperconductorProperties {
   /** Critical temperature at zero field, Tc0. */
@@ -31,61 +29,70 @@ export interface SubstanceDefinition {
   readonly thermalConductivityWmK?: number;
   /** Room-temperature electrical resistivity; `Infinity` for insulators. */
   readonly electricalResistivityOhmM?: number;
+  /**
+   * Only when a field-dependent critical surface is catalogued. Superconductors with only
+   * a zero-field Tc (REBCO, MgB₂) have none and cannot set a field-dependent limit.
+   */
   readonly superconductor?: SuperconductorProperties;
   readonly sourceSummary: string;
   readonly notes: readonly string[];
 }
 
-const NB_TI: SubstanceDefinition = {
-  id: "nbti",
-  name: "Niobium–Titanium",
-  grade: "Nb-47 wt% Ti superconductor alloy",
-  // Ideal-mixture estimate from elemental densities (Nb 8.57, Ti 4.506 g/cm³):
-  // 1/ρ = 0.53/8.57 + 0.47/4.506  →  ρ = 6.02 g/cm³.
-  densityKgM3: 6020,
-  superconductor: {
-    criticalTemperatureZeroFieldK: 9.2,
-    upperCriticalFieldZeroTemperatureT: 14.5,
-    temperatureExponent: 1.7,
-    source:
-      "L. Bottura, 'A practical fit for the critical surface of NbTi', IEEE Trans. Appl. Supercond. 10 (2000) 1054 (LHC Project Report 358): Bc20 = 14.5 T, Tc0 = 9.2 K; Bc2(T) = Bc20(1 − t^1.7) after Lubell (1983).",
-  },
-  sourceSummary:
-    "Bottura (2000) critical-surface parameters; density derived from elemental densities.",
-  notes: [
-    "Only the superconducting critical surface and density are catalogued; NbTi is used here as the conductor region of finished magnets, never as a structural member.",
-    "The critical temperature falls with field: at 5 T, Tc ≈ 7.2 K; at 9 T, Tc ≈ 5.3 K.",
-  ],
-};
+function substanceOf(record: MaterialRecord): SubstanceDefinition {
+  const sc = record.superconducting;
+  const e = record.electrical;
+  return Object.freeze({
+    id: record.id,
+    name: record.name,
+    grade: record.grade,
+    densityKgM3: record.density.value,
+    ...(record.thermal?.specificHeat !== undefined
+      ? { specificHeatJkgK: record.thermal.specificHeat.value }
+      : {}),
+    ...(record.thermal?.conductivity !== undefined
+      ? { thermalConductivityWmK: record.thermal.conductivity.value }
+      : {}),
+    ...(e?.insulator === true
+      ? { electricalResistivityOhmM: Infinity }
+      : e?.resistivity !== undefined
+        ? { electricalResistivityOhmM: e.resistivity.value }
+        : {}),
+    ...(sc !== undefined &&
+    sc.criticalSurface !== null &&
+    sc.upperCriticalFieldZeroTemperature !== undefined &&
+    sc.temperatureExponent !== undefined
+      ? {
+          superconductor: Object.freeze({
+            criticalTemperatureZeroFieldK: sc.criticalTemperatureZeroField.value,
+            upperCriticalFieldZeroTemperatureT: sc.upperCriticalFieldZeroTemperature.value,
+            temperatureExponent: sc.temperatureExponent,
+            source: sc.note,
+          }),
+        }
+      : {}),
+    sourceSummary: record.sourceSummary,
+    notes: record.notes,
+  });
+}
 
-const G10_CR: SubstanceDefinition = {
-  id: "g10-cr",
-  name: "G-10CR Fiberglass Epoxy",
-  grade: "NEMA G-10CR woven glass / epoxy laminate (cryogenic grade)",
-  densityKgM3: 1800,
-  specificHeatJkgK: 999,
-  thermalConductivityWmK: 0.61,
-  electricalResistivityOhmM: Infinity,
-  sourceSummary:
-    "NIST cryogenic material properties (G-10CR) curve fits at 300 K; density from supplier datasheets.",
-  notes: [
-    "Specific heat 999 J/(kg·K) and normal-direction conductivity 0.61 W/(m·K) are the NIST G-10CR fits evaluated at 300 K (2 % and 5 % fit error).",
-    "Density: specific gravity 1.8 (Atlas Fibre G10 datasheet); other suppliers quote 1.70–1.90.",
-    "At 4.5 K the NIST fits give 2.8 J/(kg·K) and 0.08 W/(m·K): insulation is a thermal barrier in a magnet.",
-  ],
-};
+/** Library materials that are not in the structural catalogue (internal-only). */
+export const SUBSTANCE_CATALOG: readonly SubstanceDefinition[] = Object.freeze(
+  MATERIAL_LIBRARY.filter((r) => r.category === "superconductor" || r.id === "g10-cr").map(
+    substanceOf,
+  ),
+);
 
-export const SUBSTANCE_CATALOG: readonly SubstanceDefinition[] = Object.freeze([NB_TI, G10_CR]);
+const BY_ID: ReadonlyMap<MaterialId, SubstanceDefinition> = new Map(
+  MATERIAL_LIBRARY.map((r) => [r.id, substanceOf(r)] as const),
+);
+const RECORDS: ReadonlyMap<MaterialId, MaterialRecord> = new Map(
+  MATERIAL_LIBRARY.map((r) => [r.id, r] as const),
+);
+const FLUIDS: ReadonlyMap<string, FluidRecord> = new Map(
+  FLUID_LIBRARY.map((f) => [f.id, f] as const),
+);
 
-const BY_ID: ReadonlyMap<MaterialId, SubstanceDefinition | MaterialDefinition> = new Map<
-  MaterialId,
-  SubstanceDefinition | MaterialDefinition
->([
-  ...MATERIAL_CATALOG.map((m) => [m.id, m] as const),
-  ...SUBSTANCE_CATALOG.map((s) => [s.id, s] as const),
-]);
-
-/** Any substance: a structural material or an internal-only substance. */
+/** Any library material, structural or not. */
 export function findSubstance(id: MaterialId): SubstanceDefinition | undefined {
   return BY_ID.get(id);
 }
@@ -94,6 +101,15 @@ export function getSubstance(id: MaterialId): SubstanceDefinition {
   const substance = BY_ID.get(id);
   if (substance === undefined) throw new Error(`Unknown substance id "${id}".`);
   return substance;
+}
+
+/** The full library record, with every value's source and confidence. */
+export function findMaterialRecord(id: MaterialId): MaterialRecord | undefined {
+  return RECORDS.get(id);
+}
+
+export function findFluid(id: string): FluidRecord | undefined {
+  return FLUIDS.get(id);
 }
 
 /**

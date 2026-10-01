@@ -1,6 +1,7 @@
 import { Color, Plane, Vector3 } from "three";
 import type { SimulationComponent, VesselState } from "@forgelab/sim-core";
 import { frameScalar, type SessionFrame } from "@forgelab/sim-runner";
+import { MATERIAL_LIBRARY } from "@forgelab/materials";
 import type { Overlay } from "../store/editor.js";
 
 /**
@@ -96,21 +97,16 @@ export const PALETTE = {
   select: new Color("#6fd3d1"),
 } as const;
 
-const MATERIAL_COLORS: Record<string, string> = {
-  "structural-steel": "#7b8590",
-  "stainless-steel": "#a1a9b2",
-  tungsten: "#565b62",
-  copper: "#a87458",
-  aluminum: "#bcc2c9",
-  nbti: "#7b7fa6",
-  "g10-cr": "#b9a35e",
-};
+/** Each material's own colour, from the library's presentation data. */
+const MATERIAL_COLORS: ReadonlyMap<string, string> = new Map(
+  MATERIAL_LIBRARY.map((m) => [m.id, m.presentation.color] as const),
+);
 
 /** Removes the half-space z > 0 in cutaway mode. */
 export const CUT_PLANE = new Plane(new Vector3(0, 0, -1), 0);
 
 export function materialColor(materialId: string): Color {
-  return new Color(MATERIAL_COLORS[materialId] ?? "#8a939e");
+  return new Color(MATERIAL_COLORS.get(materialId) ?? "#8a939e");
 }
 
 const scratch = new Color();
