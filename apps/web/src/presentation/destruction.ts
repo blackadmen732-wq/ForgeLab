@@ -112,6 +112,10 @@ export function estimateEnergyJ(
     }
     case "quench":
     case "cryogenic": {
+      // The winding's published ½LI² when it has one; otherwise field energy in its volume.
+      const stored = previous?.components.find((c) => c.id === failure.componentId)?.storedEnergyJ;
+      if (stored !== undefined && stored > 0) return stored;
+      if ((part?.storedEnergyJ ?? 0) > 0) return part!.storedEnergyJ;
       const b = part?.fieldT ?? 0;
       const vol = part?.volumeM3 ?? 1;
       return Math.max(((b * b) / (2 * MU0)) * vol, 1e4);
@@ -120,6 +124,11 @@ export function estimateEnergyJ(
     case "brownout":
       return Math.max((part?.powerW ?? 0) * 0.05, 1e3);
     case "coolant":
+      // A rupture releases the pressurised inventory: p·V of the pipe bore, an order of
+      // magnitude for the blowdown (flashing water releases more; not simulated).
+      if (failure.failureType === "pipe_rupture" && part !== undefined)
+        return Math.max(part.internalPressurePa * part.volumeM3 * 0.7, 1e4);
+      return Math.max((part?.heatW ?? 0) * 1, 1e4);
     case "flow":
       return Math.max((part?.heatW ?? 0) * 1, 1e4);
     case "structural":
@@ -172,7 +181,7 @@ export function destructionEvent(
   const loopOf = reading.loops.find((l) => l.componentIds.includes(failure.componentId));
   // Coolant releases happen at the hottest part of the loop (published temperatures).
   const site =
-    family === "coolant" && loopOf !== undefined
+    family === "coolant" && loopOf !== undefined && failure.failureType !== "pipe_rupture"
       ? reading.components
           .filter((c) => loopOf.componentIds.includes(c.id))
           .reduce<ComponentReading | undefined>(
@@ -228,7 +237,10 @@ export function destructionEvent(
     severity,
     estimatedEnergy: energy,
     temperature: part?.temperatureK ?? 293.15,
-    pressure: vessel?.pressurePa ?? null,
+    pressure:
+      part !== undefined && part.internalPressurePa > 0
+        ? part.internalPressurePa
+        : (vessel?.pressurePa ?? null),
     electricalState:
       part === undefined || (!part.isLoad && part.powerW === 0)
         ? "none"

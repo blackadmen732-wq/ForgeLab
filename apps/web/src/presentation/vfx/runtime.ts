@@ -11,6 +11,7 @@ import {
   LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
+  PointLight,
   type Camera,
   type Object3D,
   type Scene,
@@ -47,18 +48,36 @@ import {
  * clears all of them when the run resets. It reads presentation state only.
  */
 const SHARE: Readonly<Record<ParticleKind, number>> = {
-  smoke: 0.2,
-  steam: 0.25,
-  vapor: 0.2,
-  dust: 0.2,
+  smoke: 0.16,
+  steam: 0.2,
+  vapor: 0.18,
+  dust: 0.16,
   fire: 0.05,
-  sparks: 0.1,
+  sparks: 0.08,
+  spray: 0.1,
+  esmoke: 0.07,
 };
 
+type EmitCommand = Extract<EffectCommand, { type: "emit" }>;
+type FollowCommand = Extract<EffectCommand, { type: "follow" }>;
+
 interface Emitter {
-  readonly cmd: Extract<EffectCommand, { type: "emit" }>;
+  readonly cmd: EmitCommand;
+  /** Set when the rate follows a published value of a part each frame. */
+  readonly follow?: FollowCommand;
   age: number;
   carry: number;
+}
+
+/** Commands that start after a delay. */
+type Delayable = Extract<EffectCommand, { type: "arc" | "shock" | "flash" | "light" }>;
+
+interface Glow {
+  readonly light: PointLight;
+  age: number;
+  duration: number;
+  peak: number;
+  flickerHz: number;
 }
 
 interface Arc {
@@ -154,6 +173,8 @@ export class VfxRuntime {
   readonly cam = new CameraEffects();
   readonly marks: MarkLayer;
   readonly emitters: Emitter[] = [];
+  readonly lights: Glow[];
+  readonly #delayed: { cmd: Delayable; wait: number }[] = [];
   #seeded = mulberry32(1);
   #budget: TierBudget;
   #arcMaterial: LineBasicMaterial;
@@ -231,6 +252,14 @@ export class VfxRuntime {
       root.add(mesh);
       return { mesh, age: 1, duration: 0, radius: 1 };
     });
+    // Always present at zero intensity: switching lights on and off would recompile every
+    // lit material in the hall at the moment of the failure.
+    this.lights = Array.from({ length: 2 }, () => {
+      const light = new PointLight("#ffffff", 0, 10, 2);
+      light.castShadow = false;
+      root.add(light);
+      return { light, age: 1, duration: 0, peak: 0, flickerHz: 0 };
+    });
     const sphere = (this.#sphere = new SphereGeometry(1, 24, 16));
     this.flashes = Array.from({ length: 4 }, () => {
       const mesh = new Mesh(
@@ -304,34 +333,34 @@ export class VfxRuntime {
             carry: 0,
           });
           break;
-        case "arc": {
-          const arc = this.arcs.find((a) => a.age >= a.duration) ?? this.arcs[0]!;
-          arc.from.set(...cmd.from);
-          arc.to.set(...cmd.to);
-          arc.age = 0;
-          arc.duration = reduced ? Math.min(0.3, cmd.duration) : cmd.duration;
-          arc.strikes = cmd.strikes;
-          arc.nextJitter = 0;
+        case "follow":
+          this.emitters.push({
+            cmd: {
+              type: "emit",
+              system: cmd.system,
+              origin: cmd.origin,
+              direction: cmd.direction,
+              spread: cmd.spread,
+              speed: cmd.speed,
+              rate: 0,
+              duration: cmd.duration,
+              life: cmd.life,
+              size: cmd.size,
+              radius: cmd.radius,
+              delay: 0,
+            },
+            follow: { ...cmd, maxRate: cmd.maxRate * rateScale, perUnit: cmd.perUnit * rateScale },
+            age: 0,
+            carry: 0,
+          });
           break;
-        }
-        case "shock": {
-          const ring = this.rings.find((r) => r.age >= r.duration) ?? this.rings[0]!;
-          ring.mesh.position.set(cmd.origin[0], 0.05, cmd.origin[2]);
-          ring.age = 0;
-          ring.duration = cmd.duration;
-          ring.radius = cmd.radius;
+        case "arc":
+        case "shock":
+        case "flash":
+        case "light":
+          if ((cmd.delay ?? 0) > 0) this.#delayed.push({ cmd, wait: cmd.delay! });
+          else this.#start(cmd);
           break;
-        }
-        case "flash": {
-          if (reduced) break;
-          const flash = this.flashes.find((f) => f.age >= f.duration) ?? this.flashes[0]!;
-          flash.mesh.position.set(...cmd.origin);
-          (flash.mesh.material as MeshBasicMaterial).color.set(cmd.color);
-          flash.age = 0;
-          flash.duration = cmd.duration;
-          flash.radius = cmd.radius;
-          break;
-        }
         case "ceiling-dust":
           this.emitters.push({
             cmd: {
@@ -426,10 +455,64 @@ export class VfxRuntime {
     this.#invalidate();
   }
 
+  #start(cmd: Delayable): void {
+    const reduced = getSettings().reducedEffects;
+    switch (cmd.type) {
+      case "arc": {
+        const arc = this.arcs.find((a) => a.age >= a.duration) ?? this.arcs[0]!;
+        arc.from.set(...cmd.from);
+        arc.to.set(...cmd.to);
+        arc.age = 0;
+        arc.duration = reduced ? Math.min(0.3, cmd.duration) : cmd.duration;
+        arc.strikes = cmd.strikes;
+        arc.nextJitter = 0;
+        break;
+      }
+      case "shock": {
+        const ring = this.rings.find((r) => r.age >= r.duration) ?? this.rings[0]!;
+        ring.mesh.position.set(cmd.origin[0], 0.05, cmd.origin[2]);
+        ring.age = 0;
+        ring.duration = cmd.duration;
+        ring.radius = cmd.radius;
+        break;
+      }
+      case "flash": {
+        if (reduced) break;
+        const flash = this.flashes.find((f) => f.age >= f.duration) ?? this.flashes[0]!;
+        flash.mesh.position.set(...cmd.origin);
+        (flash.mesh.material as MeshBasicMaterial).color.set(cmd.color);
+        flash.age = 0;
+        flash.duration = cmd.duration;
+        flash.radius = cmd.radius;
+        break;
+      }
+      case "light": {
+        // The free light, else the one closest to finishing.
+        const glow =
+          this.lights.find((g) => g.age >= g.duration) ??
+          this.lights.reduce((a, b) => (a.duration - a.age < b.duration - b.age ? a : b));
+        glow.light.position.set(...cmd.origin);
+        glow.light.color.set(cmd.color);
+        glow.light.distance = cmd.distance;
+        glow.age = 0;
+        glow.duration = cmd.duration;
+        glow.peak = reduced ? cmd.intensity * 0.5 : cmd.intensity;
+        // No strobing with reduced effects.
+        glow.flickerHz = reduced ? 0 : (cmd.flickerHz ?? 0);
+        break;
+      }
+    }
+  }
+
   clearAll(): void {
     this.#broken.clear();
     damageState.clear();
     this.emitters.length = 0;
+    this.#delayed.length = 0;
+    for (const g of this.lights) {
+      g.age = g.duration = 0;
+      g.light.intensity = 0;
+    }
     for (const s of Object.values(this.systems)) s.clear();
     this.debris.clear();
     this.marks.clear();
@@ -456,7 +539,20 @@ export class VfxRuntime {
       (this.#last === 0 ? 0.016 : Math.min(0.05, (now - this.#last) / 1000)) * this.timeScale();
     this.#last = now;
     let busy = false;
+    // Delayed starts.
+    for (let i = this.#delayed.length - 1; i >= 0; i -= 1) {
+      const d = this.#delayed[i]!;
+      d.wait -= dt;
+      busy = true;
+      if (d.wait <= 0) {
+        this.#delayed.splice(i, 1);
+        this.#start(d.cmd);
+      }
+    }
     // Emitters.
+    const reading = this.emitters.some((e) => e.follow !== undefined)
+      ? this.#director?.getState().reading
+      : undefined;
     for (let i = this.emitters.length - 1; i >= 0; i -= 1) {
       const e = this.emitters[i]!;
       e.age += dt;
@@ -469,7 +565,21 @@ export class VfxRuntime {
         continue;
       }
       busy = true;
-      e.carry += e.cmd.rate * dt;
+      let rate = e.cmd.rate;
+      let speed = e.cmd.speed;
+      if (e.follow !== undefined) {
+        const f = e.follow;
+        const part = reading?.components.find((c) => c.id === f.componentId);
+        const value = part?.[f.field] ?? 0;
+        rate = Math.min(f.maxRate, Math.max(0, value) * f.perUnit);
+      } else if (e.cmd.decay !== undefined) {
+        // A blowdown: mass flow falls with the driving pressure, exit speed with its root.
+        const k = Math.exp(-e.age / e.cmd.decay);
+        rate *= k;
+        const sk = Math.sqrt(k);
+        speed = [speed[0] * sk, speed[1] * sk];
+      }
+      e.carry += rate * dt;
       const n = Math.floor(e.carry);
       e.carry -= n;
       const system = this.systems[e.cmd.system];
@@ -478,12 +588,27 @@ export class VfxRuntime {
           e.cmd.origin,
           e.cmd.direction,
           e.cmd.spread,
-          e.cmd.speed,
+          speed,
           e.cmd.life,
           e.cmd.size,
           e.cmd.radius,
           this.random,
         );
+    }
+    // Lights: a fast attack, then a decay; long ones (a fire) fade linearly. Flicker is
+    // two beating sines, deterministic.
+    for (const g of this.lights) {
+      if (g.age >= g.duration) {
+        g.light.intensity = 0;
+        continue;
+      }
+      g.age += dt;
+      busy = true;
+      const t = Math.min(1, g.age / g.duration);
+      const envelope = Math.min(1, g.age / 0.04) * (g.duration > 2 ? 1 - t : (1 - t) * (1 - t));
+      const w = 2 * Math.PI * g.flickerHz * g.age;
+      const flicker = g.flickerHz > 0 ? 0.65 + 0.35 * Math.sin(w) * Math.sin(1.7 * w + 1) : 1;
+      g.light.intensity = g.peak * envelope * flicker;
     }
     for (const s of Object.values(this.systems)) {
       if (s.alive > 0 || busy) {
@@ -593,6 +718,7 @@ export class VfxRuntime {
     out["debris (rigid)"] = this.debris.rigidCount;
     out["marks"] = this.marks.count;
     out["emitters"] = this.emitters.length;
+    out["lights"] = this.lights.filter((g) => g.age < g.duration).length;
     return out;
   }
 

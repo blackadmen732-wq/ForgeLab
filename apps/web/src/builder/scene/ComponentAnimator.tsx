@@ -4,12 +4,17 @@ import { Color, type MeshBasicMaterial } from "three";
 import { PresentationContext } from "../../presentation/context.js";
 import { motionAllowed, getSettings } from "../../presentation/settings.js";
 import type { VisualState } from "../../presentation/visualState.js";
+import { plasmaUnrest } from "./appearance.js";
 import { meshRegistry } from "./meshes.js";
 
 /**
  * Spins rotors and lights status lamps from the director's per-machine visual state.
  * Rotor speed eases toward the machine's activity, so pumps spin up and coast down the
  * way the flow does; nothing here is fed back to the simulation.
+ *
+ * Also the visible precursors of a failure, each read from a published value: a pump that
+ * is cavitating shudders in proportion to the head it has lost, and a plasma close to a
+ * stability limit wobbles. They warn; they never decide.
  */
 const LAMP: Readonly<Record<VisualState, { color: Color; blinkHz: number }>> = {
   OFF: { color: new Color("#23282e"), blinkHz: 0 },
@@ -24,6 +29,8 @@ const LAMP: Readonly<Record<VisualState, { color: Color; blinkHz: number }>> = {
 
 /** Visual angular speed at full activity, rad/s (readable, not literal RPM). */
 const MAX_SPIN = 14;
+/** Shudder of a pump that has lost all its head, m (readable, not a measured amplitude). */
+const MAX_SHUDDER_M = 0.03;
 const scratch = new Color();
 
 export function ComponentAnimator() {
@@ -41,8 +48,34 @@ export function ComponentAnimator() {
     const reduced = getSettings().reducedEffects;
     const motion = motionAllowed();
     let moving = false;
+    const t = now / 1000;
+    const parts = simulate ? state.reading?.components : undefined;
     for (const [id, handle] of meshRegistry) {
       const visual = simulate ? state.visuals.get(id) : undefined;
+      // Precursors.
+      const part = parts?.find((c) => c.id === id);
+      const lost = part === undefined ? 0 : 1 - Math.min(1, Math.max(0, part.headFraction));
+      if (lost > 0 && motion) {
+        const a = MAX_SHUDDER_M * lost;
+        handle.shake.position.set(
+          a * Math.sin(t * 2 * Math.PI * 23) * Math.sin(t * 7.3),
+          a * 0.5 * Math.sin(t * 2 * Math.PI * 31 + 1),
+          a * Math.sin(t * 2 * Math.PI * 37 + 2) * Math.cos(t * 5.1),
+        );
+        moving = true;
+      } else if (handle.shake.position.lengthSq() > 0) handle.shake.position.set(0, 0, 0);
+      if (handle.glow !== null) {
+        const unrest = motion ? plasmaUnrest(state.reading?.vessels[id] ?? null) : 0;
+        if (unrest > 0) {
+          const w = 0.06 * unrest;
+          handle.glow.scale.set(
+            1 + w * Math.sin(t * 2 * Math.PI * 2.3),
+            1 + w * Math.sin(t * 2 * Math.PI * 3.1 + 1),
+            1 + w * Math.sin(t * 2 * Math.PI * 2.3 + 2),
+          );
+          moving = true;
+        } else if (handle.glow.scale.x !== 1) handle.glow.scale.set(1, 1, 1);
+      }
       if (handle.lamp !== null) {
         handle.lamp.visible = simulate;
         if (visual !== undefined) {

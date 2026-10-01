@@ -38,6 +38,20 @@ export interface ComponentReading {
   readonly free: boolean;
   /** Whether this part draws power (a load) by role. */
   readonly isLoad: boolean;
+  /** Pipes: pressure held by the wall, Pa (0 when not a pipe). */
+  readonly internalPressurePa: number;
+  /** Pipe wall or magnet casing: stress ÷ yield. */
+  readonly hoopUtilization: number;
+  /** Pumps: head left by cavitation (1 when not cavitating). */
+  readonly headFraction: number;
+  /** Magnets: ½ L I², J. */
+  readonly storedEnergyJ: number;
+  /** Magnets: power into the dump resistor, W. */
+  readonly dumpPowerW: number;
+  /** Superconducting magnets: helium boil-off, kg/s. */
+  readonly heliumBoilOffKgS: number;
+  /** Magnets: seconds since the quench began (−1 if none). */
+  readonly quenchAgeS: number;
 }
 
 export interface PlantReading {
@@ -85,6 +99,13 @@ export function readingFromFrame(
       heatW: frameScalar(frame, i, "heatGeneratedW"),
       disabled: frameScalar(frame, i, "disabled") > 0,
       free: frameScalar(frame, i, "free") > 0,
+      internalPressurePa: frameScalar(frame, i, "internalPressurePa"),
+      hoopUtilization: frameScalar(frame, i, "hoopUtilization"),
+      headFraction: frameScalar(frame, i, "headFraction"),
+      storedEnergyJ: frameScalar(frame, i, "storedEnergyJ"),
+      dumpPowerW: frameScalar(frame, i, "dumpPowerW"),
+      heliumBoilOffKgS: frameScalar(frame, i, "heliumBoilOffKgS"),
+      quenchAgeS: frameScalar(frame, i, "quenchAgeS"),
     });
   });
   return {

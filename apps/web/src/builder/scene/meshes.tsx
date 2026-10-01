@@ -26,6 +26,11 @@ import { machineModel } from "./machines.js";
 
 export interface MeshHandle {
   readonly group: Group;
+  /**
+   * Holds every mesh of the part, inside `group`: precursor vibration (a cavitating pump,
+   * an unstable plasma) offsets this, so it never fights the published position.
+   */
+  readonly shake: Group;
   readonly body: MeshStandardMaterial;
   readonly glow: Mesh | null;
   /** Spinning parts (pump couplings, turbine shafts), turned by the animator. */
@@ -313,6 +318,7 @@ export const ComponentMesh = memo(function ComponentMesh({
 
   const rotorRef = useRef<Group>(null);
   const lampRef = useRef<Mesh>(null);
+  const shakeRef = useRef<Group>(null);
   const rotor = useMemo(() => rotorShape(role, geometry), [role, geometry]);
   useLayoutEffect(() => () => rotor?.geometry.dispose(), [rotor]);
   const lamp = useMemo(() => {
@@ -341,6 +347,7 @@ export const ComponentMesh = memo(function ComponentMesh({
     g.quaternion.set(q.x, q.y, q.z, q.w);
     meshRegistry.set(component.id, {
       group: g,
+      shake: shakeRef.current!,
       body,
       glow: glow.current,
       rotor: rotorRef.current,
@@ -368,64 +375,72 @@ export const ComponentMesh = memo(function ComponentMesh({
 
   return (
     <group ref={group} visible={visible} userData={{ componentId: component.id }}>
-      {ribs ? (
-        <group {...handlers}>
-          <CoilRibs geometry={geometry} material={body} />
-        </group>
-      ) : (
-        <mesh
-          geometry={shape}
-          material={model?.replacesEnvelope ? PICK_MATERIAL : body}
-          castShadow={!model?.replacesEnvelope}
-          receiveShadow
-          {...handlers}
-        >
-          {selected && <Edges threshold={30} color="#6fd3d1" />}
-        </mesh>
-      )}
-      {model?.main && (
-        <mesh geometry={model.main} material={body} castShadow receiveShadow {...handlers} />
-      )}
-      {model?.trim && (
-        <mesh geometry={model.trim} material={extras.trim} castShadow receiveShadow {...handlers} />
-      )}
-      {model?.accent && (
-        <mesh
-          geometry={model.accent}
-          material={extras.accent}
-          castShadow
-          receiveShadow
-          {...handlers}
-        />
-      )}
-      {ribs && selected && (
-        <mesh geometry={shape} visible={false}>
-          <Edges threshold={50} color="#6fd3d1" />
-        </mesh>
-      )}
-      {rotor !== null && (
-        <group ref={rotorRef} position={rotor.offset}>
-          <mesh geometry={rotor.geometry} material={body} castShadow />
-        </group>
-      )}
-      {lamp !== null && (
-        <mesh
-          ref={lampRef}
-          geometry={lamp.geometry}
-          material={lamp.material}
-          position={lamp.position}
-          visible={false}
-        />
-      )}
-      {glowGeometry !== null && (
-        <mesh
-          ref={glow}
-          geometry={glowGeometry}
-          material={glowMaterial}
-          visible={false}
-          renderOrder={2}
-        />
-      )}
+      <group ref={shakeRef}>
+        {ribs ? (
+          <group {...handlers}>
+            <CoilRibs geometry={geometry} material={body} />
+          </group>
+        ) : (
+          <mesh
+            geometry={shape}
+            material={model?.replacesEnvelope ? PICK_MATERIAL : body}
+            castShadow={!model?.replacesEnvelope}
+            receiveShadow
+            {...handlers}
+          >
+            {selected && <Edges threshold={30} color="#6fd3d1" />}
+          </mesh>
+        )}
+        {model?.main && (
+          <mesh geometry={model.main} material={body} castShadow receiveShadow {...handlers} />
+        )}
+        {model?.trim && (
+          <mesh
+            geometry={model.trim}
+            material={extras.trim}
+            castShadow
+            receiveShadow
+            {...handlers}
+          />
+        )}
+        {model?.accent && (
+          <mesh
+            geometry={model.accent}
+            material={extras.accent}
+            castShadow
+            receiveShadow
+            {...handlers}
+          />
+        )}
+        {ribs && selected && (
+          <mesh geometry={shape} visible={false}>
+            <Edges threshold={50} color="#6fd3d1" />
+          </mesh>
+        )}
+        {rotor !== null && (
+          <group ref={rotorRef} position={rotor.offset}>
+            <mesh geometry={rotor.geometry} material={body} castShadow />
+          </group>
+        )}
+        {lamp !== null && (
+          <mesh
+            ref={lampRef}
+            geometry={lamp.geometry}
+            material={lamp.material}
+            position={lamp.position}
+            visible={false}
+          />
+        )}
+        {glowGeometry !== null && (
+          <mesh
+            ref={glow}
+            geometry={glowGeometry}
+            material={glowMaterial}
+            visible={false}
+            renderOrder={2}
+          />
+        )}
+      </group>
     </group>
   );
 });

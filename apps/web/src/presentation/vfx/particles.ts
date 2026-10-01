@@ -21,8 +21,13 @@ interface Look {
   readonly colorStart: Color;
   readonly colorEnd: Color;
   readonly alpha: number;
-  /** Vertical acceleration, m/s² (positive rises). */
+  /** Vertical acceleration at birth, m/s² (positive rises). */
   readonly buoyancy: number;
+  /**
+   * Vertical acceleration at the end of life. Cold helium fog first sinks (denser than
+   * air), then rises as it warms; steam's droplets evaporate as it rises and slows.
+   */
+  readonly buoyancyEnd: number;
   /** Linear drag, 1/s. */
   readonly drag: number;
   readonly bounce: number;
@@ -37,6 +42,7 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#6b6a68"),
     alpha: 0.55,
     buoyancy: 1.2,
+    buoyancyEnd: 1.6,
     drag: 0.6,
     bounce: 0,
     fadeIn: 0.1,
@@ -47,6 +53,7 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#c9d2da"),
     alpha: 0.42,
     buoyancy: 2.2,
+    buoyancyEnd: 0.8,
     drag: 1.4,
     bounce: 0,
     fadeIn: 0.05,
@@ -58,6 +65,7 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#dde8f2"),
     alpha: 0.5,
     buoyancy: -1.1,
+    buoyancyEnd: 0.6,
     drag: 1.2,
     bounce: 0,
     fadeIn: 0.05,
@@ -68,6 +76,7 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#6e6a63"),
     alpha: 0.35,
     buoyancy: -0.35,
+    buoyancyEnd: -0.2,
     drag: 1.6,
     bounce: 0,
     fadeIn: 0.15,
@@ -78,9 +87,34 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#c2410c"),
     alpha: 0.9,
     buoyancy: 5,
+    buoyancyEnd: 5,
     drag: 1.8,
     bounce: 0,
     fadeIn: 0.05,
+  },
+  spray: {
+    // Liquid droplets from a break or a seal: thrown, then falling under gravity.
+    blending: NormalBlending,
+    colorStart: new Color("#e6eef5"),
+    colorEnd: new Color("#9fb3c4"),
+    alpha: 0.7,
+    buoyancy: -9.81,
+    buoyancyEnd: -9.81,
+    drag: 0.5,
+    bounce: 0,
+    fadeIn: 0,
+  },
+  esmoke: {
+    // Small electrical-fault smoke: thin, blue-grey, lazy.
+    blending: NormalBlending,
+    colorStart: new Color("#5a6370"),
+    colorEnd: new Color("#8b939c"),
+    alpha: 0.4,
+    buoyancy: 0.7,
+    buoyancyEnd: 0.4,
+    drag: 1.1,
+    bounce: 0,
+    fadeIn: 0.15,
   },
   sparks: {
     blending: AdditiveBlending,
@@ -88,6 +122,7 @@ const LOOKS: Readonly<Record<ParticleKind, Look>> = {
     colorEnd: new Color("#ff7a1a"),
     alpha: 1,
     buoyancy: -9.81,
+    buoyancyEnd: -9.81,
     drag: 0.25,
     bounce: 0.35,
     fadeIn: 0,
@@ -165,7 +200,10 @@ export class ParticleSystem {
       transparent: true,
       depthWrite: false,
       blending: this.#look.blending,
-      uniforms: { uScale: { value: 600 }, uHard: { value: kind === "sparks" ? 1 : 0 } },
+      uniforms: {
+        uScale: { value: 600 },
+        uHard: { value: kind === "sparks" || kind === "spray" ? 1 : 0 },
+      },
     });
     this.points = new Points(geometry, this.#material);
     this.points.frustumCulled = false;
@@ -242,7 +280,9 @@ export class ParticleSystem {
       const o = i * 3;
       this.#vel[o]! *= drag;
       this.#vel[o + 2]! *= drag;
-      this.#vel[o + 1] = this.#vel[o + 1]! * (look.buoyancy < -5 ? 1 : drag) + look.buoyancy * dt;
+      const lifeT = age / life;
+      const lift = look.buoyancy + (look.buoyancyEnd - look.buoyancy) * lifeT;
+      this.#vel[o + 1] = this.#vel[o + 1]! * (look.buoyancy < -5 ? 1 : drag) + lift * dt;
       this.#pos[o]! += this.#vel[o]! * dt;
       this.#pos[o + 1]! += this.#vel[o + 1]! * dt;
       this.#pos[o + 2]! += this.#vel[o + 2]! * dt;

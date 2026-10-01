@@ -1,5 +1,10 @@
 import { Color } from "three";
-import type { SimulationComponent, VesselState } from "@forgelab/sim-core";
+import {
+  LOW_Q_KINK_LIMIT,
+  TROYON_BETA_N_LIMIT,
+  type SimulationComponent,
+  type VesselState,
+} from "@forgelab/sim-core";
 import { frameScalar, type SessionFrame } from "@forgelab/sim-runner";
 import { MATERIAL_LIBRARY, findMaterialRecord, type ThermalResponse } from "@forgelab/materials";
 import type { Overlay } from "../store/editor.js";
@@ -424,6 +429,27 @@ export function plasmaGlow(vessel: VesselState | null): number {
   const p = vessel.plasma;
   if (p.phase !== "ramp-up" && p.phase !== "flat-top" && p.phase !== "shutdown") return 0;
   return Math.min(1, 0.25 + p.temperatureKeV / 20);
+}
+
+/**
+ * How close a burning tokamak plasma is to the limits sim-core ends it at (Greenwald
+ * density, Troyon β_N, the q95 kink limit): the largest of measured ÷ limit. 0 when no
+ * plasma. Above about 0.85 the glow starts to wobble as a precursor; the disruption
+ * itself is decided by the simulation alone.
+ */
+export function plasmaLimitFraction(vessel: VesselState | null): number {
+  if (vessel === null || plasmaGlow(vessel) === 0) return 0;
+  const p = vessel.plasma;
+  const q =
+    Number.isFinite(p.safetyFactorQ95) && p.safetyFactorQ95 > 0
+      ? LOW_Q_KINK_LIMIT / p.safetyFactorQ95
+      : 0;
+  return Math.max(p.greenwaldFraction, p.normalisedBeta / TROYON_BETA_N_LIMIT, q);
+}
+
+/** Precursor strength 0..1 from the limit fraction: nothing until 85 % of a limit. */
+export function plasmaUnrest(vessel: VesselState | null): number {
+  return Math.min(1, Math.max(0, (plasmaLimitFraction(vessel) - 0.85) / 0.15));
 }
 
 export const CONNECTION_COLORS: Record<string, string> = {

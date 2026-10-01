@@ -5,6 +5,8 @@ import {
   appearanceFor,
   ghostedIn,
   PALETTE,
+  plasmaLimitFraction,
+  plasmaUnrest,
   surfaceMaterial,
   thermalSurface,
   type Readout,
@@ -98,5 +100,33 @@ describe("materials hot, in the Normal view", () => {
 
   it("does not make aluminium glow like steel or tungsten", () => {
     expect(look("aluminum", 1000).emissive).toBeLessThan(look("tungsten", 1000).emissive * 0.5);
+  });
+});
+
+describe("plasma precursor", () => {
+  const vessel = (plasma: Partial<VesselState["plasma"]>): VesselState =>
+    ({
+      plasma: {
+        phase: "flat-top",
+        temperatureKeV: 10,
+        greenwaldFraction: 0.5,
+        normalisedBeta: 1.5,
+        safetyFactorQ95: 3.5,
+        ...plasma,
+      },
+    }) as unknown as VesselState;
+
+  it("reads the closest of the limits sim-core disrupts at", () => {
+    expect(plasmaLimitFraction(vessel({}))).toBeCloseTo(2 / 3.5);
+    expect(plasmaLimitFraction(vessel({ greenwaldFraction: 0.95 }))).toBeCloseTo(0.95);
+    expect(plasmaLimitFraction(vessel({ normalisedBeta: 3.15 }))).toBeCloseTo(0.9);
+  });
+
+  it("stays calm with margin, stirs near a limit, and is absent without a plasma", () => {
+    expect(plasmaUnrest(vessel({}))).toBe(0);
+    expect(plasmaUnrest(vessel({ greenwaldFraction: 0.925 }))).toBeCloseTo(0.5);
+    expect(plasmaUnrest(vessel({ greenwaldFraction: 1.2 }))).toBe(1);
+    expect(plasmaUnrest(vessel({ phase: "idle" as VesselState["plasma"]["phase"] }))).toBe(0);
+    expect(plasmaUnrest(null)).toBe(0);
   });
 });
