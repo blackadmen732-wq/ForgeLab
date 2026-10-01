@@ -34,6 +34,7 @@ import {
   computeAssemblyMassProperties,
 } from "./systems/center-of-mass.js";
 import { solveStructure } from "./systems/structural.js";
+import { type ThermalDerating, thermalDerating } from "./materialsAt.js";
 
 export type { BuiltInDynamicsBackend };
 
@@ -424,9 +425,37 @@ export class SimulationWorld {
     this.#dirty = false;
   }
 
+  /**
+   * Strength and stiffness factors each part was last analysed with. Heat weakens some
+   * materials (carbon steel, EN 1993-1-2), so structure is re-solved whenever a part's
+   * factors have moved by more than half a percent since — not only when the design
+   * changes.
+   */
+  #deratingAtSolve = new Map<ComponentId, ThermalDerating>();
+
+  #deratingMoved(): boolean {
+    for (const component of this.#components.values()) {
+      const now = thermalDerating(component.materialId, component.state.plant.thermal.temperatureK);
+      const then = this.#deratingAtSolve.get(component.id);
+      const yieldThen = then?.yieldFactor ?? 1;
+      const modulusThen = then?.modulusFactor ?? 1;
+      if (
+        Math.abs(now.yieldFactor - yieldThen) > 0.005 ||
+        Math.abs(now.modulusFactor - modulusThen) > 0.005
+      )
+        return true;
+    }
+    return false;
+  }
+
   #solveStructure(): void {
     const failuresBefore = this.#failures.length;
     this.#structureSolvedAtRevision = this.#revision;
+    this.#deratingAtSolve.clear();
+    for (const component of this.#components.values()) {
+      const d = thermalDerating(component.materialId, component.state.plant.thermal.temperatureK);
+      if (d.yieldFactor < 1 || d.modulusFactor < 1) this.#deratingAtSolve.set(component.id, d);
+    }
     const result = solveStructure({
       components: this.listComponents(),
       connections: this.listConnections(),
@@ -511,6 +540,8 @@ export class SimulationWorld {
 
     // Plant physics integrates over the step that is now ending, then time advances.
     this.#runPlant(this.#settings.fixedTimestepSec);
+    // Parts that heat up lose strength: re-analyse them at their new temperature.
+    if (this.#deratingMoved()) this.#solveStructure();
 
     this.#tick += 1;
     this.#simulatedTimeSec = this.#tick * this.#settings.fixedTimestepSec;

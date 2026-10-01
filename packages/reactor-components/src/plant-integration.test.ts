@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   SimulationWorld,
+  resistivityAt,
   deserializeWorld,
   serializeWorld,
   type FailureEvent,
@@ -223,6 +224,30 @@ describe("explained failure chains", () => {
     expect(limit).toBeLessThan(9.2);
     expect(limit).toBeGreaterThan(4.5);
     expect(find(world.getSnapshot(), "quench", "tf-coils")).toBeUndefined();
+  });
+
+  it("an undersized copper bus heats faster as it heats: ρ(T) feeds back into I²R", () => {
+    const world = plant({ parameterOverrides: { bus: { crossSectionM2: 1e-5 } } });
+    const read = () => {
+      const bus = world.getSnapshot().components.find((c) => c.id === "bus")!;
+      const current = bus.state.plant.electrical!.currentA;
+      return {
+        t: bus.state.plant.thermal.temperatureK,
+        perAmp2: bus.state.plant.thermal.heatGeneratedW / (current * current),
+      };
+    };
+    seconds(world, 1);
+    const early = read();
+    seconds(world, 30);
+    const late = read();
+    expect(late.t).toBeGreaterThan(early.t + 10);
+    // The bus's own resistance scales with copper's resistivity (CRC table); the heat
+    // booked to it also includes its share of the connecting cables, at fixed resistivity.
+    const expected = resistivityAt("copper", late.t) / resistivityAt("copper", early.t);
+    const grew = late.perAmp2 / early.perAmp2;
+    expect(grew).toBeGreaterThan(1 + 0.7 * (expected - 1));
+    expect(grew).toBeLessThanOrEqual(expected + 1e-9);
+    expect(expected).toBeGreaterThan(1.05);
   });
 
   it("fuelling past the Greenwald limit disrupts with an explanation", { timeout: 60000 }, () => {

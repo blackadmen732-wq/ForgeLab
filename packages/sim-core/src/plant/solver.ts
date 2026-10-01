@@ -24,6 +24,7 @@ import {
   sectionAreaPerpendicularToLocalAxis,
 } from "../geometry.js";
 import type { SimulationSettings } from "../settings.js";
+import { resistivityAt } from "../materialsAt.js";
 import { extentAlongAxis } from "../systems/members.js";
 import { assessConfidence } from "./confidence.js";
 import {
@@ -94,6 +95,7 @@ import {
   stringParameter,
 } from "./roles.js";
 import {
+  AMBIENT_TEMPERATURE_K,
   type ComponentPlantState,
   type CoolantLoopSummary,
   type ElectricalIslandSummary,
@@ -518,7 +520,7 @@ export class PlantSolver {
         }
         if (runtime.quenched) return 0;
         const current = numberParameter(p, "currentA");
-        return current * current * resistiveCoilOhm(component);
+        return current * current * resistiveCoilOhm(component, runtime.temperatureK);
       }
       default:
         return 0;
@@ -727,7 +729,11 @@ export class PlantSolver {
         if (runtime.coilCurrentA < 1) runtime.coilCurrentA = target;
       }
       if (!superconducting && runtime.coilCurrentA > 0) {
-        addHeat(work, coil.id, runtime.coilCurrentA ** 2 * resistiveCoilOhm(coil));
+        addHeat(
+          work,
+          coil.id,
+          runtime.coilCurrentA ** 2 * resistiveCoilOhm(coil, runtime.temperatureK),
+        );
       }
 
       const turns = numberParameter(p, "turns");
@@ -1748,22 +1754,25 @@ export class PlantSolver {
 
   #resistanceCache: { topology: PlantTopology; half: Map<string, number> } | undefined;
 
-  /** Half of each electrical node's resistance: conductors R = ρL/A, others negligible. */
+  /**
+   * Half of each electrical node's resistance: conductors R = ρ(T) L / A at their current
+   * temperature (a hot copper bus resists more, so it heats faster), others negligible.
+   * Only the geometric factor L / A is cached.
+   */
   #halfResistance(topology: PlantTopology, id: string): number {
     if (this.#resistanceCache?.topology !== topology) {
       this.#resistanceCache = { topology, half: new Map() };
     }
     const cache = this.#resistanceCache.half;
-    let value = cache.get(id);
-    if (value === undefined) {
-      const component = topology.byId.get(id)!;
-      value =
-        component.role === "conductor"
-          ? conductorResistanceOhm(component) / 2
-          : NODE_RESISTANCE_OHM / 2;
-      cache.set(id, value);
+    const component = topology.byId.get(id)!;
+    if (component.role !== "conductor") return NODE_RESISTANCE_OHM / 2;
+    let lengthOverArea = cache.get(id);
+    if (lengthOverArea === undefined) {
+      lengthOverArea = conductorLengthOverArea(component);
+      cache.set(id, lengthOverArea);
     }
-    return value;
+    const temperatureK = this.#components.get(id)?.temperatureK ?? AMBIENT_TEMPERATURE_K;
+    return (resistivityAt(component.materialId, temperatureK) * lengthOverArea) / 2;
   }
 
   #loopFailures(
@@ -2405,8 +2414,11 @@ function coilStructuralStressPa(
   return magneticHoopStressPa(peakFieldT, radiusM, wallM);
 }
 
-/** Resistance of a resistive coil: copper winding of N turns, R = ρ N l_turn / A. */
-function resistiveCoilOhm(coil: SimulationComponent): number {
+/**
+ * Resistance of a resistive coil: copper winding of N turns, R = ρ(T) N l_turn / A, with
+ * copper's tabulated resistivity at the winding temperature.
+ */
+function resistiveCoilOhm(coil: SimulationComponent, temperatureK: number): number {
   const turns = numberParameter(coil.parameters, "turns");
   const area = numberParameter(coil.parameters, "conductorAreaM2");
   const geometry = coil.geometry;
@@ -2416,19 +2428,18 @@ function resistiveCoilOhm(coil: SimulationComponent): number {
       : geometry.kind === "cylinder"
         ? 2 * Math.PI * geometry.radiusM
         : 2 * (geometry.sizeM.x + geometry.sizeM.z);
-  return (COPPER_RESISTIVITY_OHM_M * turns * turnLengthM) / area;
+  return (resistivityAt("copper", temperatureK) * turns * turnLengthM) / area;
 }
 
-/** R = ρ L / A of a conductor part, along its longest axis. */
-function conductorResistanceOhm(conductor: SimulationComponent): number {
+/** L / A of a conductor part, along its longest axis (R = ρ L / A). */
+function conductorLengthOverArea(conductor: SimulationComponent): number {
   const geometry = conductor.geometry;
   const lengthM = Math.max(
     extentAlongAxis(geometry, "x"),
     extentAlongAxis(geometry, "y"),
     extentAlongAxis(geometry, "z"),
   );
-  const area = numberParameter(conductor.parameters, "crossSectionM2");
-  return (getMaterial(conductor.materialId).electricalResistivityOhmM * lengthM) / area;
+  return lengthM / numberParameter(conductor.parameters, "crossSectionM2");
 }
 
 function linkResistanceOhm(link: PlantLink): number {

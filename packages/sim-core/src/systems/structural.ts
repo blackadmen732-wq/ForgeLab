@@ -1,4 +1,5 @@
 import { getMaterial } from "@forgelab/materials";
+import { deratingNote, thermalDerating } from "../materialsAt.js";
 import {
   AXIS_X,
   AXIS_Y,
@@ -293,7 +294,16 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
       reactions: Object.freeze(reactions),
     });
 
-    const material = getMaterial(component.materialId);
+    const room = getMaterial(component.materialId);
+    // Heat weakens carbon steel (EN 1993-1-2); the plant solver's last temperature.
+    const temperatureK = component.state.plant.thermal.temperatureK;
+    const derating = thermalDerating(component.materialId, temperatureK);
+    const material = {
+      name: room.name,
+      yieldStrengthPa: room.yieldStrengthPa * derating.yieldFactor,
+      youngsModulusPa: room.youngsModulusPa * derating.modulusFactor,
+    };
+    const heatNote = deratingNote(room.name, temperatureK, derating);
     const rotation = component.state.physical.rotation;
     const areaM2 = loadBearingAreaM2(component.geometry, rotation);
     const allowableStressPa = material.yieldStrengthPa / settings.designSafetyFactor;
@@ -370,20 +380,21 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
           measuredValue: appliedStressPa,
           limitValue: allowableStressPa,
           utilization: axialUtilization,
-          cause: describeYieldFailure({
-            componentId: id,
-            componentType: component.type,
-            materialName: material.name,
-            totalLoadN: total,
-            ownWeightN: own,
-            carriedLoadN: carried,
-            areaM2,
-            appliedStressPa,
-            allowableStressPa,
-            yieldStrengthPa: material.yieldStrengthPa,
-            designSafetyFactor: settings.designSafetyFactor,
-            supportedComponentIds: support.supportingComponentIds,
-          }),
+          cause:
+            describeYieldFailure({
+              componentId: id,
+              componentType: component.type,
+              materialName: material.name,
+              totalLoadN: total,
+              ownWeightN: own,
+              carriedLoadN: carried,
+              areaM2,
+              appliedStressPa,
+              allowableStressPa,
+              yieldStrengthPa: material.yieldStrengthPa,
+              designSafetyFactor: settings.designSafetyFactor,
+              supportedComponentIds: support.supportingComponentIds,
+            }) + heatNote,
         }),
       );
     }
@@ -400,19 +411,20 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
           measuredValue: total,
           limitValue: member.criticalBucklingLoadN,
           utilization: member.bucklingUtilization,
-          cause: describeBucklingFailure({
-            componentId: id,
-            componentType: component.type,
-            materialName: material.name,
-            axialLoadN: total,
-            criticalLoadN: member.criticalBucklingLoadN,
-            lengthM: member.lengthM,
-            slendernessRatio: member.buckling.slendernessRatio,
-            transitionSlenderness: member.buckling.transitionSlenderness,
-            regime: member.buckling.regime,
-            effectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
-            youngsModulusPa: material.youngsModulusPa,
-          }),
+          cause:
+            describeBucklingFailure({
+              componentId: id,
+              componentType: component.type,
+              materialName: material.name,
+              axialLoadN: total,
+              criticalLoadN: member.criticalBucklingLoadN,
+              lengthM: member.lengthM,
+              slendernessRatio: member.buckling.slendernessRatio,
+              transitionSlenderness: member.buckling.transitionSlenderness,
+              regime: member.buckling.regime,
+              effectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
+              youngsModulusPa: material.youngsModulusPa,
+            }) + heatNote,
         }),
       );
     }
@@ -429,18 +441,19 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
           measuredValue: member.bendingStressPa,
           limitValue: allowableStressPa,
           utilization: member.bendingUtilization,
-          cause: describeBendingFailure({
-            componentId: id,
-            componentType: component.type,
-            materialName: material.name,
-            momentNm: member.bendingMomentNm,
-            spanM: member.bending.spanM,
-            idealisation: member.bending.idealisation,
-            sectionModulusM3: member.sectionModulusM3,
-            bendingStressPa: member.bendingStressPa,
-            allowableStressPa,
-            loadedByComponentIds: support.supportingComponentIds,
-          }),
+          cause:
+            describeBendingFailure({
+              componentId: id,
+              componentType: component.type,
+              materialName: material.name,
+              momentNm: member.bendingMomentNm,
+              spanM: member.bending.spanM,
+              idealisation: member.bending.idealisation,
+              sectionModulusM3: member.sectionModulusM3,
+              bendingStressPa: member.bendingStressPa,
+              allowableStressPa,
+              loadedByComponentIds: support.supportingComponentIds,
+            }) + heatNote,
         }),
       );
     }

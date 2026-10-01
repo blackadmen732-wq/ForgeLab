@@ -18,10 +18,12 @@ import {
   plasmaTemperatureKeV,
   plasmaThermalEnergyJ,
   pumpCurve,
+  resistivityAt,
   resolveParameters,
   seriesPumpOperatingPoint,
   solenoidOnAxisFieldT,
   solveIsland,
+  thermalDerating,
   toroidalCoilTensionStressPa,
   toroidalFieldT,
   toroidalPlasmaVolumeM3,
@@ -307,5 +309,24 @@ describe("role parameters", () => {
     expect(p["wallPlugEfficiency"]).toBe(0.35);
     expect(p["enabled"]).toBe(true);
     expect("bogus" in p).toBe(false);
+  });
+});
+
+describe("material properties at temperature", () => {
+  it("follows EN 1993-1-2 for carbon steel and leaves other materials alone", () => {
+    expect(thermalDerating("structural-steel", 293.15)).toEqual({
+      yieldFactor: 1,
+      modulusFactor: 1,
+    });
+    const at500 = thermalDerating("hsla-steel", 773.15);
+    expect(at500.yieldFactor).toBeCloseTo(0.78, 9);
+    expect(at500.modulusFactor).toBeCloseTo(0.6, 9);
+    expect(thermalDerating("titanium-6al4v", 973.15)).toEqual({ yieldFactor: 1, modulusFactor: 1 });
+  });
+
+  it("takes copper's resistivity from the CRC table and other metals' from their scalar", () => {
+    expect(resistivityAt("copper", 400)).toBeCloseTo(2.402e-8, 12);
+    expect(resistivityAt("copper-ofhc", 600)).toBeCloseTo(3.792e-8, 12);
+    expect(resistivityAt("structural-steel", 600)).toBe(1.6e-7);
   });
 });

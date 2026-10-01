@@ -255,6 +255,12 @@ export {
   type PlantStepResult,
 } from "./plant/solver.js";
 export { worstLevel } from "./plant/confidence.js";
+export {
+  deratingNote,
+  resistivityAt,
+  thermalDerating,
+  type ThermalDerating,
+} from "./materialsAt.js";
 export * as PlantConstants from "./plant/constants.js";
 
 export {
