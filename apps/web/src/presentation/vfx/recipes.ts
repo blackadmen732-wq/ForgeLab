@@ -199,7 +199,7 @@ function mark(
 }
 
 /** Polyethylene-class insulation burns from about 330–410 °C (library XLPE ignition). */
-const INSULATION_IGNITION_K = 623;
+export const INSULATION_IGNITION_K = 623;
 
 export function recipeFor(event: DestructionEvent, ctx: RecipeContext): EffectCommand[] {
   const s = event.severity;

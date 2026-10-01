@@ -1,8 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { DestructionEvent } from "../destruction.js";
-import { facilityActions, failureActions, pickVoices, stageActions } from "./rules.js";
+import type { ComponentReading } from "../reading.js";
+import {
+  conditionSounds,
+  cueEnd,
+  facilityActions,
+  failureActions,
+  failureScore,
+  pickVoices,
+  stageActions,
+  type SoundCue,
+} from "./rules.js";
 
-const event = (family: DestructionEvent["family"], severity: number): DestructionEvent => ({
+const event = (
+  family: DestructionEvent["family"],
+  severity: number,
+  over: Partial<DestructionEvent> = {},
+): DestructionEvent => ({
   eventId: `x::${family}::`,
   simulationTime: 1,
   componentId: "x",
@@ -21,6 +35,7 @@ const event = (family: DestructionEvent["family"], severity: number): Destructio
   radiusM: 1,
   summary: "",
   combustible: false,
+  ...over,
 });
 
 describe("audio rules", () => {
@@ -59,5 +74,69 @@ describe("audio rules", () => {
       2,
     );
     expect(picked.map((p) => p.id)).toEqual(["disruption", "arc"]);
+  });
+});
+
+describe("failure score", () => {
+  const shape = (cues: readonly SoundCue[]) =>
+    cues
+      .map((c) => (c.type === "noise" ? `${c.type}:${c.color}:${c.filter}` : c.type))
+      .sort()
+      .join(",");
+  const lasts = (cues: readonly SoundCue[]) => Math.max(...cues.map(cueEnd));
+
+  it("sounds different for every violent family", () => {
+    const families = ["electrical", "coolant", "quench", "disruption", "structural"] as const;
+    const shapes = families.map((f) => shape(failureScore(event(f, 0.8))));
+    expect(new Set(shapes).size).toBe(families.length);
+  });
+
+  it("is the same every time the same failure plays (a replay sounds like the original)", () => {
+    const e = event("structural", 0.7);
+    expect(failureScore(e)).toEqual(failureScore(e));
+  });
+
+  it("unfolds in stages: the breaker clears after the arc, the relief valve after the quench", () => {
+    const arc = failureScore(event("electrical", 0.8));
+    const breaker = arc.find((c) => c.type === "thud")!;
+    const lastCrackle = Math.max(
+      ...arc.filter((c) => c.type === "noise" && c.filter === "highpass").map((c) => c.at),
+    );
+    expect(breaker.at).toBeGreaterThan(lastCrackle);
+    const quench = failureScore(event("quench", 0.8));
+    expect(quench.some((c) => c.at === 0)).toBe(true);
+    expect(quench.some((c) => c.at >= 0.4)).toBe(true);
+  });
+
+  it("whistles for a pinhole and roars for a break, longer for a bigger break", () => {
+    const pin = failureScore(
+      event("coolant", 0.2, { failureType: "pipe_rupture", pressure: 1.5e7 }),
+    );
+    const brk = failureScore(
+      event("coolant", 0.9, { failureType: "pipe_rupture", pressure: 1.5e7 }),
+    );
+    expect(pin.some((c) => c.type === "noise" && c.filter === "bandpass" && c.q >= 8)).toBe(true);
+    expect(brk.some((c) => c.type === "thud")).toBe(true);
+    expect(pin.some((c) => c.type === "thud")).toBe(false);
+  });
+
+  it("crackles with fire only where insulation burns", () => {
+    const quiet = failureScore(event("electrical", 0.8));
+    const burning = failureScore(event("electrical", 0.8, { combustible: true }));
+    expect(lasts(burning)).toBeGreaterThan(lasts(quiet) + 5);
+    const ticking = failureScore(event("thermal", 1, { combustible: true, temperature: 600 }));
+    const fire = failureScore(event("thermal", 1, { combustible: true, temperature: 700 }));
+    expect(lasts(fire)).toBeGreaterThan(lasts(ticking));
+  });
+
+  it("vents while helium boils off and rattles while a pump cavitates", () => {
+    const part = (over: Partial<ComponentReading>) =>
+      ({ heliumBoilOffKgS: 0, headFraction: 1, ...over }) as ComponentReading;
+    expect(conditionSounds(part({}))).toEqual({ vent: 0, cavitation: 0 });
+    expect(conditionSounds(part({ heliumBoilOffKgS: 100 })).vent).toBe(1);
+    const small = conditionSounds(part({ heliumBoilOffKgS: 0.1 })).vent;
+    expect(small).toBeGreaterThan(0);
+    expect(small).toBeLessThan(0.5);
+    expect(conditionSounds(part({ headFraction: 0.4 })).cavitation).toBeCloseTo(0.6);
   });
 });

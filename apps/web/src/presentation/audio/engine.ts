@@ -2,17 +2,19 @@ import type { PlantRole } from "@forgelab/sim-core";
 import type { StageProgress } from "../activation.js";
 import type { PresentationDirector, PresentationEvent } from "../director.js";
 import type { AlarmTier, FacilityState } from "../facility.js";
-import type { FailureFamily } from "../destruction.js";
 import type { PlantReading } from "../reading.js";
 import { getSettings, subscribeSettings } from "../settings.js";
 import type { ComponentVisual } from "../visualState.js";
 import {
   MAX_FAILURE_VOICES,
+  conditionSounds,
+  cueEnd,
   facilityActions,
   failureActions,
   pickVoices,
   stageActions,
   type AudioAction,
+  type SoundCue,
 } from "./rules.js";
 import {
   dbToGain,
@@ -61,6 +63,16 @@ const ROLE_LOUDNESS: Partial<Record<PlantRole, number>> = {
 
 const MAX_EMITTERS = 32;
 
+/** A sound that lasts while a published condition does (rules.ts `conditionSounds`). */
+interface Condition {
+  readonly vent: GainNode;
+  readonly cavitation: GainNode;
+  readonly nodes: AudioScheduledSourceNode[];
+  readonly out: GainNode;
+}
+
+const MAX_CONDITIONS = 8;
+
 export class AudioEngine {
   #director: PresentationDirector;
   #ctx: AudioContext | null = null;
@@ -77,6 +89,7 @@ export class AudioEngine {
   #noise: Record<"white" | "pink" | "brown", AudioBuffer> | null = null;
   #ambient: { hvac: GainNode; hvacFilter: BiquadFilterNode; hum: GainNode } | null = null;
   #emitters = new Map<string, Emitter>();
+  #conditions = new Map<string, Condition>();
   #alarmTier: AlarmTier = "NONE";
   #alarmTimer: ReturnType<typeof setInterval> | null = null;
   #activeVoices = 0;
@@ -159,6 +172,7 @@ export class AudioEngine {
     this.#unsubscribe = [];
     this.#stopAlarm();
     this.#emitters.clear();
+    this.#conditions.clear();
     void this.#ctx?.close();
     this.#ctx = null;
     this.#buses = null;
@@ -255,7 +269,7 @@ export class AudioEngine {
       (a): a is Extract<AudioAction, { kind: "failure" }> => a.kind === "failure",
     );
     for (const f of pickVoices(failures, MAX_FAILURE_VOICES - this.#activeVoices))
-      this.#failure(f.family, f.position, f.severity);
+      this.#failure(f.cues, f.position, f.severity);
     for (const action of actions) {
       switch (action.kind) {
         case "alarm":
@@ -410,10 +424,74 @@ export class AudioEngine {
     return emitter;
   }
 
+  #conditionFor(id: string, position: Vec3): Condition | null {
+    const ctx = this.#ctx;
+    const b = this.#buses;
+    const noise = this.#noise;
+    if (ctx === null || b === null || noise === null) return null;
+    if (this.#conditions.size >= MAX_CONDITIONS) return null;
+    const panner = new PannerNode(ctx, {
+      panningModel: "equalpower",
+      distanceModel: "inverse",
+      refDistance: 10,
+      positionX: position[0],
+      positionY: position[1],
+      positionZ: position[2],
+    });
+    const out = gain(ctx, 1);
+    out.connect(panner).connect(b.failures);
+    // Helium venting through the relief line: a broad hiss with a hollow band.
+    const vent = gain(ctx, 0);
+    const v1 = looped(ctx, noise.pink);
+    v1.connect(filter(ctx, "bandpass", 1100, 0.9)).connect(vent);
+    const v2 = looped(ctx, noise.white);
+    v2.connect(filter(ctx, "highpass", 3500, 0.7))
+      .connect(gain(ctx, 0.3))
+      .connect(vent);
+    vent.connect(out);
+    // Cavitation: vapour bubbles collapsing on the impeller — gravel in the pump, a
+    // band of noise chopped irregularly.
+    const cavitation = gain(ctx, 0);
+    const c1 = looped(ctx, noise.white);
+    const chop = gain(ctx, 0.5);
+    c1.connect(filter(ctx, "bandpass", 1900, 1.4))
+      .connect(chop)
+      .connect(cavitation);
+    const lfo = osc(ctx, "square", 17);
+    lfo.connect(gain(ctx, 0.5)).connect(chop.gain);
+    const lfo2 = osc(ctx, "square", 6.3);
+    lfo2.connect(gain(ctx, 0.25)).connect(chop.gain);
+    cavitation.connect(out);
+    const nodes = [v1, v2, c1, lfo, lfo2];
+    for (const n of nodes) n.start();
+    const condition: Condition = { vent, cavitation, nodes, out };
+    this.#conditions.set(id, condition);
+    return condition;
+  }
+
+  #updateConditions(reading: PlantReading): void {
+    const ctx = this.#ctx;
+    if (ctx === null) return;
+    const t = ctx.currentTime;
+    for (const c of reading.components) {
+      const level = conditionSounds(c);
+      let cond = this.#conditions.get(c.id);
+      if (cond === undefined) {
+        if (level.vent === 0 && level.cavitation === 0) continue;
+        const created = this.#conditionFor(c.id, c.position);
+        if (created === null) continue;
+        cond = created;
+      }
+      cond.vent.gain.setTargetAtTime(0.5 * level.vent, t, 0.4);
+      cond.cavitation.gain.setTargetAtTime(0.35 * level.cavitation, t, 0.3);
+    }
+  }
+
   #updateEmitters(reading: PlantReading, visuals: ReadonlyMap<string, ComponentVisual>): void {
     const ctx = this.#ctx;
     if (ctx === null) return;
     const t = ctx.currentTime;
+    this.#updateConditions(reading);
     for (const c of reading.components) {
       const visual = visuals.get(c.id);
       if (visual === undefined) continue;
@@ -453,6 +531,20 @@ export class AudioEngine {
       }, 1500);
     }
     this.#emitters.clear();
+    for (const c of this.#conditions.values()) {
+      if (ctx !== null) c.out.gain.setTargetAtTime(0, ctx.currentTime, 0.3);
+      setTimeout(() => {
+        for (const n of c.nodes) {
+          try {
+            n.stop();
+          } catch {
+            // already stopped
+          }
+        }
+        c.out.disconnect();
+      }, 1500);
+    }
+    this.#conditions.clear();
   }
 
   /* Alarms: repeating patterns by tier, through the hall PA (not spatial). ----------- */
@@ -596,11 +688,11 @@ export class AudioEngine {
 
   /* Failure one-shots, placed where the failure happened. --------------------------- */
 
-  #failure(family: FailureFamily, position: Vec3, severity: number): void {
+  #failure(cues: readonly SoundCue[], position: Vec3, severity: number): void {
     const ctx = this.#ctx;
     const b = this.#buses;
     const noise = this.#noise;
-    if (ctx === null || b === null || noise === null) return;
+    if (ctx === null || b === null || noise === null || cues.length === 0) return;
     const t = ctx.currentTime + 0.01;
     const panner = new PannerNode(ctx, {
       panningModel: "HRTF",
@@ -615,115 +707,58 @@ export class AudioEngine {
     out.connect(panner).connect(b.failures);
     this.#activeVoices += 1;
     let length = 1;
-    const burst = (
-      color: "white" | "pink" | "brown",
-      type: BiquadFilterType,
-      f: number,
-      at: number,
-      peak: number,
-      attack: number,
-      decay: number,
-      q = 0.7,
-    ) => {
-      const n = ctx.createBufferSource();
-      n.buffer = noise[color];
-      n.loop = true;
-      const g = gain(ctx, 0);
-      n.connect(filter(ctx, type, f, q))
-        .connect(g)
-        .connect(out);
-      envelope(g.gain, at, peak, attack, decay);
-      n.start(at);
-      n.stop(at + attack + decay + 0.1);
-      length = Math.max(length, at - t + attack + decay);
-    };
-    const thud = (f: number, at: number, peak: number, decay: number) => {
-      const o = osc(ctx, "sine", f * 2);
-      o.frequency.setValueAtTime(f * 2, at);
-      o.frequency.exponentialRampToValueAtTime(f, at + 0.15);
-      const g = gain(ctx, 0);
-      o.connect(g).connect(out);
-      envelope(g.gain, at, peak, 0.005, decay);
-      o.start(at);
-      o.stop(at + decay + 0.1);
-      length = Math.max(length, at - t + decay);
-    };
-    const ring = (partials: readonly number[], at: number, peak: number, decay: number) => {
-      for (const [i, f] of partials.entries()) {
-        const o = osc(ctx, "sine", f);
-        const g = gain(ctx, 0);
-        o.connect(g).connect(out);
-        envelope(g.gain, at, peak / (i + 1), 0.002, decay * (1 - i * 0.12));
-        o.start(at);
-        o.stop(at + decay + 0.1);
+    for (const cue of cues) {
+      const at = t + cue.at;
+      length = Math.max(length, cueEnd(cue));
+      switch (cue.type) {
+        case "noise": {
+          const n = ctx.createBufferSource();
+          n.buffer = noise[cue.color];
+          n.loop = true;
+          const g = gain(ctx, 0);
+          n.connect(filter(ctx, cue.filter, cue.f, cue.q))
+            .connect(g)
+            .connect(out);
+          envelope(g.gain, at, cue.peak, cue.attack, cue.decay);
+          n.start(at);
+          n.stop(at + cue.attack + cue.decay + 0.1);
+          break;
+        }
+        case "thud": {
+          const o = osc(ctx, "sine", cue.f * 2);
+          o.frequency.setValueAtTime(cue.f * 2, at);
+          o.frequency.exponentialRampToValueAtTime(cue.f, at + 0.15);
+          const g = gain(ctx, 0);
+          o.connect(g).connect(out);
+          envelope(g.gain, at, cue.peak, 0.005, cue.decay);
+          o.start(at);
+          o.stop(at + cue.decay + 0.1);
+          break;
+        }
+        case "ring":
+          for (const [i, f] of cue.partials.entries()) {
+            const o = osc(ctx, "sine", f);
+            const g = gain(ctx, 0);
+            o.connect(g).connect(out);
+            envelope(g.gain, at, cue.peak / (i + 1), 0.002, cue.decay * (1 - i * 0.12));
+            o.start(at);
+            o.stop(at + cue.decay + 0.1);
+          }
+          break;
+        case "groan": {
+          const o = osc(ctx, "sawtooth", cue.from);
+          const g = gain(ctx, 0);
+          o.connect(filter(ctx, "lowpass", 400, 4))
+            .connect(g)
+            .connect(out);
+          o.frequency.setValueAtTime(cue.from, at);
+          o.frequency.exponentialRampToValueAtTime(cue.to, at + cue.duration);
+          envelope(g.gain, at, cue.peak, 0.2, cue.duration);
+          o.start(at);
+          o.stop(at + cue.duration + 0.3);
+          break;
+        }
       }
-      length = Math.max(length, at - t + decay);
-    };
-    switch (family) {
-      case "electrical":
-        // Arc: crackling high-passed noise in gated bursts, then the breaker's bang.
-        for (let i = 0; i < 14; i += 1)
-          burst("white", "highpass", 2500, t + i * 0.035 + Math.random() * 0.02, 0.35, 0.002, 0.03);
-        thud(70, t + 0.5, 0.6, 0.5);
-        burst("white", "bandpass", 4000, t, 0.12, 0.01, 0.6, 3); // ozone buzz
-        break;
-      case "brownout":
-        for (const at of [0, 0.12, 0.3]) burst("white", "highpass", 1500, t + at, 0.2, 0.001, 0.02); // relays
-        break;
-      case "coolant":
-        // Pressure relief: a thump then a long steam hiss.
-        thud(55, t, 0.4, 0.4);
-        burst("pink", "highpass", 2800, t + 0.05, 0.45, 0.15, 3 + 3 * severity);
-        break;
-      case "flow":
-        burst("brown", "lowpass", 300, t, 0.3, 0.05, 1.2);
-        break;
-      case "cryogenic":
-      case "quench":
-        // Quench: deep boom, then helium venting through the relief line.
-        thud(38, t, 0.9, 2.2);
-        burst("brown", "lowpass", 180, t, 0.6, 0.01, 1.8);
-        burst("pink", "bandpass", 1100, t + 0.25, 0.4, 0.3, 4 + 3 * severity, 0.9);
-        break;
-      case "disruption":
-        // A sharp crack, the vessel ringing like a struck bell, a heavy thud underneath.
-        burst("white", "highpass", 1200, t, 0.9, 0.001, 0.06);
-        ring([310, 587, 922, 1377, 1703], t, 0.25, 3 + 2 * severity);
-        thud(45, t + 0.01, 0.9, 1.6);
-        burst("brown", "lowpass", 400, t + 0.02, 0.5, 0.02, 1.5);
-        break;
-      case "structural": {
-        // Steel groaning under load, then the crash.
-        const o = osc(ctx, "sawtooth", 95);
-        const lp = filter(ctx, "lowpass", 400, 4);
-        const g = gain(ctx, 0);
-        o.connect(lp).connect(g).connect(out);
-        o.frequency.setValueAtTime(95, t);
-        o.frequency.exponentialRampToValueAtTime(48, t + 0.9);
-        envelope(g.gain, t, 0.3, 0.2, 0.9);
-        o.start(t);
-        o.stop(t + 1.2);
-        thud(40, t + 0.9, 0.9, 1.4);
-        for (let i = 0; i < 8; i += 1)
-          burst(
-            "white",
-            "bandpass",
-            600 + Math.random() * 2400,
-            t + 0.95 + Math.random() * 0.8,
-            0.3,
-            0.002,
-            0.15,
-            2,
-          );
-        break;
-      }
-      case "thermal":
-        for (let i = 0; i < 5; i += 1)
-          burst("white", "bandpass", 3000, t + i * 0.4 + Math.random() * 0.2, 0.08, 0.001, 0.03, 4);
-        break;
-      default:
-        burst("white", "highpass", 2000, t, 0.1, 0.001, 0.02); // relay click
-        break;
     }
     setTimeout(
       () => {
