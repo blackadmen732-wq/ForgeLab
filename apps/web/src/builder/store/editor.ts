@@ -93,7 +93,11 @@ export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] =
     hint: "Electrical supply: bright where a load gets its full demand, red where it is starved.",
   },
   { id: "coolant", label: "Coolant", hint: "Coolant mass flow through loop components." },
-  { id: "magnetic", label: "Magnetic", hint: "Magnetic field at the plasma from each coil." },
+  {
+    id: "magnetic",
+    label: "Magnetic",
+    hint: "Field lines computed from the coils' geometry (select coils to see only theirs) and the field each coil puts on the plasma.",
+  },
   {
     id: "vacuum",
     label: "Vacuum",

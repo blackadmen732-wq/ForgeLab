@@ -118,6 +118,12 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
     "coolant-out": water("out", 0.3, "CASE COOLING OUT"),
     sensor: control("measurement", "QUENCH DETECTION"),
   },
+  "circular-coil": {
+    power: power("in", 400, "CRYOPLANT POWER"),
+    "coolant-in": water("in", 0.1, "CASE COOLING IN"),
+    "coolant-out": water("out", 0.1, "CASE COOLING OUT"),
+    sensor: control("measurement", "QUENCH DETECTION"),
+  },
   "solenoid-coil": {
     power: power("in", 500),
     "coolant-in": water("in", 0.1),
@@ -438,6 +444,72 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     ],
     audio: "magnet",
     visual: "tf-coils",
+    animations: [{ id: "frost", source: "magnet.currentA" }],
+  },
+  "circular-coil": {
+    summary:
+      "One superconducting loop coil: build your own magnet arrangement from these, and the field follows the geometry you build.",
+    internals: [
+      {
+        id: "case",
+        name: "316L coil case",
+        kind: "structure",
+        substanceId: "stainless-steel",
+        purpose: "Carries the hoop tension of the loop's own field.",
+      },
+      {
+        id: "insulation",
+        name: "Ground insulation",
+        kind: "insulation",
+        substanceId: "g10-cr",
+        purpose: "Insulates the winding pack from the case.",
+      },
+      {
+        id: "winding",
+        name: "Nb₃Sn superconducting strands",
+        kind: "superconductor",
+        substanceId: "nb3sn",
+        purpose: "Carries the coil current with no resistance below its critical surface.",
+      },
+      {
+        id: "stabiliser",
+        name: "Copper stabiliser",
+        kind: "conductor",
+        substanceId: "copper-ofhc",
+        purpose: "Takes the current during a quench while protection dumps the energy.",
+      },
+      {
+        id: "helium",
+        name: "Helium coolant channel",
+        kind: "cryogen",
+        substanceId: "helium",
+        purpose: "Keeps the conductor near 4.5 K.",
+      },
+    ],
+    internalsSetMass: false,
+    capabilities: ["magnetic", "cryogenic", "electrical", "structural", "thermal"],
+    ratings: (p) => [
+      rating("Current", `${(n(p, "currentA") / 1e3).toFixed(0)} kA`),
+      rating("Turns", n(p, "turns").toFixed(0)),
+      rating("Ampere-turns", `${((n(p, "currentA") * n(p, "turns")) / 1e6).toFixed(1)} MA`),
+    ],
+    failureModes: [
+      {
+        id: "quench",
+        name: "Quench",
+        system: "magnetic",
+        description:
+          "Cold mass warms past the critical temperature; the coil turns resistive and dumps its current.",
+      },
+      {
+        id: "hoop",
+        name: "Hoop overstress",
+        system: "magnetic",
+        description: "The loop's own field stretches it beyond what its case can carry.",
+      },
+    ],
+    audio: "magnet",
+    visual: "loop-coil",
     animations: [{ id: "frost", source: "magnet.currentA" }],
   },
   "solenoid-coil": {

@@ -255,7 +255,11 @@ export const ComponentMesh = memo(function ComponentMesh({
   useLayoutEffect(() => () => shape.dispose(), [shape]);
   useLayoutEffect(() => () => body.dispose(), [body]);
 
-  const ribs = role === "magnet-coil" && geometry.kind === "torus";
+  // Discrete coil ribs belong to a toroidal winding (a TF set), not a loop-wound coil.
+  const ribs =
+    role === "magnet-coil" &&
+    geometry.kind === "torus" &&
+    component.parameters["winding"] !== "loop";
   const model = useMemo(
     () => machineModel(component.type, geometry, component.connectionPoints),
     [component.type, geometry, component.connectionPoints],

@@ -4,6 +4,7 @@ import type { Connection, ConnectionType } from "../connections.js";
 import { CONNECTION_SNAP_TOLERANCE_M } from "../connections.js";
 import { cylinderSurroundsCoaxially, coaxialRelation, torusEnclosesTorus } from "./magnetics.js";
 import type { PlantRole } from "./roles.js";
+import { torusWinding } from "./biotSavart.js";
 
 /** A plant link: one connection with both endpoints resolved and its physical length. */
 export interface PlantLink {
@@ -114,9 +115,13 @@ export function buildTopology(
     const coilIds: string[] = [];
     for (const coil of coils) {
       if (coilVessel.has(coil.id)) continue;
+      // Only a toroidal winding makes the toroidal field the analytic model assumes; a
+      // loop-wound torus (a circular coil) is handled geometrically (fieldCoupling.ts).
       const serves =
         configuration === "tokamak"
-          ? torusEnclosesTorus(placementOf(coil), placementOf(vessel))
+          ? coil.geometry.kind === "torus" &&
+            torusWinding(coil) === "toroidal" &&
+            torusEnclosesTorus(placementOf(coil), placementOf(vessel))
           : configuration === "linear" &&
             coil.geometry.kind === "cylinder" &&
             cylinderSurroundsCoaxially(placementOf(coil), placementOf(vessel));

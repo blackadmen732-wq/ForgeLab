@@ -12,6 +12,8 @@ import type {
   VesselState,
 } from "./state.js";
 import type { PlantTopology } from "./topology.js";
+import { combinedRipple, type GeometricCoupling } from "./fieldCoupling.js";
+import { numberParameter } from "./roles.js";
 import { getCoolantFluid } from "./fluids.js";
 
 /**
@@ -28,6 +30,9 @@ import { getCoolantFluid } from "./fluids.js";
  * The overall level is the worst subsystem level. Experimental designs are not eligible
  * for verified leaderboards.
  */
+/** Above this peak-to-mean field ripple along the plasma axis, confinement is experimental. */
+export const RIPPLE_EXPERIMENTAL = 0.05;
+
 const ORDER: Record<ConfidenceLevel, number> = { supported: 0, approximate: 1, experimental: 2 };
 
 export function worstLevel(levels: readonly ConfidenceLevel[]): ConfidenceLevel {
@@ -47,6 +52,8 @@ export function assessConfidence(input: {
     vesselField: ReadonlyMap<string, number>;
   };
   metrics: PlantMetrics;
+  /** Coils whose field reaches a plasma only through Biot–Savart (fieldCoupling.ts). */
+  geometric?: ReadonlyMap<string, GeometricCoupling>;
 }): ModelConfidence {
   const { topology, components, work } = input;
   const subsystems: SubsystemConfidence[] = [];
@@ -113,11 +120,34 @@ export function assessConfidence(input: {
   if (coils.length > 0) {
     const reasons: string[] = [];
     let level: ConfidenceLevel = "supported";
-    if (topology.orphanCoilIds.length > 0) {
-      level = "experimental";
+    const geometric = input.geometric ?? new Map<string, GeometricCoupling>();
+    const idle = topology.orphanCoilIds.filter((id) => !geometric.has(id));
+    if (idle.length > 0) {
+      level = worstLevel([level, "approximate"]);
       reasons.push(
-        `${topology.orphanCoilIds.length} coil(s) neither enclose nor sit coaxially around a vessel; their fields are not computed.`,
+        `${idle.length} coil(s) put no significant field on any plasma: computed from their geometry, it is negligible on every vessel's axis.`,
       );
+    }
+    if (geometric.size > 0) {
+      level = worstLevel([level, "approximate"]);
+      reasons.push(
+        `${geometric.size} coil(s) drive a plasma through a field computed from their geometry (Biot–Savart, one filament per winding), averaged along the plasma's axis; the plasma model treats that average as uniform.`,
+      );
+      for (const layout of topology.vessels) {
+        if (layout.coilIds.length > 0) continue; // an analytic toroidal set dominates
+        const mine = [...geometric.values()].filter((g) => g.vesselId === layout.vesselId);
+        if (mine.length === 0) continue;
+        const r = combinedRipple(
+          mine,
+          mine.map((g) => numberParameter(topology.byId.get(g.coilId)!.parameters, "currentA")),
+        );
+        if (r > RIPPLE_EXPERIMENTAL) {
+          level = "experimental";
+          reasons.push(
+            `The field on "${layout.vesselId}"'s axis ripples by ${(r * 100).toFixed(0)} % between coils; ripple losses are not modelled, so confinement there is illustrative only.`,
+          );
+        }
+      }
     }
     if (topology.vessels.some((v) => v.configuration === "linear" && v.coilIds.length > 0)) {
       level = worstLevel([level, "approximate"]);

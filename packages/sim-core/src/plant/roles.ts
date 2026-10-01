@@ -262,6 +262,16 @@ export const ROLE_PARAMETERS: Readonly<Record<PlantRole, readonly ParameterSpec[
         "Superconducting coils dissipate no ohmic power but must stay below their critical temperature, which costs cryogenic refrigeration. Resistive (copper) coils dissipate I²R.",
       ),
       enumeration(
+        "winding",
+        "Winding",
+        "toroidal",
+        [
+          { value: "toroidal", label: "Toroidal (around the tube)" },
+          { value: "loop", label: "Loop (around the ring)" },
+        ],
+        "For a torus-shaped coil, the path the current takes. Toroidal: wound around the tube, like a toroidal-field coil set — the field circulates inside the tube. Loop: wound around the ring, a circular coil — the field threads the ring along its axis. Solenoids (cylinders) are always wound around their axis.",
+      ),
+      enumeration(
         "conductor",
         "Superconductor",
         "rated",

@@ -75,7 +75,12 @@ import {
   solenoidOnAxisFieldT,
   toroidalCoilTensionStressPa,
   toroidalFieldT,
+  loopHoopStressPa,
+  loopInductanceH,
+  loopPeakFieldT,
 } from "./magnetics.js";
+import { torusWinding } from "./biotSavart.js";
+import { type GeometricCoupling, geometricCouplings } from "./fieldCoupling.js";
 import {
   LOW_Q_KINK_LIMIT,
   TROYON_BETA_N_LIMIT,
@@ -311,7 +316,13 @@ export class PlantSolver {
     this.#recordReadings(work, sorted, states);
 
     const metrics = this.#metrics(work, sorted, states, conversion);
-    const confidence = assessConfidence({ topology, components: sorted, work, metrics });
+    const confidence = assessConfidence({
+      topology,
+      components: sorted,
+      work,
+      metrics,
+      geometric: this.#geometricCouplings(topology),
+    });
 
     return {
       states,
@@ -757,17 +768,26 @@ export class PlantSolver {
 
       const turns = numberParameter(p, "turns");
       const current = runtime.coilCurrentA;
-      const vesselId = topology.coilVessel.get(coil.id) ?? null;
+      const geometric = this.#geometricCouplings(topology).get(coil.id);
+      const vesselId = topology.coilVessel.get(coil.id) ?? geometric?.vesselId ?? null;
       let fieldAtPlasmaT = 0;
-      if (vesselId !== null) {
-        const vessel = topology.byId.get(vesselId)!;
+      if (topology.coilVessel.has(coil.id)) {
+        const vessel = topology.byId.get(vesselId!)!;
         fieldAtPlasmaT = coilFieldAtVessel(coil, vessel, turns, current);
-        work.vesselField.set(vesselId, (work.vesselField.get(vesselId) ?? 0) + fieldAtPlasmaT);
+        work.vesselField.set(vesselId!, (work.vesselField.get(vesselId!) ?? 0) + fieldAtPlasmaT);
+      } else if (geometric !== undefined) {
+        // Field from the coil's geometry (Biot–Savart), signed along the plasma's axis:
+        // coils can reinforce or cancel each other.
+        fieldAtPlasmaT = geometric.coupling.meanTPerA * current;
+        work.vesselField.set(
+          geometric.vesselId,
+          (work.vesselField.get(geometric.vesselId) ?? 0) + fieldAtPlasmaT,
+        );
       } else {
         addWarning(
           work,
           coil.id,
-          "Does not enclose (torus) or sit coaxially around (solenoid) any vessel, so its field is not computed.",
+          "Its field does not reach any vessel's plasma: it neither encloses a torus vessel nor sits round a cylinder, and its geometric field on every vessel's axis is negligible.",
         );
       }
 
@@ -869,7 +889,8 @@ export class PlantSolver {
       addWarning(work, vessel.id, "No vacuum pump is linked to this vessel.");
 
     // --- Plasma geometry and field -------------------------------------------------------
-    const fieldT = work.vesselField.get(vessel.id) ?? 0;
+    // Geometric contributions are signed; the plasma model needs the magnitude.
+    const fieldT = Math.abs(work.vesselField.get(vessel.id) ?? 0);
     const geometry = plasmaGeometry(vessel);
     const targetCurrentA =
       layout.configuration === "tokamak" ? numberParameter(p, "plasmaCurrentA") : 0;
@@ -1791,6 +1812,15 @@ export class PlantSolver {
     return cycleHeat;
   }
 
+  #fieldCache: { topology: PlantTopology; couplings: Map<string, GeometricCoupling> } | undefined;
+
+  /** Geometric field coefficients for coils the analytic models do not cover (cached). */
+  #geometricCouplings(topology: PlantTopology): Map<string, GeometricCoupling> {
+    if (this.#fieldCache?.topology !== topology)
+      this.#fieldCache = { topology, couplings: geometricCouplings(topology) };
+    return this.#fieldCache.couplings;
+  }
+
   #thermalCache:
     | {
         topology: PlantTopology;
@@ -2581,6 +2611,8 @@ const HELIUM_LATENT_HEAT_J_PER_KG = findFluid("helium")!.latentHeatOfVaporizatio
 /** Self-inductance of a coil's winding from its geometry. */
 function coilInductanceH(coil: SimulationComponent, turns: number): number {
   const geometry = coil.geometry;
+  if (geometry.kind === "torus" && torusWinding(coil) === "loop")
+    return loopInductanceH(turns, geometry.majorRadiusM, geometry.minorRadiusM);
   if (geometry.kind === "torus")
     return toroidalInductanceH(turns, geometry.majorRadiusM, geometry.minorRadiusM);
   if (geometry.kind === "cylinder")
@@ -2596,6 +2628,12 @@ function coilPeak(
 ): { peakFieldT: number; radiusM: number; wallM: number } {
   const geometry = coil.geometry;
   const wallM = geometry.wallThicknessM ?? 0;
+  if (geometry.kind === "torus" && torusWinding(coil) === "loop")
+    return {
+      peakFieldT: loopPeakFieldT(turns * currentA, geometry.majorRadiusM, geometry.minorRadiusM),
+      radiusM: geometry.majorRadiusM,
+      wallM,
+    };
   if (geometry.kind === "torus") {
     const innerLegM = Math.max(geometry.majorRadiusM - geometry.minorRadiusM, 1e-3);
     return {
@@ -2625,6 +2663,17 @@ function coilStructuralStressPa(
 ): number {
   const geometry = coil.geometry;
   const wallM = geometry.wallThicknessM ?? 0;
+  if (geometry.kind === "torus" && torusWinding(coil) === "loop") {
+    // The casing is the tube's wall (or, without one, the whole winding section).
+    const a = geometry.minorRadiusM;
+    const inner = Math.max(0, a - wallM);
+    return loopHoopStressPa({
+      ampereTurns: turns * currentA,
+      ringRadiusM: geometry.majorRadiusM,
+      windingRadiusM: a,
+      casingAreaM2: Math.PI * (a * a - (wallM > 0 ? inner * inner : 0)),
+    });
+  }
   if (geometry.kind === "torus") {
     return toroidalCoilTensionStressPa({
       ampereTurns: turns * currentA,
@@ -2647,7 +2696,9 @@ function resistiveCoilOhm(coil: SimulationComponent, temperatureK: number): numb
   const geometry = coil.geometry;
   const turnLengthM =
     geometry.kind === "torus"
-      ? 2 * Math.PI * geometry.minorRadiusM
+      ? 2 *
+        Math.PI *
+        (torusWinding(coil) === "loop" ? geometry.majorRadiusM : geometry.minorRadiusM)
       : geometry.kind === "cylinder"
         ? 2 * Math.PI * geometry.radiusM
         : 2 * (geometry.sizeM.x + geometry.sizeM.z);

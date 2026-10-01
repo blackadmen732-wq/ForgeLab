@@ -3,6 +3,7 @@ import type { SimulationComponent } from "../component.js";
 import type { Connection } from "../connections.js";
 import { getCoolantFluid, lameHoopStressPa, loopPressurePa } from "./fluids.js";
 import { booleanParameter, COOLED_ROLES, numberParameter, stringParameter } from "./roles.js";
+import { geometricCouplings } from "./fieldCoupling.js";
 import { buildTopology, groupsOver, type PlantTopology } from "./topology.js";
 
 /**
@@ -276,6 +277,9 @@ function plasmaSystems(
   components: readonly SimulationComponent[],
 ): PreflightItem[] {
   const out: PreflightItem[] = [];
+  // Coils the analytic models do not cover still serve a plasma through their geometric
+  // field (fieldCoupling.ts), exactly as the solver will see it.
+  const geometric = geometricCouplings(topology);
   for (const vessel of topology.vessels) {
     const name = label(topology.byId.get(vessel.vesselId)!);
     if (vessel.pumpIds.length === 0)
@@ -302,22 +306,24 @@ function plasmaSystems(
         componentIds: [vessel.vesselId],
         message: `${name} has no plasma heating connected.`,
       });
-    if (vessel.coilIds.length === 0)
+    const served = [...geometric.values()].some((g) => g.vesselId === vessel.vesselId);
+    if (vessel.coilIds.length === 0 && !served)
       out.push({
         code: "NO_CONFINING_FIELD",
         system: "magnets",
         severity: "warning",
         componentIds: [vessel.vesselId],
-        message: `No magnet coil around ${name} produces a field ForgeLab can compute at its plasma.`,
+        message: `No coil puts a significant magnetic field on the plasma in ${name}.`,
       });
   }
-  if (topology.vessels.length > 0 && topology.orphanCoilIds.length > 0)
+  const idle = topology.orphanCoilIds.filter((id) => !geometric.has(id));
+  if (topology.vessels.length > 0 && idle.length > 0)
     out.push({
       code: "COIL_SERVES_NO_PLASMA",
       system: "magnets",
       severity: "warning",
-      componentIds: topology.orphanCoilIds,
-      message: `${list(topology.orphanCoilIds.map((id) => label(topology.byId.get(id)!)))}: not placed around a vessel, so ${topology.orphanCoilIds.length === 1 ? "its" : "their"} field does not reach any plasma.`,
+      componentIds: idle,
+      message: `${list(idle.map((id) => label(topology.byId.get(id)!)))}: ${idle.length === 1 ? "its" : "their"} field barely reaches any plasma where ${idle.length === 1 ? "it is" : "they are"} placed.`,
     });
   for (const coil of components) {
     if (

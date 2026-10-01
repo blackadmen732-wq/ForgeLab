@@ -485,6 +485,60 @@ export const TF_COIL_SET = define({
 });
 
 /**
+ * Circular Coil — one superconducting loop coil: a winding pack of radius a carried round
+ * a ring of radius R in a steel case, standing upright (its axis along local Z). Arrange
+ * many with the radial-array tool to make a toroidal-field ring of your own, stack them
+ * for a mirror or a solenoid. Its field is computed from its geometry (Biot–Savart), so
+ * whatever arrangement you build is the arrangement the plasma sees.
+ */
+export const CIRCULAR_COIL = define({
+  type: "circular-coil",
+  name: "Circular Coil",
+  description:
+    "One superconducting loop coil in a 316L case — 3 m ring, 100 turns × 50 kA by default. Ring them round a vessel with the radial array (Ctrl Shift A) to build your own toroidal field; its field is computed from where you put it.",
+  category: "Magnets",
+  role: "magnet-coil",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("ringRadiusM", "Ring radius R", 3, 0.2, 15),
+    dim("windingRadiusM", "Winding radius", 0.25, 0.02, 2),
+    dim("wallM", "Case thickness", 0.06, 0.005, 0.5),
+  ],
+  shape: (d) => {
+    const R = d["ringRadiusM"]!;
+    const a = Math.min(d["windingRadiusM"]!, 0.5 * R);
+    const t = Math.min(d["wallM"]!, 0.9 * a);
+    return {
+      geometry: torusGeometry(R, a, "z", t),
+      sockets: [
+        structural("foot", vec3(0, -(R + a), 0), DOWN),
+        socket("power", "electrical", vec3(0, R + a, 0), UP),
+        socket("coolant-in", "coolant", vec3(R + a, 0.15, 0), PX),
+        socket("coolant-out", "coolant", vec3(R + a, -0.15, 0), PX),
+        socket("sensor", "control", vec3(-(R + a), 0, 0), NX),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "torus"
+      ? {
+          ringRadiusM: g.majorRadiusM,
+          windingRadiusM: g.minorRadiusM,
+          wallM: g.wallThicknessM ?? 0.06,
+        }
+      : {},
+  presets: {
+    winding: "loop",
+    turns: 100,
+    currentA: 50000,
+    superconducting: true,
+    conductor: "nb3sn",
+    cryoCapacityW: 3e3,
+  },
+  keyProperty: "5 MA-turns · SC",
+});
+
+/**
  * Solenoid Coil — a short copper solenoid (default r = 2.2 m, 0.8 m long) for linear
  * devices. Resistive by default: it dissipates I²R and needs water cooling.
  */
@@ -877,6 +931,7 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   EQUIPMENT_BLOCK,
   TOKAMAK_VESSEL,
   TF_COIL_SET,
+  CIRCULAR_COIL,
   SOLENOID_COIL,
   FUEL_INJECTOR,
   NEUTRAL_BEAM,

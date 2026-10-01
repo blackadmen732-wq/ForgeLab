@@ -49,6 +49,7 @@ export const FRAME_FIELDS = Object.freeze([
   "dumpPowerW", // magnets: power into the dump resistor
   "heliumBoilOffKgS", // superconducting magnets
   "quenchAgeS", // magnets: seconds since quench, −1 if none
+  "coilCurrentA", // magnets: present current per turn (field lines scale with it)
 ] as const);
 export type FrameField = (typeof FRAME_FIELDS)[number];
 const FIELD_COUNT = FRAME_FIELDS.length;
@@ -263,6 +264,7 @@ export class SimulationSession {
       scalars[o + 16] = magnet?.dumpPowerW ?? 0;
       scalars[o + 17] = magnet?.heliumBoilOffKgS ?? 0;
       scalars[o + 18] = magnet?.quenchAgeS ?? -1;
+      scalars[o + 19] = magnet?.currentA ?? 0;
       if (plant.vessel !== null) vessels[component.id] = plant.vessel;
     });
     const newFailures = snapshot.failures.slice(this.#failuresSent);

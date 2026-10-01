@@ -58,6 +58,7 @@ import { portRating } from "../ui/Inspector.js";
 import { Cables } from "./Cables.js";
 import { damageStage, stageDarkening } from "../../presentation/damage.js";
 import { damageState } from "../../presentation/damageState.js";
+import { FieldLines } from "./FieldLines.js";
 import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
@@ -996,6 +997,7 @@ export function Viewport() {
         <Cables />
         <CutPlaneDriver />
         <InternalsSection />
+        <FieldLines />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />

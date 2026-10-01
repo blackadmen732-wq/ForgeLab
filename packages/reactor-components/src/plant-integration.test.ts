@@ -412,14 +412,18 @@ describe("model confidence", () => {
     expect(world.getSnapshot().plant.confidence.level).not.toBe("experimental");
   });
 
-  it("labels a coil that encloses nothing experimental and says why", () => {
+  it("says when a coil's field reaches no plasma, without pretending it was not computed", () => {
     const world = new SimulationWorld();
     placePart(world, "tf-coil-set", { id: "lonely", position: { x: 0, y: 4.35, z: 0 } });
     world.solve();
     const snapshot = world.getSnapshot();
-    expect(snapshot.plant.confidence.level).toBe("experimental");
+    const magnetics = snapshot.plant.confidence.subsystems.find(
+      (s) => s.subsystem === "magnetics",
+    )!;
+    expect(magnetics.level).toBe("approximate");
+    expect(magnetics.reasons.join(" ")).toMatch(/negligible/);
     expect(snapshot.components[0]!.state.plant.warnings.join(" ")).toContain(
-      "field is not computed",
+      "does not reach any vessel's plasma",
     );
   });
 });

@@ -100,6 +100,7 @@ export type VisualProfileId =
   | "linear-chamber"
   | "tokamak-vessel"
   | "tf-coils"
+  | "loop-coil"
   | "solenoid"
   | "fuel-injector"
   | "neutral-beam"

@@ -257,7 +257,26 @@ export {
   type PlantStepInput,
   type PlantStepResult,
 } from "./plant/solver.js";
-export { worstLevel } from "./plant/confidence.js";
+export { worstLevel, RIPPLE_EXPERIMENTAL } from "./plant/confidence.js";
+export {
+  coilSegments,
+  fieldAt,
+  fieldPerAmp,
+  ripple,
+  segmentFieldPerAmp,
+  torusWinding,
+  vesselAxisCoupling,
+  type AxisCoupling,
+  type CurrentSegment,
+  type FieldFidelity,
+  type TorusWinding,
+} from "./plant/biotSavart.js";
+export {
+  GEOMETRIC_FIELD_MIN_T,
+  combinedRipple,
+  geometricCouplings,
+  type GeometricCoupling,
+} from "./plant/fieldCoupling.js";
 export {
   preflight,
   type PreflightCode,

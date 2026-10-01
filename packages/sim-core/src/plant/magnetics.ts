@@ -207,3 +207,61 @@ export function solenoidInductanceH(turns: number, radiusM: number, lengthM: num
     (lengthM + 0.9 * radiusM)
   );
 }
+
+/**
+ * Self-inductance of a circular loop coil (ring radius R, round winding of radius a,
+ * N turns, uniform current density): L = μ₀ N² R (ln(8R/a) − 7/4). Valid for a ≪ R
+ * (F. W. Grover, Inductance Calculations, 1946, ch. 13; the −7/4 is the uniform-current
+ * internal inductance term). DOCUMENTED APPROXIMATION for fat windings.
+ */
+export function loopInductanceH(
+  turns: number,
+  ringRadiusM: number,
+  windingRadiusM: number,
+): number {
+  if (!(ringRadiusM > 0) || !(windingRadiusM > 0) || windingRadiusM >= ringRadiusM) return 0;
+  return (
+    VACUUM_PERMEABILITY_H_PER_M *
+    turns *
+    turns *
+    ringRadiusM *
+    Math.max(0, Math.log((8 * ringRadiusM) / windingRadiusM) - 1.75)
+  );
+}
+
+/**
+ * Peak field on a loop coil's winding: the larger of its self-field at the winding surface,
+ * μ₀NI / (2πa), and its centre field μ₀NI / (2R) — for a thin loop the surface field
+ * dominates.
+ */
+export function loopPeakFieldT(
+  ampereTurns: number,
+  ringRadiusM: number,
+  windingRadiusM: number,
+): number {
+  if (!(ringRadiusM > 0) || !(windingRadiusM > 0)) return 0;
+  return Math.max(
+    (VACUUM_PERMEABILITY_H_PER_M * ampereTurns) / (2 * Math.PI * windingRadiusM),
+    (VACUUM_PERMEABILITY_H_PER_M * ampereTurns) / (2 * ringRadiusM),
+  );
+}
+
+/**
+ * Hoop tension in a circular loop coil and the stress it puts on its casing: the loop's
+ * own field pushes it outwards, T = μ₀(NI)² / 4π · (ln(8R/a) − 3/4) (uniform current
+ * density; e.g. J. Wesson, Tokamaks, 4th ed., §3.8, the hoop force of a current ring),
+ * carried by the casing's cross-section σ = T / A.
+ */
+export function loopHoopStressPa(params: {
+  ampereTurns: number;
+  ringRadiusM: number;
+  windingRadiusM: number;
+  casingAreaM2: number;
+}): number {
+  const { ampereTurns, ringRadiusM, windingRadiusM, casingAreaM2 } = params;
+  if (!(casingAreaM2 > 0) || !(windingRadiusM > 0) || windingRadiusM >= ringRadiusM) return 0;
+  const tension =
+    ((VACUUM_PERMEABILITY_H_PER_M * ampereTurns * ampereTurns) / (4 * Math.PI)) *
+    Math.max(0, Math.log((8 * ringRadiusM) / windingRadiusM) - 0.75);
+  return tension / casingAreaM2;
+}
