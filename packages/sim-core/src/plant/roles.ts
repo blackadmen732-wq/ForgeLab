@@ -261,6 +261,16 @@ export const ROLE_PARAMETERS: Readonly<Record<PlantRole, readonly ParameterSpec[
         true,
         "Superconducting coils dissipate no ohmic power but must stay below their critical temperature, which costs cryogenic refrigeration. Resistive (copper) coils dissipate I²R.",
       ),
+      enumeration(
+        "conductor",
+        "Superconductor",
+        "rated",
+        [
+          { value: "rated", label: "Rated critical temperature" },
+          { value: "nbti", label: "NbTi (critical surface)" },
+        ],
+        "Rated: the coil quenches above the fixed critical temperature below. NbTi: the quench temperature is NbTi's critical temperature at the coil's live peak field (Bottura 2000 fit, Tc0 = 9.2 K, Bc20 = 14.5 T), so more ampere-turns leave less temperature margin, and above 14.5 T it cannot superconduct at all.",
+      ),
       num(
         "operatingTemperatureK",
         "Operating temperature",
@@ -280,7 +290,7 @@ export const ROLE_PARAMETERS: Readonly<Record<PlantRole, readonly ParameterSpec[
         93,
         "K",
         1,
-        "Temperature above which the conductor quenches. 18 K is the zero-field value for Nb₃Sn; the in-field value is lower, so this is optimistic.",
+        "Temperature above which a Rated conductor quenches. 18 K is the zero-field value for Nb₃Sn; the in-field value is lower, so this is optimistic. Ignored for NbTi, whose limit follows its field.",
         true,
       ),
       num(

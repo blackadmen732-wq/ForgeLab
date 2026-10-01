@@ -81,8 +81,8 @@ back into Phase 2. Coolant loops become buildable and can be starved, cavitated 
 
 ## Phase 4 — Magnetic fields ✅ V0.1
 
-**In V0.1:** Ideal toroidal winding and on-axis finite solenoid fields, Princeton-D TF tension and solenoid hoop stress, quench.
-**Still missing:** Biot–Savart fields from real coil shapes, inter-coil forces, field ripple.
+**In V0.1:** Ideal toroidal winding and on-axis finite solenoid fields, Princeton-D TF tension and solenoid hoop stress, quench. A coil's conductor is either _Rated_ (a fixed critical temperature) or _NbTi_, whose quench temperature is its critical surface Tc(B) at the coil's live peak field (Bottura 2000: Tc0 = 9.2 K, Bc20 = 14.5 T); above Bc20 an NbTi coil cannot superconduct and quenches as soon as it is energised.
+**Still missing:** Biot–Savart fields from real coil shapes, inter-coil forces, field ripple; the current-sharing temperature (needs Jc(B,T) and the winding current density — Tc(B) is an upper bound on the margin); a sourced Nb₃Sn/REBCO critical surface; coil inductance and charging.
 
 Coil geometry to field: Biot–Savart for simple configurations, with documented
 approximations for solenoids and toroids. Magnetic forces on conductors and the resulting

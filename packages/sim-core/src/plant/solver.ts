@@ -1,4 +1,4 @@
-import { getMaterial } from "@forgelab/materials";
+import { criticalTemperatureK, getMaterial, getSubstance } from "@forgelab/materials";
 import {
   BOLTZMANN_J_PER_K,
   STANDARD_ATMOSPHERE_PA,
@@ -1903,12 +1903,22 @@ export class PlantSolver {
     for (const component of components) {
       const runtime = this.#components.get(component.id)!;
       if (isSuperconductingCoil(component)) {
-        const tCrit = numberParameter(component.parameters, "criticalTemperatureK");
+        const p = component.parameters;
+        const peakFieldT = work.magnets.get(component.id)?.peakFieldT ?? 0;
+        const tCrit = coilCriticalTemperatureK(p, peakFieldT);
         if (!runtime.quenched && runtime.temperatureK > tCrit) {
           runtime.quenched = true;
           const nuclear = work.outputs.get(component.id)?.["nuclearHeatingW"] ?? 0;
           const supply = work.supply.get(component.id) ?? 0;
-          const capacity = numberParameter(component.parameters, "cryoCapacityW");
+          const capacity = numberParameter(p, "cryoCapacityW");
+          const tOp = numberParameter(p, "operatingTemperatureK");
+          const conductor = stringParameter(p, "conductor");
+          const catalogued = conductor !== "" && conductor !== "rated";
+          const sc = catalogued ? getSubstance(conductor) : null;
+          // Field-limited: the conductor cannot be superconducting at this field even at its
+          // operating temperature — no amount of refrigeration would have prevented it.
+          const fieldLimited = sc !== null && tCrit <= tOp;
+          const bc20 = sc?.superconductor?.upperCriticalFieldZeroTemperatureT ?? Infinity;
           this.#raise(work, {
             componentId: component.id,
             system: "magnetic",
@@ -1916,18 +1926,31 @@ export class PlantSolver {
             unit: "K",
             measuredValue: runtime.temperatureK,
             limitValue: tCrit,
-            summary: `Coil "${component.id}" quenched`,
-            cause:
-              `Superconducting coil "${component.id}" warmed to ${formatQuantity(runtime.temperatureK, "K")}, above its ` +
-              `${formatQuantity(tCrit, "K")} critical temperature, and quenched. Heat reaching the cold mass ` +
-              `(${formatQuantity(numberParameter(component.parameters, "staticHeatLeakW"), "W")} static leak` +
-              (nuclear > 0 ? ` plus ${formatQuantity(nuclear, "W")} of neutron heating` : "") +
-              `) exceeded the ${formatQuantity(capacity * Math.min(1, supply), "W")} of refrigeration available` +
-              (supply < 1
-                ? ` (the cryoplant receives only ${(100 * supply).toFixed(0)} % of its power)`
-                : "") +
-              `. Protection is dumping the coil's current.`,
-            causeKeys: this.#activeKeysFor([component.id], ["supply_shortfall"]),
+            summary: fieldLimited
+              ? `Coil "${component.id}" quenched: field too high for ${sc!.name}`
+              : `Coil "${component.id}" quenched`,
+            cause: fieldLimited
+              ? `Superconducting coil "${component.id}" reaches a peak field of ${formatQuantity(peakFieldT, "T")}. ` +
+                (peakFieldT >= bc20
+                  ? `That is above ${sc!.name}'s ${formatQuantity(bc20, "T")} upper critical field, so it cannot be superconducting at any temperature. `
+                  : `At that field ${sc!.name} stays superconducting only below ${formatQuantity(tCrit, "K")}, colder than the coil's ${formatQuantity(tOp, "K")} operating temperature. `) +
+                `It quenched as soon as it carried this current. Protection is dumping the coil's current.`
+              : `Superconducting coil "${component.id}" warmed to ${formatQuantity(runtime.temperatureK, "K")}, above its ` +
+                `${formatQuantity(tCrit, "K")} critical temperature` +
+                (sc !== null
+                  ? ` (${sc.name} at its ${formatQuantity(peakFieldT, "T")} peak field)`
+                  : "") +
+                `, and quenched. Heat reaching the cold mass ` +
+                `(${formatQuantity(numberParameter(p, "staticHeatLeakW"), "W")} static leak` +
+                (nuclear > 0 ? ` plus ${formatQuantity(nuclear, "W")} of neutron heating` : "") +
+                `) exceeded the ${formatQuantity(capacity * Math.min(1, supply), "W")} of refrigeration available` +
+                (supply < 1
+                  ? ` (the cryoplant receives only ${(100 * supply).toFixed(0)} % of its power)`
+                  : "") +
+                `. Protection is dumping the coil's current.`,
+            causeKeys: fieldLimited
+              ? []
+              : this.#activeKeysFor([component.id], ["supply_shortfall"]),
           });
         }
         continue;
@@ -1990,7 +2013,10 @@ export class PlantSolver {
     const loop = work.loopOf.get(component.id);
     const superconducting = isSuperconductingCoil(component);
     const limit = superconducting
-      ? numberParameter(component.parameters, "criticalTemperatureK")
+      ? coilCriticalTemperatureK(
+          component.parameters,
+          work.magnets.get(component.id)?.peakFieldT ?? 0,
+        )
       : getMaterial(component.materialId).maxOperatingTemperatureK;
     const warnings = [...(work.warnings.get(component.id) ?? [])];
     if (runtime.disabled) warnings.unshift(runtime.disabledReason);
@@ -2217,6 +2243,25 @@ function loopId(group: readonly string[]): string {
 
 function isRunning(phase: PlasmaPhase): boolean {
   return phase === "ramp-up" || phase === "flat-top" || phase === "shutdown";
+}
+
+/**
+ * The temperature above which a superconducting coil quenches. A Rated conductor uses its
+ * fixed parameter; a catalogued conductor uses its critical surface Tc(B) at the coil's
+ * peak field (zero current → zero field → Tc0). This is Tc(B), not the lower
+ * current-sharing temperature, which would also need Jc(B,T) and the winding's current
+ * density — so it is an upper bound on the real margin.
+ */
+export function coilCriticalTemperatureK(
+  parameters: ComponentParameters,
+  peakFieldT: number,
+): number {
+  const conductor = stringParameter(parameters, "conductor");
+  if (conductor === "" || conductor === "rated")
+    return numberParameter(parameters, "criticalTemperatureK");
+  const sc = getSubstance(conductor).superconductor;
+  if (sc === undefined) return numberParameter(parameters, "criticalTemperatureK");
+  return criticalTemperatureK(sc, Math.abs(peakFieldT));
 }
 
 function isSuperconductingCoil(component: SimulationComponent): boolean {

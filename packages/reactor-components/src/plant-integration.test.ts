@@ -6,6 +6,7 @@ import {
   type FailureEvent,
   type SimulationSnapshot,
 } from "@forgelab/sim-core";
+import { criticalTemperatureK, getSubstance } from "@forgelab/materials";
 import { getComponentDefinition } from "./builtin.js";
 import { buildReferencePlant, placePart, type ReferencePlantOptions } from "./designs.js";
 
@@ -196,6 +197,33 @@ describe("explained failure chains", () => {
       expect(disruption!.causalChain!.map((l) => l.failureType)).toEqual(["quench", "disruption"]);
     },
   );
+
+  it("an NbTi toroidal-field set above 14.5 T cannot superconduct and quenches on energising", () => {
+    const world = plant({ parameterOverrides: { "tf-coils": { conductor: "nbti" } } });
+    seconds(world, 1);
+    const quench = find(world.getSnapshot(), "quench", "tf-coils");
+    expect(quench).toBeDefined();
+    expect(quench!.summary).toContain("field too high");
+    expect(quench!.cause).toContain("upper critical field");
+    expect((quench!.causalChain ?? []).map((l) => l.failureType)).toEqual(["quench"]);
+  });
+
+  it("an NbTi coil's quench limit follows its peak field", { timeout: 30000 }, () => {
+    // 25 kA instead of 68 kA: about 6.5 T peak, inside NbTi's critical surface at 4.5 K.
+    const world = plant({
+      parameterOverrides: { "tf-coils": { conductor: "nbti", currentA: 25000 } },
+    });
+    seconds(world, 2);
+    const coil = world.getSnapshot().components.find((c) => c.id === "tf-coils")!;
+    const peak = coil.state.plant.magnet!.peakFieldT;
+    expect(peak).toBeGreaterThan(5);
+    expect(peak).toBeLessThan(9);
+    const limit = coil.state.plant.thermal.limitTemperatureK;
+    expect(limit).toBeCloseTo(criticalTemperatureK(getSubstance("nbti").superconductor!, peak), 6);
+    expect(limit).toBeLessThan(9.2);
+    expect(limit).toBeGreaterThan(4.5);
+    expect(find(world.getSnapshot(), "quench", "tf-coils")).toBeUndefined();
+  });
 
   it("fuelling past the Greenwald limit disrupts with an explanation", { timeout: 60000 }, () => {
     const world = plant({ parameterOverrides: { injector: { targetDensityM3: 2e20 } } });

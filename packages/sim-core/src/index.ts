@@ -248,7 +248,12 @@ export {
   type VesselState,
 } from "./plant/state.js";
 
-export { PlantSolver, type PlantStepInput, type PlantStepResult } from "./plant/solver.js";
+export {
+  PlantSolver,
+  coilCriticalTemperatureK,
+  type PlantStepInput,
+  type PlantStepResult,
+} from "./plant/solver.js";
 export { worstLevel } from "./plant/confidence.js";
 export * as PlantConstants from "./plant/constants.js";
 
