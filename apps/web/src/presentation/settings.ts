@@ -21,6 +21,11 @@ export interface PresentationSettings {
   readonly bloom: boolean;
   readonly screenCrack: boolean;
   readonly haze: boolean;
+  /**
+   * On a failure, select the root-cause part and open the cutaway on it. Never moves the
+   * camera: the cut faces wherever the player is looking from.
+   */
+  readonly autoCutaway: boolean;
   readonly masterVolume: number;
   readonly alarmVolume: number;
   readonly ambientVolume: number;
@@ -104,6 +109,7 @@ export const DEFAULT_SETTINGS: PresentationSettings = Object.freeze({
   bloom: true,
   screenCrack: true,
   haze: true,
+  autoCutaway: false,
   masterVolume: 0.8,
   alarmVolume: 0.7,
   ambientVolume: 0.6,
@@ -130,6 +136,7 @@ export function parseSettings(raw: unknown): PresentationSettings {
     bloom: bool(r["bloom"], d.bloom),
     screenCrack: bool(r["screenCrack"], d.screenCrack),
     haze: bool(r["haze"], d.haze),
+    autoCutaway: bool(r["autoCutaway"], d.autoCutaway),
     masterVolume: clamp01(r["masterVolume"], d.masterVolume),
     alarmVolume: clamp01(r["alarmVolume"], d.alarmVolume),
     ambientVolume: clamp01(r["ambientVolume"], d.ambientVolume),

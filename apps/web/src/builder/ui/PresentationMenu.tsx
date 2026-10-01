@@ -96,6 +96,7 @@ export function PresentationMenu() {
           {toggle("reducedEffects", "Reduce flashes and blinking")}
           {toggle("reduceMotion", "Reduce motion (no shake or drift)")}
           {slider("cameraEffectsIntensity", "Camera shake")}
+          {toggle("autoCutaway", "Open the cutaway on the failed part")}
           <div className="menu__sep" />
           <div className="menu__label">Sound</div>
           {slider("masterVolume", "Master")}

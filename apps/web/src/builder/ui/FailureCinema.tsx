@@ -1,8 +1,9 @@
-import { Clapperboard, Hammer, Pause, Play, RotateCcw, X } from "lucide-react";
-import { useContext, useMemo } from "react";
+import { Clapperboard, Hammer, Pause, Play, RotateCcw, ScanSearch, X } from "lucide-react";
+import { useContext, useEffect, useMemo, useRef } from "react";
 import type { FailureEvent } from "@forgelab/sim-core";
 import { CINEMA_RATES, useCinema, type CinemaCamera } from "../../presentation/cinema.js";
 import { CinemaContext } from "../../presentation/context.js";
+import { getSettings } from "../../presentation/settings.js";
 import { useEditorStore, useSim } from "../store/context.js";
 
 /**
@@ -48,6 +49,20 @@ export function RootCauseChain() {
   const cinema = useContext(CinemaContext);
   const failures = useSim((s) => s.failures);
   const chain = useMemo(() => rootCauseChain(failures), [failures]);
+  const root = chain[0]?.componentId;
+  // Optional diagnostic cutaway: once per root cause, select it and cut it open. The
+  // camera stays where the player put it.
+  const opened = useRef<string | null>(null);
+  useEffect(() => {
+    if (root === undefined) {
+      opened.current = null;
+      return;
+    }
+    if (opened.current === root || !getSettings().autoCutaway) return;
+    opened.current = root;
+    store.select([root]);
+    store.toggleCutaway(true);
+  }, [root, store]);
   if (chain.length === 0) return null;
   return (
     <nav className="root-cause" aria-label="Failure chain, root cause first">
@@ -70,6 +85,18 @@ export function RootCauseChain() {
           </li>
         ))}
       </ol>
+      <button
+        type="button"
+        className="btn btn--sm root-cause__watch"
+        title="Select the root-cause part, cut it open and frame it"
+        onClick={() => {
+          store.select([root!]);
+          store.toggleCutaway(true);
+          store.focusComponent(root!);
+        }}
+      >
+        <ScanSearch /> Look inside
+      </button>
       {cinema !== null && <WatchButton />}
     </nav>
   );

@@ -1,4 +1,5 @@
-import { FilePlus2, GraduationCap, HardDrive, LayoutTemplate } from "lucide-react";
+import { FilePlus2, GraduationCap, HardDrive, LayoutTemplate, TriangleAlert } from "lucide-react";
+import { SHOWROOM_SCENARIOS, buildScenario } from "@forgelab/reactor-components";
 import { Dialog } from "../../components/Dialog.js";
 import { confirmDialog } from "../../lib/confirm.js";
 import { relativeTime } from "../../lib/format.js";
@@ -112,6 +113,33 @@ export function StartDialog({
               <strong>{b.name}</strong>
               <span className="dim">{b.description}</span>
               <span className="badge">{b.size}</span>
+            </button>
+          ))}
+        </div>
+        <h3 className="start__heading">
+          <TriangleAlert aria-hidden="true" /> Failure scenes
+        </h3>
+        <p className="dim start__note">
+          Working designs with one engineering mistake each. Nothing is scripted: run one and the
+          simulation decides what fails, when, and how hard.
+        </p>
+        <div className="start__grid">
+          {SHOWROOM_SCENARIOS.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="start__blueprint"
+              data-scene={s.id}
+              onClick={async () => {
+                if (!(await guard())) return;
+                store.replaceWorld(buildScenario(s.id), { blueprintId: `scene:${s.id}` });
+                onStart("blueprint");
+                close();
+              }}
+            >
+              <strong>{s.name}</strong>
+              <span className="dim">{s.fault}</span>
+              <span className="badge">{s.expectedFailureType.replace(/_/g, " ")}</span>
             </button>
           ))}
         </div>

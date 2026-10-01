@@ -116,7 +116,8 @@ coolant enthalpy flow for boiling. These numbers never leave the presentation la
 | `over_temperature` on a conductor                                                           | electrical | arc flash between the conductor's ends, sparks, ozone-blue light, smoke from insulation (combustible) |
 | `supply_shortfall`                                                                          | electrical | brown-out: fixtures dip and flicker, no sparks                                                        |
 | `coolant_boiling`                                                                           | coolant    | steam venting from the loop's hottest part, pressure-relief hiss                                      |
-| `loss_of_flow`                                                                              | coolant    | pump spins down, flow indicators stop, amber alarm                                                    |
+| `pipe_rupture`                                                                              | coolant    | torn wall, directional steam jet and spray off the pipe's axis (pinhole or break), weeping aftermath  |
+| `pump_cavitation`, `loss_of_flow`                                                           | flow       | pump shudders and rattles with the head it lost, spins down, flow indicators stop                     |
 | `quench` / over-temperature on a magnet coil                                                | quench     | helium vapour venting from the coil (cold white, falls), crack-bang, field glow collapses             |
 | `disruption`                                                                                | disruption | plasma flash then extinction, restrained shockwave light, vessel ring, dust                           |
 | `yield_exceeded`, `buckling`, `bending_yield`, `connection_overload`, `magnetic_overstress` | structural | pre-fractured debris, dust, metal stress audio; parts the solver releases fall under its own physics  |
@@ -126,6 +127,36 @@ coolant enthalpy flow for boiling. These numbers never leave the presentation la
 No family produces a fireball or a mushroom cloud: a fusion plant holds grams of fuel and
 stops when it is disturbed. Fire appears only where a plausible combustible exists
 (insulation, oil, cabling) and only with a heat source above its ignition temperature.
+
+### Failure sequences
+
+Each family plays as a sequence, not a single burst (`vfx/recipes.ts`, pure and tested):
+a first physical break, the primary event, secondary reactions, then an aftermath that
+lingers until reset. Commands can be delayed, emitters can decay (rate ∝ e^(−t/τ), speed
+∝ its square root, like a blowdown), and two pooled point lights (always present at zero
+intensity, so nothing recompiles at the moment of failure) let an arc or a disruption
+light the metal around it.
+
+| Family     | Sequence                                                                                                                                                                                                                           |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| electrical | arc between the conductor's ends with a flickering blue light, re-strike at 0.35 s, sparks, thin blue-grey arc smoke; aftermath wisp and stray sparks. Only if insulation is combustible: flame, dark sooty smoke and a fire light |
+| coolant    | pipe rupture: tear, jet perpendicular to the pipe whose speed follows √pressure, narrow pinhole (low severity) or wide break, spray, rising cloud, weeping. Boiling: relief-valve steam jet and cloud                              |
+| quench     | helium vent whose rate **follows the published boil-off every frame**, frost, relief-valve vapour burst at 0.4 s, delayed shock, ceiling dust, fog pooled on the floor for a minute                                                |
+| cryogenic  | frost and a vent following the boil-off                                                                                                                                                                                            |
+| disruption | flash inside the vessel, a pink light, a second flash as the current quenches, shock, dust; debris only if the structure says so                                                                                                   |
+| structural | crack mark, debris, impact dust as fragments land, a settling haze                                                                                                                                                                 |
+| thermal    | soot and smoke above a combustible part past 600 K; flame only past insulation ignition (623 K)                                                                                                                                    |
+
+Media are physically distinct particle systems: smoke (sooty, rises), electrical smoke
+(thin, blue-grey), steam (white, rises fast and disperses), cold vapour (dense, sinks
+then rises as it warms), dust (settles), fire (short-lived, buoyant), sparks and spray
+(ballistic, fall under gravity).
+
+**Precursors** warn before a failure, each from a published value: a cavitating pump
+shudders in proportion to the head it lost (`headFraction`); a plasma within 15 % of the
+Greenwald, Troyon or q95 limit wobbles (`plasmaUnrest`). A quenching winding does not
+glow: it only reaches tens to a few hundred kelvin, so it shows on the Temperature and
+Failures views instead.
 
 ### Secondary propagation — limitation
 
@@ -190,9 +221,17 @@ buses: ambient ─┐
   silent.
 - **Alarms** by tier — ADVISORY single chime, CAUTION two-tone chime every 5 s, WARNING
   1 Hz beep, EMERGENCY rising whoop.
-- **Failure families** — arc crackle and breaker bang (electrical), relief thump and long
-  steam hiss (coolant), boom and helium venting (quench), crack, ringing vessel and thud
-  (disruption), groan then crash (structural), relay clicks (brown-out, control).
+- **Failure scores** — `failureScore(event)` (pure, tested, seeded by the event so a
+  replay sounds the same) returns timed cues played in the same stages as the effects:
+  arc crackle for as long as the arc burns, a re-strike, then the breaker (electrical); a
+  pinhole's narrow whistle or a break's bang and roar, pitched by pressure, then a weep
+  (pipe rupture); relief thump and steam hiss (boiling); boom, then the relief valve pops
+  at 0.4 s (quench); crack, second crack, ringing vessel and thud (disruption); groan,
+  crash and settling rattles (structural); fire crackle only where insulation burns;
+  relay clicks (brown-out, control).
+- **Condition sounds** last as long as the published condition does: a magnet's helium
+  vent follows its boil-off (log-scaled level), a cavitating pump rattles in proportion to
+  the head it lost (`conditionSounds`).
 - **Priority and ducking** — at most 8 failure voices, highest priority first; violent
   events duck machinery and ambience by 4–14 dB and let them recover.
 - Everything is synthesized; the context starts on the first gesture; volumes and mute
@@ -211,8 +250,16 @@ Three tiers, all pooled:
 
 Rapier is WebAssembly; the site's Content-Security-Policy allows `'wasm-unsafe-eval'`
 (WebAssembly compilation only — JavaScript `eval` stays blocked). Fragments are faceted
-chunks sized from the failed part and coloured by its material; a part breaks up once per
-run however many failures it raises.
+chunks sized from the failed part; a part breaks up once per run however many failures it
+raises. Fragments are coloured by what the part is made of — mostly its casing material,
+the rest the solid materials of its internals (winding copper, tungsten armour, steel);
+fluids and vacuum do not fly (`builder/scene/fracture.ts`).
+
+**Breaches.** A part that breaks up opens where it failed: a jagged gouge on the side its
+debris was thrown, made of three tilted clip planes intersected (a fragment is cut only
+when it is behind all three), deeper the more of the part broke away. The breach is held
+in the part's own frame and re-aimed every frame, so it moves with a falling part. The
+machine's internals show through it, cut by the same planes. Breaches clear on reset.
 
 Hot parts glow in the Normal view: above the Draper point (≈ 798 K) the published
 temperature drives a blackbody-like emissive ramp from dull red to yellow-white.
@@ -247,6 +294,11 @@ Under the activation strip after a failure: `ROOT CAUSE → … → final failur
 longest causal chain the solver built, root first. Each step is clickable: it selects and
 frames the part and, in replay, jumps to just before that failure.
 
+**Look inside** (next to Watch failure) is the diagnostic cutaway: it selects the root
+part, opens the cutaway on it (the cut faces the camera) and frames it. It also works in
+replay. The setting "Open the cutaway on the failed part" does the first two
+automatically once per root cause, and never moves the camera.
+
 ## Post-processing
 
 `PostFx`: bloom on genuinely bright things (fixtures, plasma, arcs, sparks, flashes), a
@@ -263,16 +315,23 @@ kick; `cameraEffectsIntensity` scales them; `reducedEffects` removes flashes and
 
 ## Test scenarios
 
-`reactor-components/src/scenarios.ts` holds six designs with one deliberate engineering
-mistake each — magnet quench, electrical bus fault, coolant boiling, structural collapse,
-plasma disruption (Greenwald), and a multi-system cascade (pump off → wall overheats →
-disruption). `scenarios.test.ts` proves the simulation raises each failure.
+`reactor-components/src/scenarios.ts` holds seven designs with one deliberate engineering
+mistake each — magnet quench, electrical bus fault, coolant pipe rupture (a 20 mm hot-leg
+wall at 15.5 MPa), coolant boiling and pump cavitation (fouled steam generator → boiling →
+cavitation → loss of flow), structural collapse, plasma disruption (Greenwald), and a
+multi-system cascade (pump off → wall overheats → disruption). `scenarios.test.ts` proves
+the simulation raises each failure and the chains. Players load them from the start
+dialog under **Failure scenes**.
+
+There is no separate pump-mechanical scene: in this model a pump fails by cavitation when
+its loop nears saturation, which is what the coolant scene shows. A pump made to cavitate
+on its own would need an unrealistic NPSH requirement (> 1000 m) for this loop.
 
 `e2e/showroom.mjs` (in CI, against the production build) checks the empty hall, the
 reference plant reaching every stage to fusion with machine sound, then for every
 scenario: the simulation raises the family, its own effect is on screen, the facility is
 in an alarm state, failure cinema opens at the root cause and exits cleanly, and Return
-to Build restores the undamaged design with no glass cracks left. It also checks the six
+to Build restores the undamaged design with no glass cracks left. It also checks the seven
 scenarios do not all look the same.
 
 ## Developer effects panel
@@ -287,5 +346,8 @@ never changes facility state and is not in the product UI).
 - Debris cannot damage other parts (see "Secondary propagation").
 - Software GL (SwiftShader, llvmpipe) starts on LOW and renders ~1 frame/s; replay and
   effects then run slower than their nominal rate because frame steps are capped.
-- Pre-fractured pieces are generated per failure from the part's envelope; authored
-  break groups per product arrive with the finished-product visuals (R4).
+- Fragments are generated per failure from the part's envelope and its internal
+  materials, not authored break groups; the breach is a clip-plane gouge (its rim is a
+  clean cut, not torn metal).
+- A pipe rupture's blowdown length is presentation: the simulation opens the loop but
+  does not model the depressurisation transient.

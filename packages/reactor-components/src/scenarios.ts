@@ -38,6 +38,19 @@ function reference(options: ReferencePlantOptions, thinWall = false) {
   };
 }
 
+/** The reference plant with its hot-leg pipe's wall thinned to `wallM`. */
+function thinHotLeg(wallM: number) {
+  return (world: SimulationWorld) => {
+    buildReferencePlant(world);
+    const pipe = world.requireComponent("pipe-hot");
+    const definition = getComponentDefinition("coolant-pipe");
+    const dims = definition.dimensionsOf!(pipe.geometry);
+    const { geometry, connectionPoints } = definition.reshape({ ...dims, wallM }, pipe.materialId);
+    world.reshapeComponent("pipe-hot", geometry, connectionPoints);
+    world.solve();
+  };
+}
+
 export const SHOWROOM_SCENARIOS: readonly ShowroomScenario[] = Object.freeze([
   {
     id: "magnet-quench",
@@ -60,8 +73,18 @@ export const SHOWROOM_SCENARIOS: readonly ShowroomScenario[] = Object.freeze([
     build: reference({ parameterOverrides: { bus: { crossSectionM2: 1e-6 } } }),
   },
   {
+    id: "pipe-rupture",
+    name: "Coolant pipe rupture",
+    fault: "Hot-leg pipe with a 20 mm wall instead of 60 mm, on a 15.5 MPa water loop.",
+    expectedFailureType: "pipe_rupture",
+    withinSec: 5,
+    build: thinHotLeg(0.02),
+  },
+  {
+    // The pump's failure: as the loop nears saturation the suction head left above the
+    // vapour pressure falls below what the pump needs, it cavitates and loses its head.
     id: "coolant-boiling",
-    name: "Coolant boiling",
+    name: "Coolant boiling & pump cavitation",
     fault:
       "Fouled steam generator (0.1 MW/K instead of 60 MW/K) and a primary pump rated for 300 kg/s.",
     expectedFailureType: "coolant_boiling",

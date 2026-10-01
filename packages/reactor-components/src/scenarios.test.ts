@@ -34,9 +34,39 @@ describe("showroom fault scenarios", () => {
     ]);
   });
 
+  it(
+    "the coolant scene ends with the pump cavitating and the flow collapsing",
+    { timeout: 60000 },
+    () => {
+      const world = buildScenario("coolant-boiling");
+      for (let t = 0; t < 700; t += 1) {
+        world.stepMany(60);
+        if (world.getSnapshot().failures.some((f) => f.failureType === "loss_of_flow")) break;
+      }
+      const lost = world.getSnapshot().failures.find((f) => f.failureType === "loss_of_flow")!;
+      expect(lost.causalChain!.map((l) => l.failureType)).toEqual([
+        "coolant_boiling",
+        "pump_cavitation",
+        "loss_of_flow",
+      ]);
+    },
+  );
+
+  it("the ruptured hot leg opens its loop", () => {
+    const world = buildScenario("pipe-rupture");
+    world.stepMany(120);
+    const snapshot = world.getSnapshot();
+    expect(snapshot.failures.find((f) => f.failureType === "pipe_rupture")?.componentId).toBe(
+      "pipe-hot",
+    );
+    expect(snapshot.plant.loops.find((l) => l.componentIds.includes("pipe-hot"))!.closed).toBe(
+      false,
+    );
+  });
+
   it("every scenario is a distinct design", () => {
     const ids = SHOWROOM_SCENARIOS.map((s) => s.id);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids).toHaveLength(6);
+    expect(ids).toHaveLength(7);
   });
 });

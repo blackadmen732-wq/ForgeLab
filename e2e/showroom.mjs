@@ -132,6 +132,7 @@ const SCENARIOS = [
   { id: "magnet-quench", family: "quench", effect: "vapor", speed: 5 },
   { id: "electrical-bus-fault", family: "electrical", effect: "sparks", speed: 10 },
   { id: "coolant-boiling", family: "coolant", effect: "steam", speed: "max" },
+  { id: "pipe-rupture", family: "coolant", effect: "spray", speed: 1 },
   { id: "structural-collapse", family: "structural", effect: "debris (rigid)", speed: 1 },
   { id: "plasma-disruption", family: "disruption", effect: "dust", speed: 2 },
   { id: "cascade", family: "disruption", effect: "dust", speed: "max" },
@@ -231,7 +232,7 @@ for (const scenario of SCENARIOS) {
   );
 }
 
-await check("the six failure scenarios do not all look the same", async () => {
+await check("the seven failure scenarios do not all look the same", async () => {
   const distinct = new Set(signatures.values());
   expect(
     distinct.size >= 4,

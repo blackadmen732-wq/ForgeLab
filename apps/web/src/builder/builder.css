@@ -1237,6 +1237,10 @@
   width: 14px;
   height: 14px;
 }
+.start__note {
+  margin: -4px 0 2px;
+  font-size: var(--fs-sm);
+}
 .start__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
