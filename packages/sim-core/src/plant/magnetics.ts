@@ -176,3 +176,34 @@ export function cylinderSurroundsCoaxially(
   const bore = outer.geometry.radiusM - (outer.geometry.wallThicknessM ?? 0);
   return inner.geometry.radiusM <= bore + 1e-9;
 }
+
+/**
+ * Self-inductance of an ideal toroidal winding of circular cross-section (major radius R,
+ * minor radius a, N turns): L = μ₀ N² (R − √(R² − a²)). Exact for a continuous winding.
+ */
+export function toroidalInductanceH(
+  turns: number,
+  majorRadiusM: number,
+  minorRadiusM: number,
+): number {
+  if (!(majorRadiusM > minorRadiusM) || !(minorRadiusM > 0)) return 0;
+  return (
+    VACUUM_PERMEABILITY_H_PER_M *
+    turns *
+    turns *
+    (majorRadiusM - Math.sqrt(majorRadiusM * majorRadiusM - minorRadiusM * minorRadiusM))
+  );
+}
+
+/**
+ * Self-inductance of a single-layer solenoid (radius r, length ℓ, N turns), Wheeler's
+ * formula: L = μ₀ N² π r² / (ℓ + 0.9 r). Within about 1 % for ℓ > 0.8 r
+ * (H. A. Wheeler, Proc. IRE 16 (1928) 1398). DOCUMENTED APPROXIMATION for thick windings.
+ */
+export function solenoidInductanceH(turns: number, radiusM: number, lengthM: number): number {
+  if (!(radiusM > 0) || !(lengthM > 0)) return 0;
+  return (
+    (VACUUM_PERMEABILITY_H_PER_M * turns * turns * Math.PI * radiusM * radiusM) /
+    (lengthM + 0.9 * radiusM)
+  );
+}

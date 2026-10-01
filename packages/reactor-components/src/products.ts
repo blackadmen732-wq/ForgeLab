@@ -93,7 +93,7 @@ export const heating = (direction: "in" | "out", ratedPowerW: number): PortSpec 
 export type PortSource = PortSpec | ((d: Readonly<Record<string, number>>) => PortSpec);
 
 const pipeBore = (d: Readonly<Record<string, number>>) =>
-  2 * ((d["outerRadiusM"] ?? 0.35) - Math.min(d["wallM"] ?? 0.02, (d["outerRadiusM"] ?? 0.35) / 3));
+  2 * ((d["outerRadiusM"] ?? 0.39) - Math.min(d["wallM"] ?? 0.06, (d["outerRadiusM"] ?? 0.39) / 3));
 
 export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSource>>>> = {
   "reactor-chamber": {
@@ -356,9 +356,16 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
         purpose: "Reacts the enormous magnetic hoop force.",
       },
       {
+        id: "winding",
+        name: "Nb₃Sn superconducting strands",
+        substanceId: "nb3sn",
+        purpose:
+          "Carries the coil current with no resistance while it stays below its critical surface.",
+      },
+      {
         id: "stabiliser",
         name: "Copper stabiliser",
-        substanceId: "copper",
+        substanceId: "copper-ofhc",
         purpose: "Carries current during a quench while protection dumps the energy.",
       },
       {
@@ -648,13 +655,20 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     ],
     internalsSetMass: false,
     capabilities: ["fluid", "thermal", "structural"],
-    ratings: () => [rating("Rating", "15.5 MPa · 620 K")],
+    ratings: () => [rating("Holds", "loop pressure + pump head")],
     failureModes: [
       {
         id: "restriction",
         name: "Flow restriction",
         system: "fluid",
         description: "Too narrow or too long: the loop cannot reach its rated flow.",
+      },
+      {
+        id: "rupture",
+        name: "Pressure rupture",
+        system: "fluid",
+        description:
+          "Hoop stress from the loop pressure exceeds the wall's yield at its temperature: the wall tears and the loop blows down.",
       },
     ],
     audio: "pipe",

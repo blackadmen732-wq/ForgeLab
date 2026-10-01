@@ -12,6 +12,11 @@ import {
   effectivenessUniformTemperature,
   gaussianSolve,
   getCoolantFluid,
+  lameHoopStressPa,
+  loopPressurePa,
+  npshAvailableM,
+  waterSaturationPressurePa,
+  waterSaturationTemperatureK,
   greenwaldDensityLimitM3,
   ipb98y2ConfinementTimeS,
   magneticPressurePa,
@@ -23,7 +28,9 @@ import {
   seriesPumpOperatingPoint,
   solenoidOnAxisFieldT,
   solveIsland,
+  solenoidInductanceH,
   thermalDerating,
+  toroidalInductanceH,
   toroidalCoilTensionStressPa,
   toroidalFieldT,
   toroidalPlasmaVolumeM3,
@@ -328,5 +335,54 @@ describe("material properties at temperature", () => {
     expect(resistivityAt("copper", 400)).toBeCloseTo(2.402e-8, 12);
     expect(resistivityAt("copper-ofhc", 600)).toBeCloseTo(3.792e-8, 12);
     expect(resistivityAt("structural-steel", 600)).toBe(1.6e-7);
+  });
+});
+
+describe("water saturation and pressure boundaries", () => {
+  it("reproduces the IAPWS-IF97 verification values (Tables 35 and 36)", () => {
+    expect(waterSaturationPressurePa(300) / 1e6).toBeCloseTo(0.353658941e-2, 9);
+    expect(waterSaturationPressurePa(500) / 1e6).toBeCloseTo(0.263889776e1, 6);
+    expect(waterSaturationPressurePa(600) / 1e6).toBeCloseTo(0.123443146e2, 6);
+    expect(waterSaturationTemperatureK(0.1e6)).toBeCloseTo(0.372755919e3, 5);
+    expect(waterSaturationTemperatureK(1e6)).toBeCloseTo(0.453035632e3, 5);
+    expect(waterSaturationTemperatureK(10e6)).toBeCloseTo(0.584149488e3, 5);
+  });
+
+  it("boils a PWR primary at 344.8 °C and pressurises it along saturation beyond", () => {
+    const water = getCoolantFluid("pressurized-water");
+    expect(waterSaturationTemperatureK(15.5e6)).toBeCloseTo(617.94, 1);
+    expect(loopPressurePa(water, 573.15)).toBe(15.5e6);
+    expect(loopPressurePa(water, 630)).toBeCloseTo(waterSaturationPressurePa(630), 6);
+    expect(loopPressurePa(water, 630)).toBeGreaterThan(17e6);
+    const helium = getCoolantFluid("helium");
+    expect(loopPressurePa(helium, 2 * 673.15)).toBeCloseTo(16e6, 3);
+  });
+
+  it("loses suction head as water nears saturation; gas never cavitates", () => {
+    const water = getCoolantFluid("pressurized-water");
+    expect(npshAvailableM(water, 573.15)).toBeGreaterThan(500);
+    expect(npshAvailableM(water, 620)).toBe(0);
+    expect(npshAvailableM(getCoolantFluid("helium"), 2000)).toBe(Infinity);
+  });
+
+  it("gives Lamé's hoop stress, tending to p·r/t for a thin wall", () => {
+    expect(lameHoopStressPa(10e6, 0.99, 1)).toBeCloseTo((10e6 * 0.995) / 0.01, -6);
+    // r_o = 2 r_i: σ = p (4 + 1) / (4 − 1).
+    expect(lameHoopStressPa(3e6, 1, 2)).toBeCloseTo(5e6, 3);
+  });
+});
+
+describe("coil inductance", () => {
+  it("gives the ideal toroid μ0 N² (R − √(R² − a²)) and tends to the thin-torus limit", () => {
+    const mu0 = 4e-7 * Math.PI;
+    expect(toroidalInductanceH(100, 2, 0.5)).toBeCloseTo(mu0 * 1e4 * (2 - Math.sqrt(3.75)), 12);
+    // a ≪ R: L → μ0 N² a² / 2R.
+    expect(toroidalInductanceH(100, 100, 1) / ((mu0 * 1e4 * 1) / 200)).toBeCloseTo(1, 4);
+  });
+
+  it("matches Wheeler's formula in its original units (μH, inches)", () => {
+    // r = ℓ = 1 inch, N = 10: L = r² N² / (9 r + 10 ℓ) μH = 100 / 19 μH.
+    const inch = 0.0254;
+    expect(solenoidInductanceH(10, inch, inch) * 1e6).toBeCloseTo(100 / 19, 1);
   });
 });

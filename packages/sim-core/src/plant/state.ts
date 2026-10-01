@@ -54,6 +54,21 @@ export interface MagnetState {
   readonly tripped: boolean;
   /** Electrical demand of the cryoplant (superconducting) or I²R (resistive), W. */
   readonly powerDemandW: number;
+  /** Self-inductance of the winding (ideal toroid or Wheeler solenoid), H. */
+  readonly inductanceH: number;
+  /** Magnetic energy stored in the winding, ½ L I², J. */
+  readonly storedEnergyJ: number;
+  /** Seconds since the quench began (−1 if it has not quenched). */
+  readonly quenchAgeS: number;
+  /** Whether protection has detected the quench and opened the dump circuit. */
+  readonly dumping: boolean;
+  /** Power going into the dump resistor, I² L / τ, W. */
+  readonly dumpPowerW: number;
+  /**
+   * Helium boiled off because heat reaching the cold mass exceeds the refrigeration
+   * (ṁ = Q_deficit / h_fg at 4.2 K), kg/s. Superconducting coils only.
+   */
+  readonly heliumBoilOffKgS: number;
 }
 
 export type PlasmaPhase = "off" | "ramp-up" | "flat-top" | "shutdown" | "ended" | "disrupted";
@@ -155,6 +170,8 @@ export interface CoolantLoopSummary {
   readonly massFlowKgS: number;
   readonly ratedMassFlowKgS: number;
   readonly pressureRisePa: number;
+  /** Loop pressure from its bulk temperature (system pressure, saturation or ideal gas). */
+  readonly pressurePa: number;
   readonly temperatureK: number;
   readonly heatPickupW: number;
   readonly heatRejectedW: number;

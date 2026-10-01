@@ -474,7 +474,13 @@ export const TF_COIL_SET = define({
     };
   },
   dimensionsOf: torusDims,
-  presets: { turns: 2412, currentA: 68000, superconducting: true, cryoCapacityW: 30e3 },
+  presets: {
+    turns: 2412,
+    currentA: 68000,
+    superconducting: true,
+    conductor: "nb3sn",
+    cryoCapacityW: 30e3,
+  },
   keyProperty: "5.3 T · SC",
 });
 
@@ -702,14 +708,14 @@ export const COOLANT_PIPE = define({
   type: "coolant-pipe",
   name: "Coolant Pipe",
   description:
-    "Steel pipe, 4 m long with a 660 mm bore by default. Friction loss follows Darcy–Weisbach; it also holds coolant inventory.",
+    "Steel pipe, 4 m long with a 660 mm bore and a 60 mm wall by default. Friction loss follows Darcy–Weisbach; it holds coolant inventory, and its wall must hold the loop pressure (Lamé hoop stress against the steel's yield at temperature).",
   category: "Fluids",
   role: "coolant-pipe",
   material: MaterialIds.StructuralSteel,
   dimensions: [
     dim("lengthM", "Length", 4, 0.5, 50),
-    dim("outerRadiusM", "Outer radius", 0.35, 0.02, 1.5),
-    dim("wallM", "Wall thickness", 0.02, 0.002, 0.2),
+    dim("outerRadiusM", "Outer radius", 0.39, 0.02, 1.5),
+    dim("wallM", "Wall thickness", 0.06, 0.002, 0.3),
   ],
   shape: (d) => {
     const L = d["lengthM"]!;
@@ -726,7 +732,7 @@ export const COOLANT_PIPE = define({
   },
   dimensionsOf: (g) =>
     g.kind === "cylinder"
-      ? { lengthM: g.heightM, outerRadiusM: g.radiusM, wallM: g.wallThicknessM ?? 0.02 }
+      ? { lengthM: g.heightM, outerRadiusM: g.radiusM, wallM: g.wallThicknessM ?? 0.06 }
       : {},
   keyProperty: "DN650 · 4 m",
 });

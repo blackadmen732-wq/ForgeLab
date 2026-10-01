@@ -168,8 +168,8 @@ export function buildReferencePlant(
 
   // Primary coolant loop: pump → pipe → vessel → blanket → steam generator → pipe → pump.
   put("coolant-pump", "pump", vec3(-6, 1, -16), { label: "Primary Pump" });
-  put("coolant-pipe", "pipe-hot", vec3(-2, 0.35, -16), { label: "Supply Pipe" });
-  put("coolant-pipe", "pipe-cold", vec3(-10, 0.35, -16), { label: "Return Pipe" });
+  put("coolant-pipe", "pipe-hot", vec3(-2, 0.39, -16), { label: "Supply Pipe" });
+  put("coolant-pipe", "pipe-cold", vec3(-10, 0.39, -16), { label: "Return Pipe" });
   put("steam-generator", "steam-gen", vec3(8, 4, -18), { label: "Steam Generator" });
   join(["pump", "outlet"], ["pipe-hot", "a"]);
   join(["pipe-hot", "b"], ["vessel", "coolant-in"]);

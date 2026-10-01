@@ -250,6 +250,113 @@ describe("explained failure chains", () => {
     expect(expected).toBeGreaterThan(1.05);
   });
 
+  it("a hot-leg pipe with too thin a wall ruptures and the loop blows down", () => {
+    const world = plant();
+    const pipe = world.requireComponent("pipe-hot");
+    const { geometry, connectionPoints } = getComponentDefinition("coolant-pipe").reshape(
+      { lengthM: 4, outerRadiusM: 0.39, wallM: 0.02 },
+      pipe.materialId,
+    );
+    world.reshapeComponent("pipe-hot", geometry, connectionPoints);
+    world.solve();
+    seconds(world, 2);
+    const snapshot = world.getSnapshot();
+    const rupture = find(snapshot, "pipe_rupture", "pipe-hot");
+    expect(rupture).toBeDefined();
+    expect(rupture!.cause).toContain("Lamé");
+    expect(rupture!.measuredValue).toBeGreaterThan(rupture!.limitValue);
+    const loop = snapshot.plant.loops.find((l) => l.componentIds.includes("pipe-hot"))!;
+    expect(loop.closed).toBe(false);
+    expect(loop.massFlowKgS).toBe(0);
+    const lost = find(snapshot, "loss_of_flow");
+    expect(lost?.cause).toContain('pipe "pipe-hot" has ruptured');
+    expect(lost!.causalChain!.map((l) => l.failureType)).toEqual(["pipe_rupture", "loss_of_flow"]);
+  });
+
+  it("the default pipe holds its loop with margin", () => {
+    const world = plant();
+    seconds(world, 2);
+    const pipe = world.getSnapshot().components.find((c) => c.id === "pipe-hot")!;
+    const u = pipe.state.plant.outputs["hoopUtilization"]!;
+    expect(u).toBeGreaterThan(0.2);
+    expect(u).toBeLessThan(0.6);
+    expect(find(world.getSnapshot(), "pipe_rupture")).toBeUndefined();
+  });
+
+  it(
+    "an overheating loop boils, its pump cavitates and the flow collapses",
+    { timeout: 60000 },
+    () => {
+      const world = plant({
+        omit: ["interlock", "wall-sensor"],
+        parameterOverrides: {
+          pump: { ratedMassFlowKgS: 300 },
+          "steam-gen": { secondaryConductanceWK: 1e5 },
+        },
+      });
+      let lost: FailureEvent | undefined;
+      for (let i = 0; i < 700 && lost === undefined; i += 1) {
+        seconds(world, 1);
+        lost = find(world.getSnapshot(), "loss_of_flow");
+      }
+      const snapshot = world.getSnapshot();
+      const cavitation = find(snapshot, "pump_cavitation", "pump")!;
+      expect(cavitation).toBeDefined();
+      expect(cavitation.cause).toContain("vapour pressure");
+      expect(find(snapshot, "coolant_boiling")!.timestampSec).toBeLessThan(cavitation.timestampSec);
+      expect(lost).toBeDefined();
+      expect(lost!.cause).toContain("cavitating");
+      expect(lost!.causalChain!.map((l) => l.failureType)).toEqual([
+        "coolant_boiling",
+        "pump_cavitation",
+        "loss_of_flow",
+      ]);
+    },
+  );
+
+  it(
+    "a quench holds its current until protection detects it, then dumps it",
+    { timeout: 60000 },
+    () => {
+      const world = plant({
+        parameterOverrides: {
+          "tf-coils": {
+            staticHeatLeakW: 1e6,
+            coldMassSpecificHeatJkgK: 0.1,
+            quenchDetectionDelayS: 2,
+          },
+        },
+      });
+      const coilState = () =>
+        world.getSnapshot().components.find((c) => c.id === "tf-coils")!.state.plant.magnet!;
+      seconds(world, 1);
+      const before = coilState();
+      expect(before.storedEnergyJ).toBeCloseTo(0.5 * before.inductanceH * before.currentA ** 2, 0);
+      expect(before.storedEnergyJ).toBeGreaterThan(1e9);
+      let quench: FailureEvent | undefined;
+      for (let i = 0; i < 6000 && quench === undefined; i += 1) {
+        world.stepMany(1);
+        quench = find(world.getSnapshot(), "quench", "tf-coils");
+      }
+      expect(quench).toBeDefined();
+      expect(quench!.cause).toContain("½LI²");
+      // Heat the refrigeration could not take was boiling helium before the quench.
+      expect(coilState().heliumBoilOffKgS).toBeGreaterThan(0);
+      // Still holding its current inside the detection time…
+      seconds(world, 1);
+      const held = coilState();
+      expect(held.quenched).toBe(true);
+      expect(held.dumping).toBe(false);
+      expect(held.currentA).toBeCloseTo(before.currentA, 6);
+      // …then the dump circuit opens and the current decays with τ.
+      seconds(world, 1.5);
+      const dumped = coilState();
+      expect(dumped.dumping).toBe(true);
+      expect(dumped.currentA).toBeLessThan(held.currentA);
+      expect(dumped.dumpPowerW).toBeGreaterThan(0);
+    },
+  );
+
   it("fuelling past the Greenwald limit disrupts with an explanation", { timeout: 60000 }, () => {
     const world = plant({ parameterOverrides: { injector: { targetDensityM3: 2e20 } } });
     let disruption: FailureEvent | undefined;

@@ -75,7 +75,10 @@ export function familyOf(failure: FailureEvent, part: ComponentReading | undefin
     case "quench":
       return "quench";
     case "coolant_boiling":
+    case "pipe_rupture":
       return "coolant";
+    case "pump_cavitation":
+      return "flow";
     case "loss_of_flow":
       return "flow";
     case "interlock_trip":

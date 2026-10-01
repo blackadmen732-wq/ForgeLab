@@ -72,7 +72,8 @@ makes fusion engineering hard.
 ## Phase 3 — Fluid systems ✅ V0.1
 
 **In V0.1:** Closed single-phase loops (pressurised water, helium), Darcy–Weisbach with Swamee–Jain friction, parabolic pump curves, ε-NTU heat exchangers, loss-of-flow failures.
-**Still missing:** Two-phase flow, flow transients, pressure-boundary failures.
+**Pressure boundary and cavitation:** a loop is held at its system pressure (15.5 MPa water, 8 MPa helium); an overheated water loop boils and its pressure follows the IAPWS-IF97 saturation curve, a helium loop pressurises as an ideal gas. Each pipe's peak hoop stress (Lamé, at loop pressure plus pump head) is checked against its yield at temperature: past it the pipe ruptures, the loop opens and circulation stops. Pumps lose head when the available NPSH, (p − p_sat)/ρg, falls below their rated NPSH (linear head loss — an approximation), so a boiling loop cavitates its pumps and the flow collapses. Pipe, pump and exchanger bodies ride at their loop temperature.
+**Still missing:** Two-phase flow, flow transients, a pressuriser and relief valves (an overheating loop's pressure is only followed along saturation), blowdown dynamics after a break, cavitation erosion.
 
 Incompressible flow in pipe networks. Pressure drop from Darcy–Weisbach with explicit
 friction-factor correlations, pumps with real head/flow curves, and heat exchangers tying
@@ -83,7 +84,8 @@ back into Phase 2. Coolant loops become buildable and can be starved, cavitated 
 ## Phase 4 — Magnetic fields ✅ V0.1
 
 **In V0.1:** Ideal toroidal winding and on-axis finite solenoid fields, Princeton-D TF tension and solenoid hoop stress, quench. A coil's conductor is either _Rated_ (a fixed critical temperature) or _NbTi_, whose quench temperature is its critical surface Tc(B) at the coil's live peak field (Bottura 2000: Tc0 = 9.2 K, Bc20 = 14.5 T); above Bc20 an NbTi coil cannot superconduct and quenches as soon as it is energised.
-**Still missing:** Biot–Savart fields from real coil shapes, inter-coil forces, field ripple; the current-sharing temperature (needs Jc(B,T) and the winding current density — Tc(B) is an upper bound on the margin); a sourced Nb₃Sn/REBCO critical surface; coil inductance and charging.
+**Quench protection:** each coil's self-inductance (ideal toroid μ₀N²(R − √(R² − a²)); Wheeler's formula for solenoids) and stored energy ½LI² are published. A quenched coil holds its current for the protection system's detection time, then discharges through the dump resistor with its time constant (dump power I²L/τ). Heat reaching a cold mass beyond its refrigeration boils helium at ṁ = Q/h_fg (20.7 kJ/kg).
+**Still missing:** Biot–Savart fields from real coil shapes, inter-coil forces, field ripple; the current-sharing temperature (needs Jc(B,T) and the winding current density — Tc(B) is an upper bound on the margin); a REBCO critical surface; normal-zone propagation and hot-spot temperature inside the winding; charging.
 
 Coil geometry to field: Biot–Savart for simple configurations, with documented
 approximations for solenoids and toroids. Magnetic forces on conductors and the resulting

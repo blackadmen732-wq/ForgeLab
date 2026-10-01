@@ -297,8 +297,10 @@ export {
 export {
   magneticHoopStressPa,
   magneticPressurePa,
+  solenoidInductanceH,
   solenoidOnAxisFieldT,
   toroidalCoilTensionStressPa,
+  toroidalInductanceH,
   toroidalFieldT,
   torusEnclosesTorus,
   cylinderSurroundsCoaxially,
@@ -306,11 +308,18 @@ export {
 
 export {
   COOLANT_FLUIDS,
+  WATER_CRITICAL_PRESSURE_PA,
+  WATER_CRITICAL_TEMPERATURE_K,
   darcyFrictionFactor,
   effectivenessUniformTemperature,
   getCoolantFluid,
+  lameHoopStressPa,
+  loopPressurePa,
+  npshAvailableM,
   pumpCurve,
   seriesPumpOperatingPoint,
+  waterSaturationPressurePa,
+  waterSaturationTemperatureK,
   type CoolantFluid,
   type CoolantFluidId,
 } from "./plant/fluids.js";

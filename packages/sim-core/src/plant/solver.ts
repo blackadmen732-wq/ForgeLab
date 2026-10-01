@@ -1,4 +1,4 @@
-import { criticalTemperatureK, getMaterial, getSubstance } from "@forgelab/materials";
+import { criticalTemperatureK, findFluid, getMaterial, getSubstance } from "@forgelab/materials";
 import {
   BOLTZMANN_J_PER_K,
   STANDARD_ATMOSPHERE_PA,
@@ -24,7 +24,7 @@ import {
   sectionAreaPerpendicularToLocalAxis,
 } from "../geometry.js";
 import type { SimulationSettings } from "../settings.js";
-import { resistivityAt } from "../materialsAt.js";
+import { deratingNote, resistivityAt, thermalDerating } from "../materialsAt.js";
 import { extentAlongAxis } from "../systems/members.js";
 import { assessConfidence } from "./confidence.js";
 import {
@@ -58,13 +58,19 @@ import {
   effectivenessUniformTemperature,
   getCoolantFluid,
   hydraulicResistance,
+  lameHoopStressPa,
+  loopPressurePa,
+  npshAvailableM,
   pumpCurve,
   seriesPumpOperatingPoint,
+  waterSaturationPressurePa,
 } from "./fluids.js";
 import { dtFusionPower } from "./fusion.js";
 import {
   coaxialRelation,
   magneticHoopStressPa,
+  solenoidInductanceH,
+  toroidalInductanceH,
   magneticPressurePa,
   solenoidOnAxisFieldT,
   toroidalCoilTensionStressPa,
@@ -126,6 +132,10 @@ interface ComponentRuntime {
   disabledReason: string;
   coilCurrentA: number;
   quenched: boolean;
+  /** Simulated time the coil quenched, s (−1: never). */
+  quenchedAtSec: number;
+  /** Helium boiled off in the last step, kg/s (superconducting coils). */
+  heliumBoilOffKgS: number;
   generatorOutputW: number;
 }
 
@@ -368,6 +378,8 @@ export class PlantSolver {
         disabledReason: "",
         coilCurrentA: 0,
         quenched: false,
+        quenchedAtSec: -1,
+        heliumBoilOffKgS: 0,
         generatorOutputW: 0,
       });
     }
@@ -709,6 +721,12 @@ export class PlantSolver {
       const supply = work.supply.get(coil.id) ?? 0;
       const superconducting = booleanParameter(p, "superconducting");
       const rated = numberParameter(p, "currentA");
+      // A quenched coil keeps its current until protection has detected the quench and
+      // opened the dump circuit; then it decays through the dump resistor.
+      const quenchAgeS = runtime.quenched ? work.timeSec - runtime.quenchedAtSec : -1;
+      const detectionDelayS = numberParameter(p, "quenchDetectionDelayS");
+      const dumping = runtime.quenched && quenchAgeS >= detectionDelayS;
+      const holding = runtime.quenched && !dumping;
       const energised =
         booleanParameter(p, "enabled") &&
         !runtime.disabled &&
@@ -718,6 +736,7 @@ export class PlantSolver {
 
       let target = 0;
       if (energised) target = superconducting ? rated : rated * Math.sqrt(Math.min(1, supply));
+      if (holding) target = runtime.coilCurrentA;
       // Coils are energised instantly at the start of a run (V0.1 does not model charging);
       // de-energising follows the protection dump time constant.
       if (target >= runtime.coilCurrentA || dt === 0) {
@@ -783,6 +802,8 @@ export class PlantSolver {
         });
       }
 
+      const inductanceH = coilInductanceH(coil, turns);
+      const tau = numberParameter(p, "dumpTimeConstantS");
       work.magnets.set(
         coil.id,
         Object.freeze({
@@ -795,6 +816,13 @@ export class PlantSolver {
           quenched: runtime.quenched,
           tripped: runtime.disabled,
           powerDemandW: work.electrical.get(coil.id)?.demandW ?? 0,
+          inductanceH,
+          storedEnergyJ: 0.5 * inductanceH * current * current,
+          quenchAgeS,
+          dumping,
+          // LR discharge: the dump resistor R = L / τ takes I² R.
+          dumpPowerW: dumping && tau > 0 ? (current * current * inductanceH) / tau : 0,
+          heliumBoilOffKgS: runtime.heliumBoilOffKgS,
         }),
       );
     }
@@ -1411,6 +1439,11 @@ export class PlantSolver {
       closed: boolean;
       rated: number;
       pressureRisePa: number;
+      /** Loop pressure from its bulk temperature (saturation or ideal gas). */
+      pressurePa: number;
+      /** Pumps whose suction head is below their rating: id → [available, required] m. */
+      cavitating: Map<string, readonly [number, number]>;
+      rupturedPipes: string[];
     }
     const loopWork: LoopWork[] = [];
 
@@ -1428,7 +1461,16 @@ export class PlantSolver {
       );
       if (mixed)
         work.diagnostics.push(`Loop ${id} mixes coolants; V0.1 uses ${fluid.name} throughout.`);
-      const closed = links.length >= group.length && group.length >= 2;
+      // A ruptured pipe opens the loop: its coolant blows down and nothing circulates.
+      const rupturedPipes = group.filter(
+        (m) => topology.byId.get(m)!.role === "coolant-pipe" && this.#components.get(m)!.disabled,
+      );
+      const closed =
+        links.length >= group.length && group.length >= 2 && rupturedPipes.length === 0;
+      const loopTemperatureK = this.#loops.get(id)?.temperatureK ?? ambientK;
+      const pressurePa = loopPressurePa(fluid, loopTemperatureK);
+      const npshA = npshAvailableM(fluid, loopTemperatureK);
+      const cavitating = new Map<string, readonly [number, number]>();
 
       // Inventory.
       let volumeM3 = 0;
@@ -1459,12 +1501,23 @@ export class PlantSolver {
         })
         .map((m) => {
           const pp = topology.byId.get(m)!.parameters;
-          return pumpCurve({
+          const curve = pumpCurve({
             ratedHeadM: numberParameter(pp, "ratedHeadM"),
             ratedMassFlowKgS: numberParameter(pp, "ratedMassFlowKgS"),
             speedFraction: Math.cbrt(Math.min(1, work.supply.get(m) ?? 0)),
             fluid,
           });
+          // Cavitation: below its rated NPSH a pump's head falls, here in proportion to
+          // the head available (DOCUMENTED APPROXIMATION — real head-drop curves are
+          // steeper and pump-specific). Water at saturation leaves no head at all.
+          const required = numberParameter(pp, "npshRequiredM");
+          const headFactor = required > 0 ? Math.min(1, npshA / required) : 1;
+          const record = work.outputs.get(m) ?? {};
+          record["npshAvailableM"] = Number.isFinite(npshA) ? npshA : -1;
+          record["headFraction"] = headFactor;
+          work.outputs.set(m, record);
+          if (headFactor < 1) cavitating.set(m, [npshA, required]);
+          return { ...curve, shutoffPressurePa: curve.shutoffPressurePa * headFactor };
         });
 
       let massFlowKgS = 0;
@@ -1528,6 +1581,9 @@ export class PlantSolver {
         closed,
         rated,
         pressureRisePa,
+        pressurePa,
+        cavitating,
+        rupturedPipes,
       });
     });
 
@@ -1621,6 +1677,10 @@ export class PlantSolver {
           const excess = h > 0 ? ((runtime.temperatureK - tOp) * c) / h : 0;
           const removed = Math.max(0, Math.min(available, heatNow + excess));
           add(component.id, -removed);
+          // Heat the refrigeration cannot take boils the helium bath: ṁ = Q / h_fg.
+          if (step === 0) runtime.heliumBoilOffKgS = 0;
+          runtime.heliumBoilOffKgS +=
+            (Math.max(0, heatNow - removed) / HELIUM_LATENT_HEAT_J_PER_KG) * weight;
           continue;
         }
         const area = outerArea.get(component.id)!;
@@ -1646,10 +1706,17 @@ export class PlantSolver {
           }
         }
       }
-      // Heat exchanger bodies ride at their loop temperature.
+      // Heat-exchanger, pipe and pump bodies ride at their loop temperature: thin walls
+      // wetted by the coolant (a ruptured pipe keeps its last temperature).
       for (const loop of loopWork) {
-        for (const hx of loop.exchangers)
-          this.#components.get(hx.id)!.temperatureK = this.#loops.get(loop.id)!.temperatureK;
+        const t = this.#loops.get(loop.id)!.temperatureK;
+        for (const hx of loop.exchangers) this.#components.get(hx.id)!.temperatureK = t;
+        for (const m of loop.members) {
+          const role = topology.byId.get(m)!.role;
+          const runtime = this.#components.get(m)!;
+          if ((role === "coolant-pipe" || role === "coolant-pump") && !runtime.disabled)
+            runtime.temperatureK = t;
+        }
       }
     }
 
@@ -1663,6 +1730,7 @@ export class PlantSolver {
         massFlowKgS: loop.massFlowKgS,
         ratedMassFlowKgS: loop.rated,
         pressureRisePa: loop.pressureRisePa,
+        pressurePa: loopPressurePa(loop.fluid, runtime.temperatureK),
         temperatureK: runtime.temperatureK,
         heatPickupW: loopPickup.get(loop.id) ?? 0,
         heatRejectedW: loopRejected.get(loop.id) ?? 0,
@@ -1687,7 +1755,23 @@ export class PlantSolver {
         }
       }
 
-      if (dt > 0)
+      this.#pressureBoundaries(
+        work,
+        loop.id,
+        loop.members,
+        loop.fluid,
+        runtime.temperatureK,
+        loop.pressureRisePa,
+      );
+      if (dt > 0) {
+        this.#cavitation(
+          work,
+          loop.id,
+          loop.members,
+          loop.fluid,
+          runtime.temperatureK,
+          loop.cavitating,
+        );
         this.#loopFailures(
           work,
           loop.id,
@@ -1697,7 +1781,9 @@ export class PlantSolver {
           loop.closed,
           runtime.temperatureK,
           loop.fluid,
+          loop.rupturedPipes,
         );
+      }
     }
 
     for (const [id, q] of toCoolant) work.heatToCoolantW.set(id, q);
@@ -1775,6 +1861,108 @@ export class PlantSolver {
     return (resistivityAt(component.materialId, temperatureK) * lengthOverArea) / 2;
   }
 
+  /**
+   * Pressure boundary of each coolant pipe: peak hoop stress at the bore (Lamé) under the
+   * loop pressure plus the pumps' pressure rise (the highest pressure in the loop, at the
+   * pump discharge — a conservative bound), against the pipe material's yield strength at
+   * its temperature. Exceeding it is gross yielding of the wall: the pipe ruptures and the
+   * loop opens. Yield is used rather than the ultimate strength, so this is the onset of
+   * plastic collapse, not a burst prediction.
+   */
+  #pressureBoundaries(
+    work: Work,
+    loopId: string,
+    members: readonly string[],
+    fluid: CoolantFluid,
+    temperatureK: number,
+    pressureRisePa: number,
+  ): void {
+    const { topology } = work;
+    const loopPa = loopPressurePa(fluid, temperatureK);
+    const internalPa = loopPa + pressureRisePa;
+    for (const id of members) {
+      const pipe = topology.byId.get(id)!;
+      if (pipe.role !== "coolant-pipe" || pipe.geometry.kind !== "cylinder") continue;
+      const runtime = this.#components.get(id)!;
+      const outerM = pipe.geometry.radiusM;
+      const wallM = pipe.geometry.wallThicknessM ?? outerM;
+      const innerM = Math.max(0, outerM - wallM);
+      const material = getMaterial(pipe.materialId);
+      const derating = thermalDerating(pipe.materialId, runtime.temperatureK);
+      const yieldPa = material.yieldStrengthPa * derating.yieldFactor;
+      const ruptured = runtime.disabled;
+      const hoopPa = ruptured ? 0 : lameHoopStressPa(internalPa, innerM, outerM);
+      const record = work.outputs.get(id) ?? {};
+      record["internalPressurePa"] = ruptured ? 101325 : internalPa;
+      record["hoopStressPa"] = hoopPa;
+      record["hoopUtilization"] = yieldPa > 0 ? hoopPa / yieldPa : Infinity;
+      record["ruptured"] = ruptured ? 1 : 0;
+      work.outputs.set(id, record);
+      if (ruptured || work.dt === 0 || hoopPa <= yieldPa) continue;
+      runtime.disabled = true;
+      runtime.disabledReason = "Ruptured: the pressure boundary failed and the loop is open.";
+      const saturated =
+        fluid.pressureModel === "saturating-water" && loopPa > fluid.systemPressurePa;
+      const hot = derating.yieldFactor < 1;
+      this.#raise(work, {
+        componentId: id,
+        system: "fluid",
+        failureType: "pipe_rupture",
+        unit: "Pa",
+        measuredValue: hoopPa,
+        limitValue: yieldPa,
+        summary: `Pipe "${id}" ruptured`,
+        cause:
+          `Pipe "${id}" (${material.name}, ${formatQuantity(innerM * 2, "m")} bore, ${formatQuantity(wallM, "m")} wall) holds ` +
+          `${fluid.name} at ${formatQuantity(internalPa, "Pa")}` +
+          (saturated
+            ? ` — the water in loop ${loopId} is at ${formatQuantity(temperatureK, "K")}, hotter than saturation at its ` +
+              `${formatQuantity(fluid.systemPressurePa, "Pa")} system pressure, so it boils and the loop pressure follows the saturation curve (IAPWS-IF97); this design has no relief valve`
+            : fluid.pressureModel === "ideal-gas" && loopPa > fluid.systemPressurePa
+              ? ` — the gas in the closed loop has heated to ${formatQuantity(temperatureK, "K")} and its pressure has risen in proportion`
+              : "") +
+          `. The peak hoop stress at the bore is ${formatQuantity(hoopPa, "Pa")} (Lamé), above the wall's ` +
+          `${formatQuantity(yieldPa, "Pa")} yield strength` +
+          (hot ? deratingNote(material.name, runtime.temperatureK, derating) : ".") +
+          ` The wall yields and tears: coolant blows down through the break and circulation in loop ${loopId} stops.`,
+        causeKeys: this.#activeKeysFor(members, [
+          "coolant_boiling",
+          "loss_of_flow",
+          "over_temperature",
+        ]),
+      });
+    }
+  }
+
+  /** Pumps cavitating because the water at their inlet is near saturation. */
+  #cavitation(
+    work: Work,
+    loopId: string,
+    members: readonly string[],
+    fluid: CoolantFluid,
+    temperatureK: number,
+    cavitating: ReadonlyMap<string, readonly [number, number]>,
+  ): void {
+    for (const [pump, [available, required]] of cavitating) {
+      this.#raise(work, {
+        componentId: pump,
+        system: "fluid",
+        failureType: "pump_cavitation",
+        unit: "m",
+        measuredValue: available,
+        limitValue: required,
+        summary: `Pump "${pump}" is cavitating`,
+        cause:
+          `${fluid.name} in loop ${loopId} is at ${formatQuantity(temperatureK, "K")}, where its vapour pressure is ` +
+          `${formatQuantity(waterSaturationPressurePa(temperatureK), "Pa")} (IAPWS-IF97). That leaves pump "${pump}" ` +
+          `${formatQuantity(available, "m")} of suction head against the ${formatQuantity(required, "m")} it needs: vapour ` +
+          `bubbles form in the impeller eye and collapse against the blades, and the pump's head falls` +
+          (available <= 0 ? " to nothing — the water at its inlet is boiling." : "."),
+        causeKeys: this.#activeKeysFor(members, ["coolant_boiling", "loss_of_flow"]),
+      });
+    }
+  }
+
   #loopFailures(
     work: Work,
     id: string,
@@ -1784,6 +1972,7 @@ export class PlantSolver {
     closed: boolean,
     temperatureK: number,
     fluid: CoolantFluid,
+    rupturedPipes: readonly string[],
   ): void {
     const { topology } = work;
     const heated = members.some((m) => (work.heatW.get(m) ?? 0) > 1e3);
@@ -1795,7 +1984,9 @@ export class PlantSolver {
       const pumpId = pumps[0] ?? members[0]!;
       const reasons: string[] = [];
       const causeKeys: string[] = [];
-      if (!closed) reasons.push("the loop is not closed");
+      for (const pipe of rupturedPipes) reasons.push(`pipe "${pipe}" has ruptured`);
+      causeKeys.push(...this.#activeKeysFor([...rupturedPipes], ["pipe_rupture"]));
+      if (!closed && rupturedPipes.length === 0) reasons.push("the loop is not closed");
       if (pumps.length === 0) reasons.push("the loop has no pump");
       for (const pump of pumps) {
         const component = topology.byId.get(pump)!;
@@ -1806,7 +1997,17 @@ export class PlantSolver {
         else if (supply < 1) {
           reasons.push(`pump "${pump}" receives only ${(100 * supply).toFixed(0)} % of its power`);
         }
-        causeKeys.push(...this.#activeKeysFor([pump], ["supply_shortfall", "over_temperature"]));
+        if (
+          topology.byId.get(pump) !== undefined &&
+          (work.outputs.get(pump)?.["headFraction"] ?? 1) < 1
+        )
+          reasons.push(`pump "${pump}" is cavitating`);
+        causeKeys.push(
+          ...this.#activeKeysFor(
+            [pump],
+            ["supply_shortfall", "over_temperature", "pump_cavitation"],
+          ),
+        );
       }
       this.#raise(work, {
         componentId: pumpId,
@@ -1917,6 +2118,7 @@ export class PlantSolver {
         const tCrit = coilCriticalTemperatureK(p, peakFieldT);
         if (!runtime.quenched && runtime.temperatureK > tCrit) {
           runtime.quenched = true;
+          runtime.quenchedAtSec = work.timeSec;
           const nuclear = work.outputs.get(component.id)?.["nuclearHeatingW"] ?? 0;
           const supply = work.supply.get(component.id) ?? 0;
           const capacity = numberParameter(p, "cryoCapacityW");
@@ -1927,6 +2129,12 @@ export class PlantSolver {
           // Field-limited: the conductor cannot be superconducting at this field even at its
           // operating temperature — no amount of refrigeration would have prevented it.
           const fieldLimited = sc !== null && tCrit <= tOp;
+          const magnet = work.magnets.get(component.id);
+          const protection =
+            ` The winding stores ${formatQuantity(magnet?.storedEnergyJ ?? 0, "J")}` +
+            ` (½LI², L = ${formatQuantity(magnet?.inductanceH ?? 0, "H")}). Protection opens the dump circuit after` +
+            ` its ${formatQuantity(numberParameter(p, "quenchDetectionDelayS"), "s")} detection time and discharges it` +
+            ` with a ${formatQuantity(numberParameter(p, "dumpTimeConstantS"), "s")} time constant.`;
           const bc20 = sc?.superconductor?.upperCriticalFieldZeroTemperatureT ?? Infinity;
           this.#raise(work, {
             componentId: component.id,
@@ -1943,7 +2151,8 @@ export class PlantSolver {
                 (peakFieldT >= bc20
                   ? `That is above ${sc!.name}'s ${formatQuantity(bc20, "T")} upper critical field, so it cannot be superconducting at any temperature. `
                   : `At that field ${sc!.name} stays superconducting only below ${formatQuantity(tCrit, "K")}, colder than the coil's ${formatQuantity(tOp, "K")} operating temperature. `) +
-                `It quenched as soon as it carried this current. Protection is dumping the coil's current.`
+                `It quenched as soon as it carried this current.` +
+                protection
               : `Superconducting coil "${component.id}" warmed to ${formatQuantity(runtime.temperatureK, "K")}, above its ` +
                 `${formatQuantity(tCrit, "K")} critical temperature` +
                 (sc !== null
@@ -1956,7 +2165,8 @@ export class PlantSolver {
                 (supply < 1
                   ? ` (the cryoplant receives only ${(100 * supply).toFixed(0)} % of its power)`
                   : "") +
-                `. Protection is dumping the coil's current.`,
+                `.` +
+                protection,
             causeKeys: fieldLimited
               ? []
               : this.#activeKeysFor([component.id], ["supply_shortfall"]),
@@ -2363,6 +2573,19 @@ function coilFieldAtVessel(
     radiusM: coil.geometry.radiusM - (coil.geometry.wallThicknessM ?? 0) / 2,
     axialOffsetM: relation.axialOffsetM,
   });
+}
+
+/** Latent heat of vaporisation of helium at 4.222 K, J/kg (material library). */
+const HELIUM_LATENT_HEAT_J_PER_KG = findFluid("helium")!.latentHeatOfVaporization!.value;
+
+/** Self-inductance of a coil's winding from its geometry. */
+function coilInductanceH(coil: SimulationComponent, turns: number): number {
+  const geometry = coil.geometry;
+  if (geometry.kind === "torus")
+    return toroidalInductanceH(turns, geometry.majorRadiusM, geometry.minorRadiusM);
+  if (geometry.kind === "cylinder")
+    return solenoidInductanceH(turns, geometry.radiusM, geometry.heightM);
+  return 0;
 }
 
 /** Peak field on the winding and the casing geometry the magnetic pressure acts on. */
