@@ -62,6 +62,7 @@ export type Overlay =
   | "vacuum"
   | "plasma"
   | "neutron"
+  | "internals"
   | "failures";
 export type Projection = "perspective" | "orthographic";
 export type ViewName = "front" | "right" | "top" | "iso";
@@ -99,6 +100,11 @@ export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] =
     id: "neutron",
     label: "Neutrons",
     hint: "Fusion-neutron energy deposited in each part (log scale): where the shielding works and where it does not.",
+  },
+  {
+    id: "internals",
+    label: "Internal systems",
+    hint: "Casings ghosted; inside every machine, regions coloured by system: fluids, conductors, moving machinery, structure, insulation, instruments. Schematic.",
   },
   {
     id: "failures",

@@ -2427,3 +2427,45 @@
   margin: 0;
   font-size: var(--fs-xs);
 }
+
+/* Internal views: what they are, and the systems legend */
+.internals-notice {
+  position: absolute;
+  z-index: 6;
+  left: 50%;
+  top: 54px;
+  transform: translateX(-50%);
+  max-width: min(560px, calc(100% - 32px));
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+.internals-notice strong {
+  font-size: var(--fs-sm);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.internals-notice__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.internals-notice__key {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 5px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+.builder--cinematic .internals-notice {
+  display: none;
+}

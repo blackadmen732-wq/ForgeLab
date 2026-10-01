@@ -24,7 +24,7 @@ import {
   MeshBasicMaterial,
   type Object3D,
   Plane,
-  type Quaternion as ThreeQuaternion,
+  Quaternion as ThreeQuaternion,
   Raycaster,
   SphereGeometry,
   Vector2,
@@ -55,13 +55,13 @@ import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { portRating } from "../ui/Inspector.js";
 import { Cables } from "./Cables.js";
-import { InternalsSection } from "./Internals.js";
+import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
+import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
 import {
   CONNECTION_COLORS,
-  CUT_PLANE,
   PALETTE,
   appearanceFor,
   ghostedIn,
@@ -187,14 +187,17 @@ function AppearanceDriver() {
         emissive = Math.max(emissive, 0.14);
       }
       body.emissiveIntensity = emissive;
-      const xray = view.xray || ghostedIn(view.overlay, readout);
+      const xray =
+        view.xray ||
+        ghostedIn(view.overlay, readout) ||
+        (view.overlay === "internals" && showsInternals(c.type));
       if (body.transparent !== xray) {
         body.transparent = xray;
         body.depthWrite = !xray;
         body.needsUpdate = true;
       }
       body.opacity = xray ? 0.16 : 1;
-      const planes = view.cutaway ? [CUT_PLANE] : null;
+      const planes = view.cutaway ? [cutPlaneFor(c.id)] : null;
       if ((body.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0)) {
         body.clippingPlanes = planes;
         body.needsUpdate = true;
@@ -216,6 +219,23 @@ function AppearanceDriver() {
         handle.glow.visible = glow > 0;
         (handle.glow.material as MeshBasicMaterial).opacity = 0.2 + 0.6 * glow;
       }
+    }
+  });
+  return null;
+}
+
+/** Re-aims each part's cutaway plane at the camera on every rendered frame. */
+function CutPlaneDriver() {
+  const store = useEditorStore();
+  const centre = useMemo(() => new Vector3(), []);
+  const orientation = useMemo(() => new ThreeQuaternion(), []);
+  useFrame(({ camera }) => {
+    const view = store.getView();
+    if (!view.cutaway && view.overlay !== "internals") return;
+    for (const [id, handle] of meshRegistry) {
+      handle.group.getWorldPosition(centre);
+      handle.group.getWorldQuaternion(orientation);
+      aimCutPlane(id, centre, orientation, camera);
     }
   });
   return null;
@@ -882,6 +902,7 @@ export function Viewport() {
         <CameraRig controlsRef={controlsRef} />
         <Parts />
         <Cables />
+        <CutPlaneDriver />
         <InternalsSection />
         <Sockets />
         <Gizmo />

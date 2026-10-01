@@ -38,6 +38,7 @@ import {
 } from "../../lib/format.js";
 import { CONNECTION_LABELS } from "../scene/appearance.js";
 import { useEditor, useEditorStore, useSim } from "../store/context.js";
+import { hasBespokeInternals } from "../scene/internalModels.js";
 import { regionHighlight, useRegionHighlight } from "../scene/regionHighlight.js";
 import { materialLab } from "./materialLab.js";
 import { PartIcon } from "./PartIcon.js";
@@ -516,23 +517,32 @@ function ProductPanel({
                 >
                   <span
                     className="insp-swatch"
-                    style={{ background: `#${materialColor(i.substanceId).getHexString()}` }}
+                    style={{
+                      background:
+                        i.substanceId === null
+                          ? "transparent"
+                          : `#${materialColor(i.substanceId).getHexString()}`,
+                    }}
                     aria-hidden
                   />
                   <strong>{i.name}</strong>
                 </button>
                 <span className="dim">
                   {" · "}
-                  <button
-                    type="button"
-                    className="link-btn"
-                    title="Open in the Material Lab"
-                    onClick={() => materialLab.open(i.substanceId)}
-                  >
-                    {findSubstance(i.substanceId)?.name ??
-                      findFluid(i.substanceId)?.name ??
-                      i.substanceId}
-                  </button>
+                  {i.substanceId === null ? (
+                    <span>{i.materialNote ?? "Empty"}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="link-btn"
+                      title="Open in the Material Lab"
+                      onClick={() => materialLab.open(i.substanceId ?? undefined)}
+                    >
+                      {findSubstance(i.substanceId)?.name ??
+                        findFluid(i.substanceId)?.name ??
+                        i.substanceId}
+                    </button>
+                  )}
                   {i.volumeFraction !== undefined &&
                     ` · ${(i.volumeFraction * 100).toFixed(0)} % of volume`}
                 </span>
@@ -543,10 +553,13 @@ function ProductPanel({
         </ul>
         {product.internals.length > 1 && (
           <p className="insp-note">
-            Cutaway (X) shows these as a cross-section of this part, outermost first
-            {product.internals.every((i) => i.volumeFraction !== undefined)
-              ? ", sized by volume."
-              : " — schematic: the order is known, the proportions are not, so bands are equal."}
+            {hasBespokeInternals(component.type)
+              ? "Cutaway (X) opens this machine; Internal systems shows every machine's insides. Schematic: a representative arrangement of these regions, not a manufacturer's design."
+              : `Cutaway (X) shows these as a cross-section of this part, outermost first${
+                  product.internals.every((i) => i.volumeFraction !== undefined)
+                    ? ", sized by volume."
+                    : " — schematic: the order is known, the proportions are not, so bands are equal."
+                }`}
           </p>
         )}
         {!product.internalsSetMass && (

@@ -121,10 +121,40 @@ export type VisualProfileId =
   | "valve";
 
 /** A part of the product the player can see in cutaway but never builds. */
+/**
+ * What an internal region is for. The Internal Systems view colours regions by kind, and
+ * physics overlays light the regions a quantity physically lives in (current in
+ * conductors, flow in coolant, neutron heating in plasma-facing and breeder regions).
+ */
+export const REGION_KINDS = [
+  "structure",
+  "conductor",
+  "superconductor",
+  "insulation",
+  "magnetic-core",
+  "coolant",
+  "cryogen",
+  "vacuum",
+  "moving",
+  "fuel",
+  "plasma-facing",
+  "breeder",
+  "sensor",
+  "electronics",
+] as const;
+export type RegionKind = (typeof REGION_KINDS)[number];
+
 export interface ProductInternal {
   readonly id: string;
   readonly name: string;
-  readonly substanceId: string;
+  readonly kind: RegionKind;
+  /**
+   * The library material or fluid it is made of, or null when that material is not
+   * catalogued yet (then `materialNote` names it) or the region is empty (vacuum).
+   */
+  readonly substanceId: string | null;
+  /** The real material when it is not in the library, e.g. "Alloy 690 (not catalogued)". */
+  readonly materialNote?: string;
   /** Share of the envelope. Present when the internals define the product's mass. */
   readonly volumeFraction?: number;
   /** What it does in the machine. */
@@ -175,7 +205,7 @@ export interface ProductInfo {
 export function productComposition(product: ProductInfo): readonly MaterialRegion[] | undefined {
   if (!product.internalsSetMass) return undefined;
   return product.internals.flatMap((i) =>
-    i.volumeFraction === undefined
+    i.volumeFraction === undefined || i.substanceId === null
       ? []
       : [{ id: i.id, name: i.name, substanceId: i.substanceId, volumeFraction: i.volumeFraction }],
   );

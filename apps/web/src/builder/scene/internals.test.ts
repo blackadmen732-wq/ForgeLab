@@ -4,6 +4,7 @@ import { layerScales } from "./Internals.js";
 const region = (id: string, volumeFraction?: number) => ({
   id,
   name: id,
+  kind: "conductor" as const,
   substanceId: "copper",
   purpose: "",
   ...(volumeFraction === undefined ? {} : { volumeFraction }),

@@ -54,6 +54,7 @@ import { ActivationHud } from "./ui/ActivationHud.js";
 import { FailureCinemaPanel } from "./ui/FailureCinema.js";
 import { RunReportPanel } from "./ui/RunReport.js";
 import { MaterialLab } from "./ui/MaterialLab.js";
+import { InternalsNotice } from "./ui/InternalsNotice.js";
 import { EffectsDebugPanel } from "./ui/EffectsDebugPanel.js";
 import { Inspector } from "./ui/Inspector.js";
 import { PublishDialog } from "./ui/PublishDialog.js";
@@ -257,6 +258,7 @@ function Workspace({
           <FailureCinemaPanel />
           <RunReportPanel />
           <MaterialLab />
+          <InternalsNotice />
           {debugPanel && <EffectsDebugPanel />}
           <Hints />
           <StatusStrip />

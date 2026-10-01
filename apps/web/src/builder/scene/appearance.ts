@@ -1,4 +1,4 @@
-import { Color, Plane, Vector3 } from "three";
+import { Color } from "three";
 import type { SimulationComponent, VesselState } from "@forgelab/sim-core";
 import { frameScalar, type SessionFrame } from "@forgelab/sim-runner";
 import { MATERIAL_LIBRARY } from "@forgelab/materials";
@@ -101,9 +101,6 @@ export const PALETTE = {
 const MATERIAL_COLORS: ReadonlyMap<string, string> = new Map(
   MATERIAL_LIBRARY.map((m) => [m.id, m.presentation.color] as const),
 );
-
-/** Removes the half-space z > 0 in cutaway mode. */
-export const CUT_PLANE = new Plane(new Vector3(0, 0, -1), 0);
 
 export function materialColor(materialId: string): Color {
   return new Color(MATERIAL_COLORS.get(materialId) ?? "#8a939e");
@@ -261,6 +258,10 @@ export function appearanceFor(
         out.emissive.copy(out.color);
         emissive = 0.3 + 0.5 * Math.min(1, Math.max(0, (Math.log10(r.neutronHeatingW) - 3) / 6));
       } else out.color.copy(PALETTE.dim);
+      break;
+    case "internals":
+      // Casings are ghosted in this view; their own colour stays.
+      out.color.copy(base);
       break;
     case "failures":
       out.color.copy(failed ? PALETTE.fail : r.status === 1 ? PALETTE.stress : PALETTE.dim);

@@ -64,12 +64,31 @@ Every view colours parts from published simulation values; none of them computes
 In the Vacuum view everything outside the vacuum system is drawn as a ghost, so a vessel
 inside its coils and blanket stays readable, and vacuum ducts are lit.
 
-**Internals cutaway.** With Cutaway on (X), the selected part shows its internal regions
-from the product sheet as nested bands, outermost first, coloured by substance (the
-Inspector's Inside list shows the same swatches). If every region carries a volume
-fraction the bands are sized by it; otherwise they are equal steps, and the Inspector says
-the section is schematic — region order is known, proportions are not, and none are
-invented.
+**Machine internals.** Every finished product lists its internal regions, outermost first:
+each has a kind (structure, conductor, superconductor, insulation, magnetic core, coolant,
+cryogen, vacuum, moving machinery, fuel, plasma-facing, breeder, sensor, electronics) and the
+library material or fluid it is made of. Where the real material is not catalogued yet —
+Alloy 690 steam-generator tubes, electrical-steel cores, porcelain bushings, bearing steel —
+the region names it as not catalogued instead of borrowing a library material.
+
+The major machines (coolant pump, steam generator, turbine, generator, transformer, cryopump,
+neutral beam, fuel system, breaker) have schematic internal geometry built from those regions:
+a pump's impeller in its volute on a shaft from the copper-wound motor, a steam generator's
+tube bundle standing in its water, a generator's stator bars around its rotor. Other parts
+show their regions as nested bands, sized by volume when every region has a volume fraction
+and in equal steps otherwise.
+
+**Cutaway (X)** opens every part through its own centre, removing the half that faces the
+camera; the cut snaps to the part's own axes, so a generator opens along its shaft. Selected
+parts show their internals in the cut. **Internal systems** (a view) does the same for every
+machine with the casings ghosted, colouring regions by system — fluids blue, conductors
+orange, moving machinery green (validated colours), structure, insulation, instruments and
+vacuum by lightness — with a legend. Any **physics view** with Cutaway on lights only the
+regions its quantity physically lives in (current in conductors, flow in coolant, field in
+windings, neutron heating in plasma-facing and breeder regions) from the part's published
+value: the lumped model has one value per part, and the view does not invent a
+distribution inside it. Whenever internals are on screen the view says **Schematic internal
+representation**: a representative arrangement, not a manufacturer's design.
 
 ## Material Lab
 

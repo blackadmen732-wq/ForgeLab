@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { findSubstance } from "@forgelab/materials";
+import { findFluid, findSubstance } from "@forgelab/materials";
 import { SimulationWorld, checkPortCompatibility } from "@forgelab/sim-core";
-import { COMPONENT_DEFINITIONS, buildReferencePlant, buildStarterAssembly } from "./index.js";
+import {
+  COMPONENT_DEFINITIONS,
+  REGION_KINDS,
+  buildReferencePlant,
+  buildStarterAssembly,
+} from "./index.js";
 
 describe("finished-product sheets", () => {
   it("gives every catalogue entry a product sheet with real substances", () => {
@@ -10,10 +15,20 @@ describe("finished-product sheets", () => {
       expect(product.summary.length, definition.type).toBeGreaterThan(10);
       expect(product.internals.length, definition.type).toBeGreaterThan(0);
       for (const internal of product.internals) {
-        expect(
-          findSubstance(internal.substanceId),
-          `${definition.type}/${internal.id}`,
-        ).toBeDefined();
+        const where = `${definition.type}/${internal.id}`;
+        expect(REGION_KINDS, where).toContain(internal.kind);
+        if (internal.substanceId === null) {
+          // Not catalogued yet: the region names its real material instead of borrowing one.
+          expect(
+            internal.materialNote ?? (internal.kind === "vacuum" ? "" : undefined),
+            where,
+          ).toBeDefined();
+        } else {
+          expect(
+            findSubstance(internal.substanceId) ?? findFluid(internal.substanceId),
+            where,
+          ).toBeDefined();
+        }
       }
       expect(product.capabilities.length).toBeGreaterThan(0);
     }
