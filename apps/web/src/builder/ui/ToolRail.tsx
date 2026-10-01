@@ -119,7 +119,7 @@ export function ToolRail() {
       >
         <Layers />
       </RailButton>
-      <RailButton label="Cutaway" keys="X" active={cutaway} onClick={store.toggleCutaway}>
+      <RailButton label="Cutaway" keys="X" active={cutaway} onClick={() => store.toggleCutaway()}>
         <Scissors />
       </RailButton>
       <RailButton label="X-ray" keys="Z" active={xray} onClick={store.toggleXray}>

@@ -6,6 +6,7 @@ import {
   Download,
   Eye,
   FilePlus2,
+  FlaskConical,
   FolderOpen,
   GitFork,
   Headphones,
@@ -27,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import { AccountMenu } from "../../components/AccountMenu.js";
 import { LogoMark } from "../../components/Logo.js";
+import { materialLab } from "./materialLab.js";
 import { relativeTime } from "../../lib/format.js";
 import { MOD } from "../../lib/platform.js";
 import { useCollab } from "../../collab/context.js";
@@ -178,6 +180,8 @@ function MoreMenu({ context }: { context: CommandContext }) {
           {item(<Download />, "Export .json", context.exportFile, `${MOD} E`)}
           <div className="menu__sep" />
           {item(<Trophy />, "Submit score…", context.submitScore)}
+          <div className="menu__sep" />
+          {item(<FlaskConical />, "Material Lab", () => materialLab.open(), "M")}
           <div className="menu__sep" />
           <div className="menu__label">Environment</div>
           {ENVIRONMENT_PRESETS.map((preset) => (

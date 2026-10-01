@@ -1,4 +1,4 @@
-import { MATERIAL_CATALOG, findSubstance, getMaterial } from "@forgelab/materials";
+import { MATERIAL_CATALOG, findFluid, findSubstance, getMaterial } from "@forgelab/materials";
 import { materialColor } from "../scene/appearance.js";
 import { findComponentDefinition, type ProductInfo } from "@forgelab/reactor-components";
 import {
@@ -10,7 +10,17 @@ import {
   type PortSpec,
 } from "@forgelab/sim-core";
 import { vec3 } from "@forgelab/shared";
-import { ChevronDown, ChevronRight, Copy, Focus, Pin, PinOff, Trash2, Unlink } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  FlaskConical,
+  Focus,
+  Pin,
+  PinOff,
+  Trash2,
+  Unlink,
+} from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { Euler, Quaternion } from "three";
 import { ConfidenceBadge } from "../../components/ConfidenceBadge.js";
@@ -28,6 +38,8 @@ import {
 } from "../../lib/format.js";
 import { CONNECTION_LABELS } from "../scene/appearance.js";
 import { useEditor, useEditorStore, useSim } from "../store/context.js";
+import { regionHighlight, useRegionHighlight } from "../scene/regionHighlight.js";
+import { materialLab } from "./materialLab.js";
 import { PartIcon } from "./PartIcon.js";
 
 /* ------------------------------------------------------------------------------------ *
@@ -442,6 +454,8 @@ function ProductPanel({
   component: SimulationComponent;
   product: ProductInfo;
 }) {
+  const store = useEditorStore();
+  const highlight = useRegionHighlight();
   const ratings = product.ratings(component.parameters);
   const ports = component.connectionPoints.filter(
     (p) => p.port !== undefined && p.port.domain !== "structural",
@@ -482,23 +496,50 @@ function ProductPanel({
       )}
       <Section title="Inside" defaultOpen={false}>
         <ul className="insp-internals">
-          {product.internals.map((i) => (
-            <li key={i.id}>
-              <span
-                className="insp-swatch"
-                style={{ background: `#${materialColor(i.substanceId).getHexString()}` }}
-                aria-hidden
-              />
-              <strong>{i.name}</strong>
-              <span className="dim">
-                {" "}
-                · {findSubstance(i.substanceId)?.name ?? i.substanceId}
-                {i.volumeFraction !== undefined &&
-                  ` · ${(i.volumeFraction * 100).toFixed(0)} % of volume`}
-              </span>
-              <p className="dim">{i.purpose}</p>
-            </li>
-          ))}
+          {product.internals.map((i) => {
+            const picked = highlight?.componentId === component.id && highlight.regionId === i.id;
+            return (
+              <li key={i.id} className={picked ? "is-picked" : ""}>
+                <button
+                  type="button"
+                  className="insp-region"
+                  aria-pressed={picked}
+                  title="Show this region in the cutaway"
+                  onClick={() => {
+                    if (picked) {
+                      regionHighlight.set(null);
+                      return;
+                    }
+                    regionHighlight.set({ componentId: component.id, regionId: i.id });
+                    store.toggleCutaway(true);
+                  }}
+                >
+                  <span
+                    className="insp-swatch"
+                    style={{ background: `#${materialColor(i.substanceId).getHexString()}` }}
+                    aria-hidden
+                  />
+                  <strong>{i.name}</strong>
+                </button>
+                <span className="dim">
+                  {" · "}
+                  <button
+                    type="button"
+                    className="link-btn"
+                    title="Open in the Material Lab"
+                    onClick={() => materialLab.open(i.substanceId)}
+                  >
+                    {findSubstance(i.substanceId)?.name ??
+                      findFluid(i.substanceId)?.name ??
+                      i.substanceId}
+                  </button>
+                  {i.volumeFraction !== undefined &&
+                    ` · ${(i.volumeFraction * 100).toFixed(0)} % of volume`}
+                </span>
+                <p className="dim">{i.purpose}</p>
+              </li>
+            );
+          })}
         </ul>
         {product.internals.length > 1 && (
           <p className="insp-note">
@@ -645,6 +686,13 @@ function PartPanel({ component }: { component: SimulationComponent }) {
         <Row label="Yield strength">{pascals(material.yieldStrengthPa)}</Row>
         <Row label="Density">{si(material.densityKgM3, "kg/m³")}</Row>
         <Row label="Max temperature">{kelvin(material.maxOperatingTemperatureK)}</Row>
+        <button
+          type="button"
+          className="btn btn--sm btn--ghost insp-lab"
+          onClick={() => materialLab.open(component.materialId)}
+        >
+          <FlaskConical /> {material.grade} · sources, curves, compare
+        </button>
       </Section>
 
       {definition && definition.dimensions.length > 0 && (

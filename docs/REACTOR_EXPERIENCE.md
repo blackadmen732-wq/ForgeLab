@@ -71,6 +71,22 @@ fraction the bands are sized by it; otherwise they are equal steps, and the Insp
 the section is schematic — region order is known, proportions are not, and none are
 invented.
 
+## Material Lab
+
+**M** (or More → Material Lab) opens the material library beside the 3D view: materials
+grouped by engineering function, searchable by name or grade. Each material shows only the
+property groups it has data for; every value carries its conditions, its confidence
+(specified, handbook, typical, approximate) and its source, whose full citation appears on
+hover. Tabulated temperature curves (EN 1993-1-2 strength and stiffness, copper
+resistivity) are charted with a hover readout and their data table; superconductors show
+their critical temperature in field. **Compare with** puts a second material's key values
+side by side and overlays its curves. Materials missing a value the solvers need are marked
+_Reference data_: they appear inside finished machines but cannot be assigned to a part.
+
+In the Inspector, a part's material links to the Lab, and its **Inside** list names each
+internal region's substance (opening it in the Lab). Clicking a region turns Cutaway on and
+lights that region in the cross-section while the others fade.
+
 ## Showroom milestone
 
 The presentation layer (hall, facility lighting, activation stages, audio, effects, failure

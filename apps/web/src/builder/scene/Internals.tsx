@@ -10,7 +10,9 @@ import {
 import { findComponentDefinition, type ProductInternal } from "@forgelab/reactor-components";
 import type { ComponentGeometry, SimulationComponent } from "@forgelab/sim-core";
 import { useEditor } from "../store/context.js";
-import { CUT_PLANE, materialColor } from "./appearance.js";
+import { useThree } from "@react-three/fiber";
+import { CUT_PLANE, PALETTE, materialColor } from "./appearance.js";
+import { useRegionHighlight } from "./regionHighlight.js";
 
 /**
  * The inside of the selected part, in cutaway: its internal regions from the product
@@ -64,6 +66,25 @@ function layer(geometry: ComponentGeometry, scale: number): BufferGeometry {
   }
 }
 
+/** Lights the picked region's band and fades the others (null: all as normal). */
+function showPicked(
+  layers: readonly { key: string; material: MeshStandardMaterial }[],
+  picked: string | null,
+): void {
+  for (const l of layers) {
+    const lit = picked === l.key;
+    const faded = picked !== null && !lit;
+    l.material.emissive.set(lit ? PALETTE.select : 0x000000);
+    l.material.emissiveIntensity = lit ? 0.55 : 0;
+    if (l.material.transparent !== faded) {
+      l.material.transparent = faded;
+      l.material.depthWrite = !faded;
+      l.material.needsUpdate = true;
+    }
+    l.material.opacity = faded ? 0.18 : 1;
+  }
+}
+
 function Section({ component }: { component: SimulationComponent }) {
   const internals = useMemo(
     () => findComponentDefinition(component.type)?.product.internals ?? [],
@@ -95,6 +116,13 @@ function Section({ component }: { component: SimulationComponent }) {
     },
     [layers],
   );
+  // A region picked in the Inspector is lit; the others fade so it can be found.
+  const highlight = useRegionHighlight();
+  const invalidate = useThree((st) => st.invalidate);
+  useLayoutEffect(() => {
+    showPicked(layers, highlight?.componentId === component.id ? highlight.regionId : null);
+    invalidate();
+  }, [highlight, layers, component.id, invalidate]);
   const { positionM: p, rotation: q } = component.state.physical;
   return (
     <group position={[p.x, p.y, p.z]} quaternion={[q.x, q.y, q.z, q.w]}>

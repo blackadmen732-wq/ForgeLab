@@ -2,6 +2,7 @@ import { MOD } from "../lib/platform.js";
 import { toggleCinematic, toggleFullscreen } from "../presentation/view.js";
 import { HALL_CAMERAS, HALL_CAMERA_ORDER } from "./scene/environment/hall/cameras.js";
 import type { EditorStore, EditorView } from "./store/editor.js";
+import { materialLab } from "./ui/materialLab.js";
 
 /**
  * Every builder action in one list. Keyboard shortcuts, the command palette and the
@@ -343,6 +344,14 @@ export const COMMANDS: readonly Command[] = [
     keys: "I",
     match: key("i"),
     run: (c) => c.store.toggleIsolate(),
+  },
+  {
+    id: "material-lab",
+    label: "Material Lab",
+    group: "Tools",
+    keys: "M",
+    match: key("m"),
+    run: () => materialLab.toggle(),
   },
   {
     id: "cutaway",

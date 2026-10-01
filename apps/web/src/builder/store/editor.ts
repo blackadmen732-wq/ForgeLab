@@ -641,8 +641,10 @@ export class EditorStore {
     this.#publish();
   };
 
-  toggleCutaway = (): void => {
-    this.#cutaway = !this.#cutaway;
+  toggleCutaway = (on?: boolean): void => {
+    const next = on ?? !this.#cutaway;
+    if (next === this.#cutaway) return;
+    this.#cutaway = next;
     this.#publish();
   };
 
