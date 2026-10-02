@@ -98,6 +98,8 @@ as a mechanical one. Superconductor critical surfaces and quench as a failure mo
 ## Phase 5 — Vacuum systems ✅ V0.1
 
 **In V0.1:** Vessel pressure balance with pump speed and gas loads; breakdown needs vacuum; loss of vacuum disrupts.
+**Assembled chambers:** hollow vessel segments joined flange to flange share one vacuum (`plant/chamber.ts`): volume, outgassing and leaks summed over segments; pumps, fuel and heating on any segment serve the whole chamber; wall and neutron heat split by wall area. What the chamber is follows from its joints — a closed ring is a toroidal plasma volume (major radius = centreline length / 2π, minor radius = narrowest bore × fill), a capped column a linear one, anything branched has no plasma estimate (UNSUPPORTED). Coils reach an assembled chamber through Biot–Savart along its centreline. An unjoined end flange is an opening to the hall with molecular-flow orifice conductance v̄/4 per unit area (air at 293 K: ≈ 116 m/s, the textbook 11.6 L/(s·cm²)) — a lower bound on the real viscous leak, so an open chamber can never be pumped down.
+**Still missing:** conductance of ducts between chambers, non-circular (D-shaped) bores, pressure-dependent flow regimes.
 **Still missing:** Conductance of ducts, outgassing curves.
 
 Pumping speed, conductance, outgassing and leak rates; equilibrium pressure in a chamber.
