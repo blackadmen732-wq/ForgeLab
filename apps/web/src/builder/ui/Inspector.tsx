@@ -526,6 +526,31 @@ function StateReadouts({ component }: { component: SimulationComponent }) {
           <Row label="To coolant">{watts(p.thermal.heatToCoolantW)}</Row>
         )}
         <Row label="To surroundings">{watts(p.thermal.heatToAmbientW)}</Row>
+        {Math.abs(p.thermal.spatialHeatInW) >= 1 && (
+          <Row label="Through space">
+            <span className="num">
+              {watts(p.thermal.spatialHeatInW)}
+              {p.thermal.spatialHeatSourceId !== null && p.thermal.spatialHeatInW > 0 && (
+                <span className="dim"> mostly from {p.thermal.spatialHeatSourceId}</span>
+              )}
+            </span>
+          </Row>
+        )}
+        {p.combustion !== null && (
+          <Row label="Fire load">
+            <span className="num">
+              {p.combustion.burning
+                ? `BURNING ${watts(p.combustion.heatReleaseW)}`
+                : p.combustion.burnedOut
+                  ? "burned out"
+                  : `ignites at ${kelvin(p.combustion.ignitionK)}`}
+              <span className="dim">
+                {" "}
+                · {p.combustion.fuelRemainingKg.toFixed(1)} / {p.combustion.fuelKg.toFixed(1)} kg
+              </span>
+            </span>
+          </Row>
+        )}
       </Section>
       {p.electrical !== null && (
         <Section

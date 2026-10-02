@@ -70,8 +70,10 @@ export function damageStage(i: DamageInputs): DamageReading {
   for (const type of failed)
     if (RUPTURE_TYPES.has(type))
       return { stage: "ruptured", reason: `Failed: ${type.replace(/_/g, " ")}.` };
+  if (failed.has("melted"))
+    return { stage: "ruptured", reason: "Melted through: the circuit is open." };
   if (failed.has("over_temperature") && i.disabled)
-    return { stage: "ruptured", reason: "Burned out: protection disconnected it." };
+    return { stage: "ruptured", reason: "Knocked out by over-heating (tripped or seized)." };
   if (hasLimit && heat >= 1.15)
     return {
       stage: "severe",

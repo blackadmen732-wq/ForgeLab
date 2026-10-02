@@ -52,6 +52,13 @@ export interface ComponentReading {
   readonly heliumBoilOffKgS: number;
   /** Magnets: seconds since the quench began (−1 if none). */
   readonly quenchAgeS: number;
+  /** Net heat received through space (radiant and flame), W. */
+  readonly spatialHeatInW: number;
+  /** Its fire's heat release rate, W (0 when not burning). */
+  readonly heatReleaseW: number;
+  /** Burnable fuel left ÷ fuel at start; −1 when nothing in it burns. */
+  readonly fuelFraction: number;
+  readonly burning: boolean;
 }
 
 export interface PlantReading {
@@ -106,6 +113,10 @@ export function readingFromFrame(
       dumpPowerW: frameScalar(frame, i, "dumpPowerW"),
       heliumBoilOffKgS: frameScalar(frame, i, "heliumBoilOffKgS"),
       quenchAgeS: frameScalar(frame, i, "quenchAgeS"),
+      spatialHeatInW: frameScalar(frame, i, "spatialHeatInW"),
+      heatReleaseW: frameScalar(frame, i, "heatReleaseW"),
+      fuelFraction: frameScalar(frame, i, "fuelFraction"),
+      burning: frameScalar(frame, i, "burning") > 0,
     });
   });
   return {

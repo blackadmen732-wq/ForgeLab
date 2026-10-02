@@ -83,6 +83,8 @@ export function familyOf(failure: FailureEvent, part: ComponentReading | undefin
       return "flow";
     case "interlock_trip":
       return "control";
+    case "melted":
+      return "electrical";
     case "supply_shortfall":
       return part?.superconducting === true ? "cryogenic" : "brownout";
     case "over_temperature":

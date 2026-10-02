@@ -50,6 +50,10 @@ export const FRAME_FIELDS = Object.freeze([
   "heliumBoilOffKgS", // superconducting magnets
   "quenchAgeS", // magnets: seconds since quench, −1 if none
   "coilCurrentA", // magnets: present current per turn (field lines scale with it)
+  "spatialHeatInW", // net heat received through space (radiant and flame), W
+  "heatReleaseW", // its fire's heat release rate, W (0 when not burning)
+  "fuelFraction", // burnable fuel left ÷ fuel at start, −1 when nothing burns
+  "burning", // 1 while its fuel burns
 ] as const);
 export type FrameField = (typeof FRAME_FIELDS)[number];
 const FIELD_COUNT = FRAME_FIELDS.length;
@@ -265,6 +269,14 @@ export class SimulationSession {
       scalars[o + 17] = magnet?.heliumBoilOffKgS ?? 0;
       scalars[o + 18] = magnet?.quenchAgeS ?? -1;
       scalars[o + 19] = magnet?.currentA ?? 0;
+      const combustion = plant.combustion;
+      scalars[o + 20] = plant.thermal.spatialHeatInW;
+      scalars[o + 21] = combustion?.heatReleaseW ?? 0;
+      scalars[o + 22] =
+        combustion === null || combustion.fuelKg <= 0
+          ? -1
+          : combustion.fuelRemainingKg / combustion.fuelKg;
+      scalars[o + 23] = combustion?.burning === true ? 1 : 0;
       if (plant.vessel !== null) vessels[component.id] = plant.vessel;
     });
     const newFailures = snapshot.failures.slice(this.#failuresSent);
