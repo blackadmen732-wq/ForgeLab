@@ -1,4 +1,5 @@
 import { cutViewOf } from "./inspection.js";
+import { familyColor } from "./materialView.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { Color, DoubleSide, type Group, MeshStandardMaterial } from "three";
@@ -92,6 +93,8 @@ const FLUID_KINDS = new Set<RegionKind>(["coolant", "cryogen", "fuel", "breeder"
 interface RegionMesh {
   readonly id: string;
   readonly kind: RegionKind;
+  /** The library material or fluid it is made of, or null. */
+  readonly substanceId: string | null;
   readonly base: Color;
   readonly fluid: boolean;
   /** How the region's own material looks hot (insulation chars, copper blackens). */
@@ -109,7 +112,9 @@ function baseColor(internal: ProductInternal): Color {
 /** Paints one region for the current view. Pure apart from writing into `m`. */
 export function paintRegion(
   overlay: Overlay,
-  region: Pick<RegionMesh, "kind" | "base" | "fluid" | "surface">,
+  region: Pick<RegionMesh, "kind" | "base" | "fluid" | "surface"> & {
+    readonly substanceId?: string | null;
+  },
   readout: Readout,
   picked: boolean | null,
   m: MeshStandardMaterial,
@@ -117,7 +122,14 @@ export function paintRegion(
   let opacity = region.fluid ? (region.kind === "vacuum" ? 0.12 : 0.35) : 1;
   let emissive = 0;
   m.emissive.setRGB(0, 0, 0);
-  if (overlay === "internals") {
+  if (overlay === "materials") {
+    // Each region in its material family's colour (the Materials view legend).
+    if (region.substanceId === undefined || region.substanceId === null) {
+      m.color.copy(PALETTE.dim);
+      opacity = Math.min(opacity, 0.25);
+    } else m.color.copy(familyColor(region.substanceId));
+    if (region.fluid && region.kind !== "vacuum") opacity = 0.6;
+  } else if (overlay === "internals") {
     m.color.copy(SYSTEM_COLOR.get(SYSTEM_OF[region.kind])!);
     if (region.fluid && region.kind !== "vacuum") opacity = 0.6;
   } else if (overlay === "none") {
@@ -185,6 +197,7 @@ function Section({ component }: { component: SimulationComponent }) {
         id: internal.id,
         kind: internal.kind,
         base: baseColor(internal),
+        substanceId: internal.substanceId,
         fluid,
         surface: surfaceMaterial(internal.substanceId),
         material: new MeshStandardMaterial({
@@ -256,6 +269,9 @@ export function InternalsSection() {
 
   const damageVersion = useSyncExternalStore(damageState.subscribe, damageState.version);
   const systems = overlay === "internals";
+  // A material picked in the Materials view that lies inside a machine: show its insides.
+  const materialFocus = useEditor((v) => v.materialFocus);
+  const materialIds = useEditor((v) => v.materialFocusIds);
   // A section through the plant, or the deepest peel, reveals every machine's insides;
   // the Cutaway tool reveals the selection's.
   const shown = components.filter(
@@ -264,6 +280,9 @@ export function InternalsSection() {
       !hidden.has(c.id) &&
       !peeled.has(c.id) &&
       (systems ||
+        (materialFocus !== null &&
+          c.materialId !== materialFocus &&
+          (materialIds?.has(c.id) ?? false)) ||
         cutView === "section" ||
         (cutView === "camera" && selection.includes(c.id)) ||
         (damageVersion > 0 && damageState.isFractured(c.id))),
@@ -323,7 +342,11 @@ export function InternalsSection() {
           view.overlay,
           region,
           readout,
-          mine === null ? null : mine === region.id,
+          mine !== null
+            ? mine === region.id
+            : view.materialFocus !== null
+              ? region.substanceId === view.materialFocus
+              : null,
           region.material,
         );
     }

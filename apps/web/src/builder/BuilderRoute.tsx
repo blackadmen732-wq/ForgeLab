@@ -66,6 +66,7 @@ import { Timeline } from "./ui/Timeline.js";
 import { CameraModeHint, ToolRail } from "./ui/ToolRail.js";
 import { PlantTree } from "./ui/PlantTree.js";
 import { InspectPanel } from "./ui/InspectPanel.js";
+import { MaterialLegend } from "./ui/MaterialLegend.js";
 import { TopBar } from "./ui/TopBar.js";
 import { VersionNameDialog, VersionsDialog } from "./ui/VersionsDialog.js";
 import { useHover } from "./scene/hover.js";
@@ -272,6 +273,7 @@ function Workspace({
           <Hints />
           <CameraModeHint />
           <InspectPanel />
+          <MaterialLegend />
           <StatusStrip />
           <Timeline />
         </main>

@@ -1,6 +1,11 @@
 import { MATERIAL_CATALOG, findFluid, findSubstance, getMaterial } from "@forgelab/materials";
 import { materialColor } from "../scene/appearance.js";
-import { findComponentDefinition, type ProductInfo } from "@forgelab/reactor-components";
+import {
+  PLANT_SYSTEM_LABELS,
+  findComponentDefinition,
+  plantSystemOf,
+  type ProductInfo,
+} from "@forgelab/reactor-components";
 import {
   ROLE_PARAMETERS,
   buildTopology,
@@ -10,7 +15,7 @@ import {
   type SimulationSettings,
   type PortSpec,
 } from "@forgelab/sim-core";
-import { vec3 } from "@forgelab/shared";
+import { STANDARD_GRAVITY_MPS2, vec3 } from "@forgelab/shared";
 import {
   ChevronDown,
   ChevronRight,
@@ -36,8 +41,11 @@ import {
   percent,
   si,
   titleCase,
+  newtons,
   watts,
 } from "../../lib/format.js";
+import { loadSummary, type LoadSummary } from "./loads.js";
+import { materialName } from "../scene/materialView.js";
 import { CONNECTION_LABELS } from "../scene/appearance.js";
 import { useEditor, useEditorStore, useSim } from "../store/context.js";
 import { hasBespokeInternals } from "../scene/internalModels.js";
@@ -337,6 +345,112 @@ function ChamberSection({ component }: { component: SimulationComponent }) {
   );
 }
 
+/** Where a part's weight goes: its own, what rests on it, and into each support. */
+function SupportRows({ component }: { component: SimulationComponent }) {
+  const support = component.state.support;
+  const parts = useEditor((v) => v.snapshot.components);
+  const labelOf = (id: string) => parts.find((x) => x.id === id)?.label ?? id;
+  return (
+    <>
+      <Row label="Own weight" tip={massEquivalent(support.ownWeightN)}>
+        {newtons(support.ownWeightN)}
+      </Row>
+      {support.carriedLoadN > 0 && (
+        <Row
+          label="Carries"
+          tip={`${massEquivalent(support.carriedLoadN)} resting on it: ${support.supportingComponentIds.map(labelOf).join(", ")}`}
+        >
+          {newtons(support.carriedLoadN)}
+        </Row>
+      )}
+      {(support.mode === "grounded" || support.mode === "anchored") && (
+        <Row
+          label={support.mode === "anchored" ? "Into its anchor" : "Into the floor"}
+          tip={massEquivalent(support.totalLoadN)}
+        >
+          {newtons(support.totalLoadN)}
+        </Row>
+      )}
+      {bearings(support.reactions).map((b) => (
+        <Row
+          key={b.ontoId}
+          label={`Onto ${labelOf(b.ontoId)}${b.joints > 1 ? ` (${b.joints} joints)` : ""}`}
+          tip={`${massEquivalent(b.loadN)}${b.peakN < b.loadN ? ` · most on one joint ${newtons(b.peakN)}` : ""}`}
+        >
+          {newtons(b.loadN)}
+        </Row>
+      ))}
+    </>
+  );
+}
+
+/** Reactions summed per part borne on (a torus on four cradles is one support). */
+function bearings(
+  reactions: readonly { readonly otherComponentId: string; readonly loadN: number }[],
+): { ontoId: string; loadN: number; peakN: number; joints: number }[] {
+  const out = new Map<string, { ontoId: string; loadN: number; peakN: number; joints: number }>();
+  for (const r of reactions) {
+    const b = out.get(r.otherComponentId) ?? {
+      ontoId: r.otherComponentId,
+      loadN: 0,
+      peakN: 0,
+      joints: 0,
+    };
+    b.loadN += r.loadN;
+    b.peakN = Math.max(b.peakN, r.loadN);
+    b.joints += 1;
+    out.set(r.otherComponentId, b);
+  }
+  return [...out.values()];
+}
+
+/** A force as the mass whose weight it equals, for a sense of scale. */
+function massEquivalent(n: number): string {
+  return `the weight of ${mass(n / STANDARD_GRAVITY_MPS2)}`;
+}
+
+/** Total weight, where it lands and the heaviest load path, for several parts. */
+export function LoadRows({
+  summary,
+  centre = true,
+}: {
+  summary: LoadSummary;
+  /** Show the centre of mass (off where the panel already shows it). */
+  centre?: boolean;
+}) {
+  const parts = useEditor((v) => v.snapshot.components);
+  const labelOf = (id: string) => parts.find((x) => x.id === id)?.label ?? id;
+  const com = summary.centreOfMassM;
+  const r = summary.largestReaction;
+  return (
+    <>
+      {centre && com !== null && (
+        <Row label="Centre of mass" tip="Mass-weighted centre (x, y, z)">
+          <span className="num">
+            {com.x.toFixed(1)}, {com.y.toFixed(1)}, {com.z.toFixed(1)} m
+          </span>
+        </Row>
+      )}
+      <Row label="Into the floor" tip={massEquivalent(summary.groundLoadN)}>
+        {newtons(summary.groundLoadN)}
+      </Row>
+      {r !== null && (
+        <Row
+          label="Largest reaction"
+          tip={`${labelOf(r.fromId)} onto ${r.ontoId === "ground" ? "the floor" : labelOf(r.ontoId)}: ${massEquivalent(r.loadN)}`}
+        >
+          {newtons(r.loadN)}
+        </Row>
+      )}
+      {summary.heaviest !== null && (
+        <Row label="Heaviest part" tip={labelOf(summary.heaviest.id)}>
+          {mass(summary.heaviest.massKg)}
+        </Row>
+      )}
+    </>
+  );
+}
+
 function StateReadouts({ component }: { component: SimulationComponent }) {
   const s = component.state.structural;
   const p = component.state.plant;
@@ -390,6 +504,7 @@ function StateReadouts({ component }: { component: SimulationComponent }) {
               {pascals(s.appliedStressPa)} / {pascals(s.allowableStressPa)}
             </span>
           </Row>
+          <SupportRows component={component} />
         </Section>
       )}
       <Section
@@ -686,6 +801,70 @@ function ProductPanel({
   );
 }
 
+/**
+ * Where the selection sits: Plant › system › part › region › material. Each step goes
+ * somewhere — the plant tree, that system on its own, the part framed, the material's
+ * sourced data in the Material Lab.
+ */
+function Breadcrumb({ component }: { component: SimulationComponent }) {
+  const store = useEditorStore();
+  const picked = useRegionHighlight();
+  const system = plantSystemOf(component);
+  const region =
+    picked?.componentId === component.id
+      ? findComponentDefinition(component.type)?.product.internals.find(
+          (r) => r.id === picked.regionId,
+        )
+      : undefined;
+  const materialId = region === undefined ? component.materialId : region.substanceId;
+  return (
+    <nav className="crumbs" aria-label="Where this part is">
+      <button type="button" className="crumbs__step" onClick={() => store.toggleTree(true)}>
+        Plant
+      </button>
+      <span aria-hidden="true">›</span>
+      <button
+        type="button"
+        className="crumbs__step"
+        data-tip="Show this system on its own"
+        onClick={() => store.isolateSystem(system)}
+      >
+        {PLANT_SYSTEM_LABELS[system]}
+      </button>
+      <span aria-hidden="true">›</span>
+      <button
+        type="button"
+        className="crumbs__step"
+        onClick={() => {
+          regionHighlight.set(null);
+          store.requestFrame([component.id]);
+        }}
+      >
+        {component.label ?? component.id}
+      </button>
+      {region !== undefined && (
+        <>
+          <span aria-hidden="true">›</span>
+          <span className="crumbs__here">{region.name}</span>
+        </>
+      )}
+      {materialId !== null && (
+        <>
+          <span aria-hidden="true">›</span>
+          <button
+            type="button"
+            className="crumbs__step crumbs__material"
+            data-tip="Open in the Material Lab"
+            onClick={() => materialLab.open(materialId)}
+          >
+            {materialName(materialId)}
+          </button>
+        </>
+      )}
+    </nav>
+  );
+}
+
 function PartPanel({ component }: { component: SimulationComponent }) {
   const store = useEditorStore();
   const mode = useEditor((v) => v.mode);
@@ -709,6 +888,7 @@ function PartPanel({ component }: { component: SimulationComponent }) {
 
   return (
     <div className="insp-panel">
+      <Breadcrumb component={component} />
       <header className="insp-head">
         <PartIcon role={component.role} />
         <div className="insp-head__text">
@@ -1001,6 +1181,7 @@ function MultiPanel({ components }: { components: readonly SimulationComponent[]
       </header>
       <Section title="Selection">
         <Row label="Total mass">{mass(total)}</Row>
+        <LoadRows summary={loadSummary(components)} />
         <Row label="Worst utilization">
           <Meter value={worst} label="Worst utilization" />
         </Row>
@@ -1278,6 +1459,9 @@ export function AssemblyPanel() {
               {snapshot.assembly.centerOfMassM.z.toFixed(1)} m
             </span>
           </Row>
+        )}
+        {snapshot.components.length > 0 && (
+          <LoadRows summary={loadSummary(snapshot.components)} centre={false} />
         )}
       </Section>
       {hasPlant && (

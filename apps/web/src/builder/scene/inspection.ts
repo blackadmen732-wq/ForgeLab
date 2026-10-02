@@ -109,6 +109,20 @@ export function explodeOffsets(
   return out;
 }
 
+const offsetCache = new WeakMap<readonly SimulationComponent[], ReadonlyMap<string, Vector3>>();
+
+/** `explodeOffsets`, computed once per design snapshot. */
+export function cachedExplodeOffsets(
+  components: readonly SimulationComponent[],
+): ReadonlyMap<string, Vector3> {
+  let offsets = offsetCache.get(components);
+  if (offsets === undefined) {
+    offsets = explodeOffsets(components);
+    offsetCache.set(components, offsets);
+  }
+  return offsets;
+}
+
 /* ------------------------------------------------------------------------------------ *
  * Section plane
  * ------------------------------------------------------------------------------------ */

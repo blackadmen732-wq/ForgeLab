@@ -63,8 +63,8 @@ import { ScaleFigure } from "./ScaleFigure.js";
 import { WalkControls } from "./WalkControls.js";
 import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
-import { ExplodeDriver } from "./ExplodeDriver.js";
-import { cutViewOf, sectionClipPlane } from "./inspection.js";
+import { cachedExplodeOffsets, cutViewOf, sectionClipPlane } from "./inspection.js";
+import { familyColor } from "./materialView.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
@@ -192,7 +192,15 @@ function AppearanceDriver() {
           handle.group.quaternion.set(t[o + 3]!, t[o + 4]!, t[o + 5]!, t[o + 6]!);
         } else {
           const { positionM: p, rotation: q } = c.state.physical;
-          handle.group.position.set(p.x, p.y, p.z);
+          // The exploded view moves the drawing, never the design.
+          const o =
+            view.explode > 0 ? cachedExplodeOffsets(view.snapshot.components).get(c.id) : undefined;
+          const k = view.explode;
+          handle.group.position.set(
+            p.x + (o?.x ?? 0) * k,
+            p.y + (o?.y ?? 0) * k,
+            p.z + (o?.z ?? 0) * k,
+          );
           handle.group.quaternion.set(q.x, q.y, q.z, q.w);
         }
       }
@@ -200,7 +208,7 @@ function AppearanceDriver() {
       let emissive = appearanceFor(
         view.overlay,
         readout,
-        baseColor(c.materialId),
+        view.overlay === "materials" ? familyColor(c.materialId) : baseColor(c.materialId),
         body,
         surfaceMaterial(c.materialId),
       );
@@ -230,11 +238,17 @@ function AppearanceDriver() {
       // An isolated plant system stays solid and everything else ghosts; with X-ray on as
       // well, the isolated system is what you see through the rest.
       const focused = view.focusIds?.has(c.id) ?? false;
-      const ghost = view.focusIds !== null && !focused;
+      const ghost =
+        (view.focusIds !== null && !focused) ||
+        (view.materialFocusIds !== null && !view.materialFocusIds.has(c.id));
       const xray =
         (view.xray && !focused) ||
         ghost ||
         ghostedIn(view.overlay, readout) ||
+        // The picked material is inside this machine: see through its casing to it.
+        (view.materialFocus !== null &&
+          focusedMaterial(view, c) &&
+          c.materialId !== view.materialFocus) ||
         (view.overlay === "internals" && showsInternals(c.type));
       if (body.transparent !== xray) {
         body.transparent = xray;
@@ -1042,7 +1056,6 @@ export function Viewport() {
         <InternalsSection />
         <FieldLines />
         <ScaleFigure />
-        <ExplodeDriver />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />
@@ -1090,3 +1103,8 @@ export function Viewport() {
     </div>
   );
 }
+
+const focusedMaterial = (
+  view: { readonly materialFocusIds: ReadonlySet<string> | null },
+  c: SimulationComponent,
+) => view.materialFocusIds?.has(c.id) ?? false;

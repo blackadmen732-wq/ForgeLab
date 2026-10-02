@@ -401,6 +401,10 @@ export function appearanceFor(
       // Casings are ghosted in this view; their own colour stays.
       out.color.copy(base);
       break;
+    case "materials":
+      // The caller passes the material family's colour as the base.
+      out.color.copy(base);
+      break;
     case "failures":
       out.color.copy(failed ? PALETTE.fail : r.status === 1 ? PALETTE.stress : PALETTE.dim);
       break;

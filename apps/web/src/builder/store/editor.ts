@@ -53,6 +53,7 @@ import {
 } from "@forgelab/sim-runner";
 import { toast } from "../../lib/toast.js";
 import { MAX_PEEL, peeledIds, type SectionPlane } from "../scene/inspection.js";
+import { materialsIn } from "../scene/materialView.js";
 import { SimulationClient } from "../sim/client.js";
 import { SocketIndex } from "./socketIndex.js";
 import { CloudSync, type CloudBinding, type SaveState, writeLocalDraft } from "./persistence.js";
@@ -74,6 +75,7 @@ export type Overlay =
   | "plasma"
   | "neutron"
   | "internals"
+  | "materials"
   | "failures";
 export type Projection = "perspective" | "orthographic";
 /**
@@ -125,6 +127,11 @@ export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] =
     id: "internals",
     label: "Internal systems",
     hint: "Casings ghosted; inside every machine, regions coloured by system: fluids, conductors, moving machinery, structure, insulation, instruments. Schematic.",
+  },
+  {
+    id: "materials",
+    label: "Materials",
+    hint: "Parts coloured by material family; pick a material in the legend to light up every part that contains it, casing or inside.",
   },
   {
     id: "failures",
@@ -187,6 +194,10 @@ export interface EditorView {
   readonly focusSystem: PlantSystem | null;
   /** The parts of `focusSystem`, or null when no system is isolated. */
   readonly focusIds: ReadonlySet<string> | null;
+  /** In the Materials view: the material picked in the legend, or null. */
+  readonly materialFocus: string | null;
+  /** Parts containing `materialFocus` (body or internal region), or null. */
+  readonly materialFocusIds: ReadonlySet<string> | null;
   /** The inspection-views panel (section, peel, explode). */
   readonly inspectOpen: boolean;
   /** One plane through the whole plant, or null. */
@@ -291,6 +302,7 @@ export class EditorStore {
   #drawerOpen = false;
   #treeOpen = false;
   #inspectOpen = false;
+  #materialFocus: string | null = null;
   #section: SectionPlane | null = null;
   #peel = 0;
   #explode = 0;
@@ -444,6 +456,15 @@ export class EditorStore {
       drawerOpen: this.#drawerOpen,
       treeOpen: this.#treeOpen,
       inspectOpen: this.#inspectOpen,
+      materialFocus: this.#overlay === "materials" ? this.#materialFocus : null,
+      materialFocusIds:
+        this.#overlay === "materials" && this.#materialFocus !== null
+          ? new Set(
+              this.#snapshot.components
+                .filter((c) => materialsIn(c).has(this.#materialFocus!))
+                .map((c) => c.id),
+            )
+          : null,
       section: this.#section,
       peel: this.#peel,
       peeledIds: peeledIds(this.#snapshot.components, this.#peel),
@@ -785,6 +806,12 @@ export class EditorStore {
   toggleTree = (open?: boolean): void => {
     this.#treeOpen = open ?? !this.#treeOpen;
     if (this.#treeOpen) this.#drawerOpen = false;
+    this.#publish();
+  };
+
+  /** Lights up every part containing a material (again, or null, to clear). */
+  setMaterialFocus = (materialId: string | null): void => {
+    this.#materialFocus = materialId === this.#materialFocus ? null : materialId;
     this.#publish();
   };
 

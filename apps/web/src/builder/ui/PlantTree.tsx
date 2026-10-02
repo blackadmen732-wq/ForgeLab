@@ -11,6 +11,8 @@ import { useMemo, useState } from "react";
 import { mass } from "../../lib/format.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import { PartIcon } from "./PartIcon.js";
+import { LoadRows } from "./Inspector.js";
+import { loadSummary } from "./loads.js";
 
 interface TypeGroup {
   readonly type: string;
@@ -65,6 +67,7 @@ export function PlantTree() {
   const groups = useMemo(() => plantBreakdown(components), [components]);
   const selected = useMemo(() => new Set(selection), [selection]);
   const totalKg = groups.reduce((sum, g) => sum + g.massKg, 0);
+  const summary = useMemo(() => loadSummary(components), [components]);
   // Branches holding the selection are open as well as the ones the user opened.
   const isOpen = (key: string, parts: readonly SimulationComponent[]) =>
     open.has(key) || parts.some((p) => selected.has(p.id));
@@ -93,9 +96,16 @@ export function PlantTree() {
           <X />
         </button>
       </div>
-      <p className="tree__summary">
-        {components.length} parts · <span className="num">{mass(totalKg)}</span>
-      </p>
+      <div className="tree__summary">
+        <p>
+          {components.length} parts · <span className="num">{mass(totalKg)}</span>
+        </p>
+        {components.length > 0 && (
+          <div className="tree__loads">
+            <LoadRows summary={summary} />
+          </div>
+        )}
+      </div>
       <div className="tree__body" role="tree" aria-label="Plant systems">
         {groups.length === 0 && <p className="tree__empty">Nothing built yet.</p>}
         {groups.map((g) => {
