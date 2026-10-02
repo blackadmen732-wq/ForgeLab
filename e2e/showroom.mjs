@@ -242,6 +242,68 @@ for (const scenario of SCENARIOS) {
   );
 }
 
+await check(
+  "the ITER-class plant opens up level by level without changing the design",
+  async () => {
+    await page.evaluate(() => window.__forgelab.store.stopSimulation());
+    await page.evaluate(() => window.__forgelab.loadBlueprint("iter-class-plant"));
+    await page.waitForTimeout(1500);
+    const hash = await page.evaluate(() => window.__forgelab.store.designHash());
+    const view = () =>
+      page.evaluate(() => {
+        const v = window.__forgelab.store.getView();
+        return {
+          focus: v.focusIds === null ? null : v.focusIds.size,
+          peeled: v.peeledIds.size,
+          peel: v.peel,
+          section: v.section,
+          explode: v.explode,
+          camera: v.cameraMode,
+        };
+      });
+    // Plant tree and system isolate, through the UI.
+    await page.keyboard.press("o");
+    await page.locator(".tree").waitFor({ timeout: 10000 });
+    await page.getByRole("button", { name: "Show Magnets on its own" }).click();
+    // TF set, six PF coils and the central solenoid.
+    expect((await view()).focus === 8, `magnets isolated: ${JSON.stringify(await view())}`);
+    await page.getByRole("button", { name: "Show Magnets on its own" }).click();
+    expect((await view()).focus === null, "isolation did not clear");
+    // Inspection views: peel all the way, then a section, then explode.
+    await page.keyboard.press("l");
+    await page.locator(".inspect").waitFor({ timeout: 10000 });
+    for (let i = 0; i < 5; i += 1)
+      await page.getByRole("button", { name: "Peel off the next layer" }).click();
+    const peeled = await view();
+    expect(peeled.peel === 5 && peeled.peeled > 20, `peel: ${JSON.stringify(peeled)}`);
+    await page
+      .getByRole("group", { name: "Section plane axis" })
+      .getByRole("button", { name: "X" })
+      .click();
+    expect((await view()).section?.axis === "x", "section plane not set");
+    await page.evaluate(() => {
+      const s = window.__forgelab.store;
+      s.setPeel(0);
+      s.setSection(null);
+      s.setExplode(1);
+    });
+    expect((await view()).explode === 1, "explode not applied");
+    await page.evaluate(() => window.__forgelab.store.setExplode(0));
+    // Walk at eye height and back.
+    await page.keyboard.press("g");
+    await page.waitForTimeout(600);
+    const eye = await page.evaluate(() => window.__forgelab.three().camera.position.y);
+    expect(
+      (await view()).camera === "walk" && Math.abs(eye - 1.7) < 1e-6,
+      `walk eye height ${eye}`,
+    );
+    await page.keyboard.press("Escape");
+    expect((await view()).camera === "orbit", "Esc did not return to orbit");
+    const after = await page.evaluate(() => window.__forgelab.store.designHash());
+    expect(after === hash, "an inspection view changed the design");
+  },
+);
+
 await check("the seven failure scenarios do not all look the same", async () => {
   const distinct = new Set(signatures.values());
   expect(

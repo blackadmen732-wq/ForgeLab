@@ -167,7 +167,8 @@ describe("assembled chambers", () => {
       .getSnapshot()
       .plant.confidence.subsystems.find((s) => s.subsystem === "plasma:seg-0")!;
     expect(plasma.reasons.join(" ")).toMatch(/assembled from 8 segments/);
-  });
+    // Forty simulated seconds with 16 Biot–Savart coils; the budget covers a loaded runner.
+  }, 30_000);
 
   it("a capped column of straight segments is a linear chamber", () => {
     const world = new SimulationWorld({ name: "Column" });

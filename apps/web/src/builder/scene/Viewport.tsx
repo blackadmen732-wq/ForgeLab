@@ -40,6 +40,7 @@ import {
   worldAabb,
   type ConnectionPoint,
   type SimulationComponent,
+  geometryLocalHalfExtentsM,
 } from "@forgelab/sim-core";
 import { prefersReducedMotion } from "../../lib/platform.js";
 import {
@@ -65,6 +66,7 @@ import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
 import { cachedExplodeOffsets, cutViewOf, sectionClipPlane } from "./inspection.js";
 import { familyColor } from "./materialView.js";
+import { trimVisibleAt } from "./lod.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
@@ -288,6 +290,40 @@ function AppearanceDriver() {
         handle.glow.visible = glow > 0;
         (handle.glow.material as MeshBasicMaterial).opacity = 0.2 + 0.6 * glow;
       }
+    }
+  });
+  return null;
+}
+
+const sizeCache = new WeakMap<readonly SimulationComponent[], ReadonlyMap<string, number>>();
+
+/** Each part's bounding radius, computed once per design snapshot. */
+function partSizes(components: readonly SimulationComponent[]): ReadonlyMap<string, number> {
+  let sizes = sizeCache.get(components);
+  if (sizes === undefined) {
+    sizes = new Map(
+      components.map((c) => {
+        const h = geometryLocalHalfExtentsM(c.geometry);
+        return [c.id, Math.hypot(h.x, h.y, h.z)] as const;
+      }),
+    );
+    sizeCache.set(components, sizes);
+  }
+  return sizes;
+}
+
+/** Shows or hides each part's fine fittings by camera distance (lod.ts). */
+function LodDriver() {
+  const store = useEditorStore();
+  const world = useMemo(() => new Vector3(), []);
+  useFrame(({ camera }) => {
+    const sizes = partSizes(store.getView().snapshot.components);
+    for (const [id, handle] of meshRegistry) {
+      const trim = handle.extras[0];
+      if (trim === undefined) continue;
+      handle.group.getWorldPosition(world);
+      const show = trimVisibleAt(camera.position.distanceTo(world), sizes.get(id) ?? 1);
+      if (trim.visible !== show) trim.visible = show;
     }
   });
   return null;
@@ -1059,6 +1095,7 @@ export function Viewport() {
         <InternalsSection />
         <FieldLines />
         <ScaleFigure />
+        <LodDriver />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />

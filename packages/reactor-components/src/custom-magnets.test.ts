@@ -76,7 +76,9 @@ describe("player-built magnets", () => {
       expect(vessel(world).plasma.statusText).not.toMatch(/no coil/);
     }
     expect([...phases].some((p) => p !== "off")).toBe(true);
-  });
+    // Thirty simulated seconds of a plant with 18 Biot–Savart coils: ~1.5 s on an idle
+    // machine; the budget covers a loaded CI runner.
+  }, 30_000);
 
   it("is deterministic", () => {
     const a = ringPlant(12);

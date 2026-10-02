@@ -59,14 +59,14 @@ work lives, so nobody rebuilds it.
 
 ## Sharing, collaboration, performance, production, docs (26–31)
 
-| #   | Item                        | Status  | Evidence / remaining                                                                                                                    |
-| --- | --------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| 26  | Share runs and failures     | MISSING | Design publish/fork/like/leaderboard with server-recomputed scores exist; runs are not artifacts.                                       |
-| 27  | Failure gallery / discovery | PARTIAL | Discover with sorts and search. Missing: failure and experimental filters.                                                              |
-| 28  | Collaboration UX            | PARTIAL | Channels, voice, chat with component mentions, presence, roles, invites, shared saves, conflict detection. Missing: Share View, Follow. |
-| 29  | GPU / large designs         | PARTIAL | CPU budgets in CI (`sim-runner` benchmark); quality tiers. Missing: hardware GPU profiling, LOD, instancing of repeated parts.          |
-| 30  | Production readiness        | PARTIAL | Architecture and deployment scripts exist (docs/DEPLOYMENT.md). Needs account approval to provision real services.                      |
-| 31  | Current-state report        | PARTIAL | This file; `docs/LAUNCH_REPORT.md` is stale (5 materials).                                                                              |
+| #   | Item                        | Status  | Evidence / remaining                                                                                                                                                                                                             |
+| --- | --------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 26  | Share runs and failures     | MISSING | Design publish/fork/like/leaderboard with server-recomputed scores exist; runs are not artifacts.                                                                                                                                |
+| 27  | Failure gallery / discovery | PARTIAL | Discover with sorts and search. Missing: failure and experimental filters.                                                                                                                                                       |
+| 28  | Collaboration UX            | PARTIAL | Channels, voice, chat with component mentions, presence, roles, invites, shared saves, conflict detection. Missing: Share View, Follow.                                                                                          |
+| 29  | GPU / large designs         | PARTIAL | CPU budgets in CI (`sim-runner` benchmark); quality tiers; fittings culled by distance scaled to part size (`scene/lod.ts`); near plane follows viewing distance. Missing: hardware GPU profiling, instancing of repeated parts. |
+| 30  | Production readiness        | PARTIAL | Architecture and deployment scripts exist (docs/DEPLOYMENT.md). Needs account approval to provision real services.                                                                                                               |
+| 31  | Current-state report        | PARTIAL | This file; `docs/LAUNCH_REPORT.md` is stale (5 materials).                                                                                                                                                                       |
 
 ## Extension items (32–96) — summary
 
@@ -77,7 +77,10 @@ tested), autosave/versions (92 partial), save versioning with a migration path (
 schema v2 with migrations and an engine version, no historical fixtures yet), engineering views (temperature, stress, flow, power,
 field, internals), command palette (71 partial), model confidence (62 partial), causal
 chains (24/47 partial), run report (87 partial), "why didn't it start" stage stall reasons
-(88 partial), personal best and leaderboards.
+(88 partial), personal best and leaderboards. Since the gigascale milestone (docs/INSPECTION.md): plant
+systems and a plant tree (84), foundation and support loads (61 partial: per-part reactions,
+load into the floor, largest reaction; no load-path drawing yet), section plane, layer
+peeling, exploded view, Materials view, inspection breadcrumb, walk and fly cameras.
 
 MISSING: universal component validator (33), mechanical shaft dynamics with inertia (35;
 shaft links exist as a network), connections with their own physical limits beyond pipe
@@ -86,9 +89,9 @@ history (46 partial: plant-level timeline only), branching causal graph (47), en
 failure timeline (48 partial), best diagnostic view suggestion (49 partial: Look inside),
 thermal distortion (53), plasma–wall contact location (54), breakdown visual sequence (55
 partial: activation stages), power-flow and coolant-flow animation (57–58), structural
-load-path visualisation (43), foundation loads (61), simulation version on runs and scores
+load-path visualisation (43), simulation version on runs and scores
 (63), visual regression tests (66), design comparison and history (76–80), Share View /
-Follow (81–82), co-editing design (83), systems/zones hierarchy (84), schematic view (85),
+Follow (81–82), co-editing design (83), schematic view (85),
 system health overview (86 partial: activation strip), moderation tooling (91: reports table
 exists, no admin UI).
 
@@ -99,7 +102,10 @@ exists, no admin UI).
 3. Pattern tools: radial array, linear array, mirror.
 4. Geometry-derived magnetic field (discretised Biot–Savart), custom coils, field probe.
 5. Free-form chamber segments; derived plasma region; experimental/unsupported confidence.
-6. Magnet charging; cryoplant network; relief and blowdown.
-7. Shared runs and failures; Share View / Follow; current-state report.
+6. Gigascale machines and deep inspection (docs/INSPECTION.md): true-scale hall and
+   cameras, plant systems and tree, isolate, section, peel, explode, Materials view, loads,
+   ITER-class parts and blueprint.
+7. Magnet charging; cryoplant network; relief and blowdown.
+8. Shared runs and failures; Share View / Follow; current-state report.
 
 Each step lands as small green commits; this file is updated as items change status.
