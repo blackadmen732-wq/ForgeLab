@@ -253,6 +253,7 @@ export {
   type PlasmaState,
   type SubsystemConfidence,
   type ThermalState,
+  type CombustionState,
   type VesselState,
 } from "./plant/state.js";
 
@@ -375,3 +376,18 @@ export {
   type NetworkEdge,
   type NetworkNode,
 } from "./plant/electrical.js";
+
+export {
+  FIRE_RADIANT_FRACTION,
+  RADIANT_ONSET_K,
+  equivalentRadiusM,
+  fireRadiationAbsorbedW,
+  fuelInventory,
+  hazardBody,
+  hazardPairs,
+  pairGeometry,
+  radiantExchangeW,
+  type FuelInventory,
+  type HazardBody,
+  type HazardPair,
+} from "./plant/hazards.js";

@@ -1,4 +1,10 @@
-import { criticalTemperatureK, findFluid, getMaterial, getSubstance } from "@forgelab/materials";
+import {
+  criticalTemperatureK,
+  findFluid,
+  findMaterialRecord,
+  getMaterial,
+  getSubstance,
+} from "@forgelab/materials";
 import {
   BOLTZMANN_J_PER_K,
   STANDARD_ATMOSPHERE_PA,
@@ -53,6 +59,18 @@ import {
   UNDERVOLTAGE_FRACTION,
 } from "./constants.js";
 import { type NetworkEdge, type NetworkNode, solveIsland } from "./electrical.js";
+import {
+  type FuelInventory,
+  type HazardBody,
+  type HazardPair,
+  RADIANT_ONSET_K,
+  fireRadiationAbsorbedW,
+  fuelInventory,
+  hazardBody,
+  hazardPairs,
+  radiantExchangeW,
+  unmodelledCombustibles,
+} from "./hazards.js";
 import {
   type CoolantFluid,
   effectivenessUniformTemperature,
@@ -118,6 +136,7 @@ import {
   type PlasmaPhase,
   type PlasmaState,
   type VesselState,
+  type CombustionState,
 } from "./state.js";
 import {
   type PlantLink,
@@ -143,6 +162,14 @@ interface ComponentRuntime {
   /** Helium boiled off in the last step, kg/s (superconducting coils). */
   heliumBoilOffKgS: number;
   generatorOutputW: number;
+  /** Fuel left to burn, kg (0 for a part with nothing burnable). */
+  fuelRemainingKg: number;
+  burning: boolean;
+  burnedOut: boolean;
+  /** Heat release rate of its fire over the last step, W. */
+  heatReleaseW: number;
+  /** A conductor heated past its melting point: the circuit is open. */
+  melted: boolean;
 }
 
 interface VesselRuntime {
@@ -160,6 +187,9 @@ interface VesselRuntime {
 interface LoopRuntime {
   temperatureK: number;
 }
+
+/** Events on a neighbour that can send heat through space. */
+const SPATIAL_CAUSE_TYPES = ["fire", "over_temperature", "melted"];
 
 export interface PlantStepInput {
   readonly components: readonly SimulationComponent[];
@@ -213,6 +243,11 @@ interface Work {
   events: FailureEvent[];
   diagnostics: string[];
   vesselField: Map<string, number>;
+  /** Net heat received through space this step, W, and from whom (source → W, gains only). */
+  spatialHeatW: Map<string, number>;
+  spatialSources: Map<string, Map<string, number>>;
+  /** Parts that caught fire this step. */
+  ignitions: string[];
 }
 
 /**
@@ -291,6 +326,9 @@ export class PlantSolver {
       events: [],
       diagnostics: [],
       vesselField: new Map(),
+      spatialHeatW: new Map(),
+      spatialSources: new Map(),
+      ignitions: [],
     };
 
     const sorted =
@@ -323,6 +361,10 @@ export class PlantSolver {
       work,
       metrics,
       geometric: this.#geometricCouplings(topology),
+      hazards: {
+        exchanging: [...work.spatialHeatW.values()].filter((w) => Math.abs(w) > 1).length,
+        burning: sorted.filter((c) => this.#components.get(c.id)!.burning).map((c) => c.id),
+      },
     });
 
     return {
@@ -393,6 +435,11 @@ export class PlantSolver {
         quenchedAtSec: -1,
         heliumBoilOffKgS: 0,
         generatorOutputW: 0,
+        fuelRemainingKg: fuelInventory(component)?.kg ?? 0,
+        burning: false,
+        burnedOut: false,
+        heatReleaseW: 0,
+        melted: false,
       });
     }
 
@@ -1647,10 +1694,28 @@ export class PlantSolver {
       });
     });
 
-    const { capacity, conduction, outerArea, superconducting } = this.#thermalStatic(
-      topology,
-      components,
-    );
+    const { capacity, conduction, outerArea, superconducting, bodies, pairs, fuel } =
+      this.#thermalStatic(topology, components);
+
+    // Bodies whose temperature rides on a coolant loop: heat reaching them through space
+    // goes into the loop's coolant.
+    const pinnedLoop = new Map<string, { runtime: LoopRuntime; capacityJK: number }>();
+    for (const loop of loopWork) {
+      const runtime = this.#loops.get(loop.id)!;
+      const entry = { runtime, capacityJK: loop.heatCapacityJK };
+      for (const hx of loop.exchangers) pinnedLoop.set(hx.id, entry);
+      for (const m of loop.members) {
+        const role = topology.byId.get(m)!.role;
+        if (
+          (role === "coolant-pipe" || role === "coolant-pump") &&
+          !this.#components.get(m)!.disabled
+        )
+          pinnedLoop.set(m, entry);
+      }
+    }
+    const temperatureOf = (id: string) =>
+      pinnedLoop.get(id)?.runtime.temperatureK ?? this.#components.get(id)!.temperatureK;
+    const capacityOf = (id: string) => pinnedLoop.get(id)?.capacityJK ?? capacity.get(id)!;
 
     const toCoolant = new Map<string, number>();
     const toAmbient = new Map<string, number>();
@@ -1721,6 +1786,81 @@ export class PlantSolver {
         );
         add(path.a, -q);
         add(path.b, q);
+      }
+
+      // Fires: burnable parts at or above their ignition temperature burn at their fuel's
+      // free-burning rate until the fuel is gone.
+      const fires = new Map<string, number>();
+      if (h > 0) {
+        for (const [id, inventory] of fuel) {
+          const runtime = this.#components.get(id)!;
+          if (runtime.burnedOut || runtime.fuelRemainingKg <= 0) continue;
+          if (!runtime.burning && runtime.temperatureK >= inventory.ignitionK) {
+            runtime.burning = true;
+            work.ignitions.push(id);
+          }
+          if (!runtime.burning) continue;
+          const kgPerS = Math.min(
+            inventory.burningRateKgM2S * outerArea.get(id)!,
+            runtime.fuelRemainingKg / h,
+          );
+          runtime.fuelRemainingKg -= kgPerS * h;
+          const releaseW = kgPerS * inventory.heatOfCombustionJPerKg;
+          fires.set(id, releaseW);
+          if (step === 0) runtime.heatReleaseW = 0;
+          runtime.heatReleaseW += releaseW * weight;
+          if (runtime.fuelRemainingKg <= 1e-9) {
+            runtime.fuelRemainingKg = 0;
+            runtime.burning = false;
+            runtime.burnedOut = true;
+          }
+        }
+      }
+
+      // Through space: radiant exchange between hot surfaces and flame radiation from
+      // fires reach parts that share no port (CLAUDE.md §36).
+      const receive = (id: string, w: number, from: string) => {
+        const pinned = pinnedLoop.get(id);
+        if (pinned !== undefined) {
+          if (h > 0) pinned.runtime.temperatureK += (w * h) / pinned.capacityJK;
+        } else add(id, w);
+        work.spatialHeatW.set(id, (work.spatialHeatW.get(id) ?? 0) + w * weight);
+        if (w > 0) {
+          const sources = work.spatialSources.get(id) ?? new Map<string, number>();
+          sources.set(from, (sources.get(from) ?? 0) + w * weight);
+          work.spatialSources.set(id, sources);
+        }
+      };
+      for (const pair of pairs) {
+        if (superconducting.has(pair.a) || superconducting.has(pair.b)) continue;
+        const ta = temperatureOf(pair.a);
+        const tb = temperatureOf(pair.b);
+        if (ta >= RADIANT_ONSET_K || tb >= RADIANT_ONSET_K) {
+          const q = clampPair(
+            radiantExchangeW(pair.exchangeAreaM2, ta, tb),
+            ta,
+            tb,
+            capacityOf(pair.a),
+            capacityOf(pair.b),
+            h,
+          );
+          if (q !== 0) {
+            receive(pair.a, -q, pair.b);
+            receive(pair.b, q, pair.a);
+          }
+        }
+        for (const [source, target] of [
+          [pair.a, pair.b],
+          [pair.b, pair.a],
+        ] as const) {
+          const releaseW = fires.get(source);
+          if (releaseW === undefined || superconducting.has(target)) continue;
+          receive(
+            target,
+            fireRadiationAbsorbedW(releaseW, bodies.get(target)!.radiusM, pair.distanceM),
+            source,
+          );
+        }
       }
 
       // Surroundings, and the cryoplant for superconducting coils.
@@ -1867,6 +2007,10 @@ export class PlantSolver {
         conduction: { a: string; b: string; conductanceWK: number }[];
         outerArea: Map<string, number>;
         superconducting: Set<string>;
+        bodies: Map<string, HazardBody>;
+        pairs: readonly HazardPair[];
+        fuel: Map<string, FuelInventory>;
+        unburnable: Map<string, ReturnType<typeof unmodelledCombustibles>>;
       }
     | undefined;
 
@@ -1903,7 +2047,29 @@ export class PlantSolver {
         if (conductanceWK > 0) conduction.push({ a: a.id, b: b.id, conductanceWK });
       }
     }
-    this.#thermalCache = { topology, capacity, conduction, outerArea, superconducting };
+    // Spatial hazards: equivalent bodies, coupled pairs and burnable inventories.
+    const bodies = new Map<string, HazardBody>();
+    const fuel = new Map<string, FuelInventory>();
+    const unburnable = new Map<string, ReturnType<typeof unmodelledCombustibles>>();
+    for (const component of components) {
+      bodies.set(component.id, hazardBody(component));
+      const inventory = fuelInventory(component);
+      if (inventory !== null) fuel.set(component.id, inventory);
+      const unmodelled = unmodelledCombustibles(component);
+      if (unmodelled.length > 0) unburnable.set(component.id, unmodelled);
+    }
+    const pairs: readonly HazardPair[] = hazardPairs([...bodies.values()]);
+    this.#thermalCache = {
+      topology,
+      capacity,
+      conduction,
+      outerArea,
+      superconducting,
+      bodies,
+      pairs,
+      fuel,
+      unburnable,
+    };
     return this.#thermalCache;
   }
 
@@ -2179,8 +2345,20 @@ export class PlantSolver {
   #thermalFailures(work: Work, components: readonly SimulationComponent[]): void {
     if (work.dt === 0) return;
     const { topology } = work;
+    const { fuel, unburnable } = this.#thermalStatic(topology, components);
     for (const component of components) {
       const runtime = this.#components.get(component.id)!;
+      for (const region of unburnable.get(component.id) ?? []) {
+        if (runtime.temperatureK < region.ignitionK) continue;
+        addWarning(
+          work,
+          component.id,
+          `${region.name} (${getSubstance(region.substanceId).name}) is above its ${formatQuantity(region.ignitionK, "K")} ignition temperature. ForgeLab has no sourced burning rate for it, so no fire is modelled.`,
+        );
+      }
+      const inventory = fuel.get(component.id);
+      if (inventory !== undefined && work.ignitions.includes(component.id))
+        this.#raiseFire(work, component, inventory);
       if (isSuperconductingCoil(component)) {
         const p = component.parameters;
         const peakFieldT = work.magnets.get(component.id)?.peakFieldT ?? 0;
@@ -2252,10 +2430,9 @@ export class PlantSolver {
           : [];
       const generated = work.heatW.get(component.id) ?? 0;
       let consequence = "";
-      if (component.role === "conductor" && !runtime.disabled) {
-        runtime.disabled = true;
-        runtime.disabledReason = "Burned out: it no longer conducts.";
-        consequence = " It burned out and no longer conducts.";
+      if (component.role === "conductor") {
+        consequence =
+          " Above that limit the metal anneals and its insulation degrades, but it still carries current — and heats further.";
       } else if (component.role === "magnet-coil" && !runtime.disabled) {
         runtime.disabled = true;
         runtime.disabledReason = "Tripped on over-temperature; protection dumped its current.";
@@ -2265,12 +2442,18 @@ export class PlantSolver {
         runtime.disabledReason = "Seized on over-temperature.";
         consequence = " The pump seized.";
       }
+      const spatial = this.#spatialSource(work, component.id);
       const heatSource =
-        component.role === "conductor"
-          ? `${formatQuantity(generated, "W")} of I²R heating`
-          : generated > 0
-            ? `${formatQuantity(generated, "W")} of heat`
-            : "heat conducted into it";
+        spatial !== null && spatial.watts > generated
+          ? `${formatQuantity(spatial.watts, "W")} through space from "${spatial.id}"` +
+            (this.#components.get(spatial.id)?.burning === true ? " (on fire)" : "")
+          : component.role === "conductor"
+            ? `${formatQuantity(generated, "W")} of I²R heating`
+            : generated > 0
+              ? `${formatQuantity(generated, "W")} of heat`
+              : "heat conducted into it";
+      if (spatial !== null && spatial.watts > generated)
+        causeKeys.push(...this.#activeKeysFor([spatial.id], SPATIAL_CAUSE_TYPES));
       this.#raise(work, {
         componentId: component.id,
         system: "thermal",
@@ -2289,12 +2472,113 @@ export class PlantSolver {
         causeKeys,
       });
       void topology;
+      this.#melt(work, component, runtime);
     }
+  }
+
+  /**
+   * A conductor heated through its melting point parts: the circuit opens. Only where
+   * the melting point is sourced; otherwise it keeps conducting in the model.
+   */
+  #melt(work: Work, component: SimulationComponent, runtime: ComponentRuntime): void {
+    if (component.role !== "conductor" || runtime.melted) return;
+    const meltK = findMaterialRecord(component.materialId)?.thermal?.melting?.value;
+    if (meltK === undefined || runtime.temperatureK < meltK) return;
+    runtime.melted = true;
+    runtime.disabled = true;
+    runtime.disabledReason = "Melted through: the circuit is open.";
+    this.#raise(work, {
+      componentId: component.id,
+      system: "electrical",
+      failureType: "melted",
+      unit: "K",
+      measuredValue: runtime.temperatureK,
+      limitValue: meltK,
+      summary: `"${component.id}" melted through`,
+      cause:
+        `"${component.id}" reached ${formatQuantity(runtime.temperatureK, "K")}, the melting point of ` +
+        `${getMaterial(component.materialId).name} (${formatQuantity(meltK, "K")}). The conductor parted and ` +
+        `the circuit it carried is open.`,
+      causeKeys: this.#activeKeysFor([component.id], ["over_temperature", "fire"]),
+    });
+  }
+
+  /** A part's fuel caught fire this step: what burns, why, and how hard. */
+  #raiseFire(work: Work, component: SimulationComponent, inventory: FuelInventory): void {
+    const runtime = this.#components.get(component.id)!;
+    const areaM2 = geometryOuterSurfaceM2(component.geometry);
+    const kgPerS = inventory.burningRateKgM2S * areaM2;
+    const releaseW = kgPerS * inventory.heatOfCombustionJPerKg;
+    const fuels = [...new Set(inventory.substanceIds)]
+      .map((id) => getSubstance(id).name)
+      .join(", ");
+    const spatial = this.#spatialSource(work, component.id);
+    const generated = work.heatW.get(component.id) ?? 0;
+    const why =
+      spatial !== null && spatial.watts > generated
+        ? ` It was heated by ${formatQuantity(spatial.watts, "W")} arriving through space from "${spatial.id}"` +
+          (this.#components.get(spatial.id)?.burning === true ? ", which is on fire." : ".")
+        : generated > 0
+          ? ` Its own ${formatQuantity(generated, "W")} of heating got it there.`
+          : "";
+    this.#raise(work, {
+      componentId: component.id,
+      system: "thermal",
+      failureType: "fire",
+      unit: "K",
+      measuredValue: runtime.temperatureK,
+      limitValue: inventory.ignitionK,
+      summary: `"${component.id}" caught fire`,
+      cause:
+        `${inventory.regionNames.join(", ")} in "${component.id}" reached ${formatQuantity(runtime.temperatureK, "K")}, ` +
+        `above the ${formatQuantity(inventory.ignitionK, "K")} ignition temperature of ${fuels}, in air.` +
+        why +
+        ` It holds ${formatQuantity(inventory.kg, "kg")} of fuel, burning at about ${formatQuantity(releaseW, "W")} ` +
+        `(${formatQuantity(kgPerS, "kg/s")}) until it is consumed in roughly ${formatQuantity(inventory.kg / kgPerS, "s")}; ` +
+        `about a third of that heat is radiated to the parts around it.`,
+      causeKeys: [
+        ...this.#activeKeysFor([component.id], ["over_temperature"]),
+        ...(spatial !== null && spatial.watts > generated
+          ? this.#activeKeysFor([spatial.id], SPATIAL_CAUSE_TYPES)
+          : []),
+      ],
+    });
+  }
+
+  /** The part that sent the most heat through space to `id` this step, if any. */
+  #spatialSource(work: Work, id: string): { id: string; watts: number } | null {
+    const sources = work.spatialSources.get(id);
+    if (sources === undefined) return null;
+    let best: { id: string; watts: number } | null = null;
+    for (const [from, watts] of [...sources].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+      if (best === null || watts > best.watts) best = { id: from, watts };
+    return best;
   }
 
   /* ---------------------------------------------------------------------------------- *
    * Publication
    * ---------------------------------------------------------------------------------- */
+
+  #combustionState(
+    work: Work,
+    component: SimulationComponent,
+    runtime: ComponentRuntime,
+  ): CombustionState | null {
+    const cache = this.#thermalCache;
+    const inventory = cache?.topology === work.topology ? cache.fuel.get(component.id) : undefined;
+    if (inventory === undefined) return null;
+    const heatReleaseW = runtime.burning || runtime.burnedOut ? runtime.heatReleaseW : 0;
+    return Object.freeze({
+      fuelKg: inventory.kg,
+      fuelRemainingKg: runtime.fuelRemainingKg,
+      ignitionK: inventory.ignitionK,
+      burning: runtime.burning,
+      burnedOut: runtime.burnedOut,
+      heatReleaseW,
+      burningRateKgS: heatReleaseW / inventory.heatOfCombustionJPerKg,
+      substanceIds: Object.freeze([...new Set(inventory.substanceIds)]),
+    });
+  }
 
   #publish(work: Work, component: SimulationComponent): ComponentPlantState {
     const runtime = this.#components.get(component.id)!;
@@ -2321,6 +2605,8 @@ export class PlantSolver {
         heatGeneratedW: work.heatW.get(component.id) ?? 0,
         heatToCoolantW: work.heatToCoolantW.get(component.id) ?? 0,
         heatToAmbientW: work.heatToAmbientW.get(component.id) ?? 0,
+        spatialHeatInW: work.spatialHeatW.get(component.id) ?? 0,
+        spatialHeatSourceId: this.#spatialSource(work, component.id)?.id ?? null,
       }),
       electrical: work.electrical.get(component.id) ?? null,
       coolant:
@@ -2334,6 +2620,7 @@ export class PlantSolver {
             }),
       magnet: work.magnets.get(component.id) ?? null,
       vessel: work.vessels.get(component.id) ?? null,
+      combustion: this.#combustionState(work, component, runtime),
       outputs: Object.freeze(outputs),
       warnings: Object.freeze([...new Set(warnings)]),
       disabled: runtime.disabled,

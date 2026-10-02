@@ -1,0 +1,250 @@
+import { getSubstance } from "@forgelab/materials";
+import { STEFAN_BOLTZMANN_W_M2_K4, type Vec3 } from "@forgelab/shared";
+import { type SimulationComponent, componentCenterOfMassM } from "../component.js";
+import { geometryOuterSurfaceM2, geometryVolumeM3 } from "../geometry.js";
+import { SURFACE_EMISSIVITY } from "./constants.js";
+
+/**
+ * Spatial hazards: how a hot or burning part changes the world its unconnected neighbours
+ * see. Radiant heat and fire travel through geometry, never through ports (CLAUDE.md §5,
+ * §36). Each neighbour's own thermal model then decides what that heat does to it.
+ *
+ * REDUCED MODEL (confidence: approximate). Every part is an equivalent sphere with its
+ * outer surface area, r = √(A / 4π), at its centre of mass. Between two spheres far apart
+ * the exchange area is A₁F₁₂ = π r₁² r₂² / d² (the far-field view factor r₂² / 4d², which
+ * is symmetric, so reciprocity holds). Overlapping spheres are held at touching distance;
+ * one sphere entirely inside another is skipped, because the model cannot tell which
+ * surfaces face each other. No shadowing: a part between two others does not block them.
+ */
+
+/** Below this temperature on both surfaces a pair is not evaluated (culling, not physics). */
+export const RADIANT_ONSET_K = 400;
+/**
+ * Pairs whose larger view factor is below this are never coupled: 1e-4 of a surface's
+ * radiation is under 2 W from a 3 m² part at 1000 K. Culling, not physics.
+ */
+export const MIN_VIEW_FACTOR = 1e-4;
+/**
+ * Fraction of a fire's heat release emitted as thermal radiation. MODELLING CHOICE
+ * following the point-source flame radiation model (NUREG-1805, Fire Dynamics Tools,
+ * ch. 5: χr ≈ 0.30–0.40 for sooty hydrocarbon and polymer fires). The rest leaves in the
+ * plume to the hall.
+ */
+export const FIRE_RADIANT_FRACTION = 0.35;
+
+export interface HazardBody {
+  readonly id: string;
+  readonly centreM: Vec3;
+  readonly radiusM: number;
+  readonly areaM2: number;
+}
+
+export interface HazardPair {
+  readonly a: string;
+  readonly b: string;
+  /** Centre distance used by the model (never less than touching), m. */
+  readonly distanceM: number;
+  /** Exchange area A_a F_ab = A_b F_ba, m². */
+  readonly exchangeAreaM2: number;
+}
+
+export function equivalentRadiusM(areaM2: number): number {
+  return Math.sqrt(Math.max(0, areaM2) / (4 * Math.PI));
+}
+
+export function hazardBody(component: SimulationComponent): HazardBody {
+  const areaM2 = geometryOuterSurfaceM2(component.geometry);
+  return {
+    id: component.id,
+    centreM: componentCenterOfMassM(component),
+    radiusM: equivalentRadiusM(areaM2),
+    areaM2,
+  };
+}
+
+/**
+ * The pair's modelled distance and exchange area, or null when the pair is not coupled
+ * (nested, or too far apart to matter).
+ */
+export function pairGeometry(
+  a: HazardBody,
+  b: HazardBody,
+): { distanceM: number; exchangeAreaM2: number } | null {
+  const d = distance(a.centreM, b.centreM);
+  const big = Math.max(a.radiusM, b.radiusM);
+  const small = Math.min(a.radiusM, b.radiusM);
+  if (small <= 0) return null;
+  // One equivalent sphere entirely inside the other: no defined facing surfaces.
+  if (d + small <= big) return null;
+  const distanceM = Math.max(d, a.radiusM + b.radiusM);
+  if ((big * big) / (4 * distanceM * distanceM) < MIN_VIEW_FACTOR) return null;
+  return {
+    distanceM,
+    exchangeAreaM2: (Math.PI * a.radiusM ** 2 * b.radiusM ** 2) / distanceM ** 2,
+  };
+}
+
+/**
+ * Every coupled pair, in deterministic order (a < b by id). A uniform grid prunes pairs
+ * that are too far apart; a body whose reach covers more cells than there are bodies is
+ * tested against all of them instead.
+ */
+export function hazardPairs(bodies: readonly HazardBody[]): HazardPair[] {
+  const sorted = [...bodies].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+  const cell = 4;
+  const key = (i: number, j: number, k: number) => `${i},${j},${k}`;
+  const grid = new Map<string, number[]>();
+  sorted.forEach((body, index) => {
+    const c = cellOf(body.centreM, cell);
+    const list = grid.get(key(c[0], c[1], c[2])) ?? [];
+    list.push(index);
+    grid.set(key(c[0], c[1], c[2]), list);
+  });
+  const seen = new Set<string>();
+  const out: HazardPair[] = [];
+  const consider = (i: number, j: number) => {
+    if (i === j) return;
+    const [lo, hi] = i < j ? [i, j] : [j, i];
+    const pairKey = `${lo}:${hi}`;
+    if (seen.has(pairKey)) return;
+    seen.add(pairKey);
+    const a = sorted[lo]!;
+    const b = sorted[hi]!;
+    const g = pairGeometry(a, b);
+    if (g !== null) out.push({ a: a.id, b: b.id, ...g });
+  };
+  sorted.forEach((body, i) => {
+    // A pair is coupled only within 1/(2√MIN_VIEW_FACTOR) of its larger radius, so each
+    // pair is found from its larger member.
+    const reach = body.radiusM / (2 * Math.sqrt(MIN_VIEW_FACTOR));
+    const span = Math.ceil(reach / cell) + 1;
+    if ((2 * span + 1) ** 3 > sorted.length) {
+      for (let j = 0; j < sorted.length; j += 1) consider(i, j);
+      return;
+    }
+    const c = cellOf(body.centreM, cell);
+    for (let x = -span; x <= span; x += 1)
+      for (let y = -span; y <= span; y += 1)
+        for (let z = -span; z <= span; z += 1)
+          for (const j of grid.get(key(c[0] + x, c[1] + y, c[2] + z)) ?? []) consider(i, j);
+  });
+  return out.sort((p, q) =>
+    p.a !== q.a ? (p.a < q.a ? -1 : 1) : p.b < q.b ? -1 : p.b > q.b ? 1 : 0,
+  );
+}
+
+/**
+ * Net radiant heat from a to b, W (negative when b is the hotter): grey bodies with small
+ * view factors, ε_a ε_b σ A_a F_ab (T_a⁴ − T_b⁴).
+ */
+export function radiantExchangeW(exchangeAreaM2: number, ta: number, tb: number): number {
+  return (
+    SURFACE_EMISSIVITY *
+    SURFACE_EMISSIVITY *
+    STEFAN_BOLTZMANN_W_M2_K4 *
+    exchangeAreaM2 *
+    (ta ** 4 - tb ** 4)
+  );
+}
+
+/**
+ * Flame radiation absorbed by a neighbour: a point source at the burning part's centre
+ * radiating χr·Q evenly, intercepted by the neighbour's cross-section π r² at distance d
+ * and absorbed with its emissivity.
+ */
+export function fireRadiationAbsorbedW(
+  heatReleaseW: number,
+  targetRadiusM: number,
+  distanceM: number,
+): number {
+  if (distanceM <= 0) return 0;
+  return (
+    (SURFACE_EMISSIVITY * FIRE_RADIANT_FRACTION * heatReleaseW * targetRadiusM ** 2) /
+    (4 * distanceM ** 2)
+  );
+}
+
+/** What a part carries that can burn, and how it burns (sourced material data only). */
+export interface FuelInventory {
+  readonly kg: number;
+  /** Lowest ignition temperature among its burnable regions, K. */
+  readonly ignitionK: number;
+  /** Mass-weighted effective heat of combustion, J/kg. */
+  readonly heatOfCombustionJPerKg: number;
+  /** Mass-weighted free-burning rate, kg/(m²·s). */
+  readonly burningRateKgM2S: number;
+  /** Names of the burnable regions, for explanations. */
+  readonly regionNames: readonly string[];
+  readonly substanceIds: readonly string[];
+}
+
+/**
+ * The burnable inventory of a part: its regions whose substance has sourced ignition and
+ * burning data (a solid part burns if its own material does). Null when nothing burns.
+ */
+export function fuelInventory(component: SimulationComponent): FuelInventory | null {
+  const volumeM3 = geometryVolumeM3(component.geometry);
+  const regions =
+    component.composition.length > 0
+      ? component.composition.map((r) => ({
+          name: r.name,
+          substanceId: r.substanceId,
+          volumeM3: r.volumeFraction * volumeM3,
+        }))
+      : [{ name: component.label || component.id, substanceId: component.materialId, volumeM3 }];
+  let kg = 0;
+  let heat = 0;
+  let rate = 0;
+  let ignitionK = Infinity;
+  const names: string[] = [];
+  const ids: string[] = [];
+  for (const region of regions) {
+    const substance = getSubstance(region.substanceId);
+    if (substance.combustion === undefined || substance.ignitionK === undefined) continue;
+    const m = region.volumeM3 * substance.densityKgM3;
+    if (!(m > 0)) continue;
+    kg += m;
+    heat += m * substance.combustion.heatOfCombustionJPerKg;
+    rate += m * substance.combustion.burningRateKgM2S;
+    ignitionK = Math.min(ignitionK, substance.ignitionK);
+    names.push(region.name);
+    ids.push(region.substanceId);
+  }
+  if (kg <= 0) return null;
+  return {
+    kg,
+    ignitionK,
+    heatOfCombustionJPerKg: heat / kg,
+    burningRateKgM2S: rate / kg,
+    regionNames: names,
+    substanceIds: ids,
+  };
+}
+
+/**
+ * Regions that can ignite but whose burning is not sourced: the model reports them above
+ * their ignition temperature rather than inventing a fire.
+ */
+export function unmodelledCombustibles(
+  component: SimulationComponent,
+): readonly { readonly name: string; readonly substanceId: string; readonly ignitionK: number }[] {
+  const regions =
+    component.composition.length > 0
+      ? component.composition.map((r) => ({ name: r.name, substanceId: r.substanceId }))
+      : [{ name: component.label || component.id, substanceId: component.materialId }];
+  const out: { name: string; substanceId: string; ignitionK: number }[] = [];
+  for (const region of regions) {
+    const substance = getSubstance(region.substanceId);
+    if (substance.ignitionK !== undefined && substance.combustion === undefined)
+      out.push({ ...region, ignitionK: substance.ignitionK });
+  }
+  return out;
+}
+
+function distance(a: Vec3, b: Vec3): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+function cellOf(p: Vec3, size: number): [number, number, number] {
+  return [Math.floor(p.x / size), Math.floor(p.y / size), Math.floor(p.z / size)];
+}

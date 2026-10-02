@@ -62,6 +62,8 @@ export function assessConfidence(input: {
   metrics: PlantMetrics;
   /** Coils whose field reaches a plasma only through Biot–Savart (fieldCoupling.ts). */
   geometric?: ReadonlyMap<string, GeometricCoupling>;
+  /** Parts exchanging heat through space this step, and parts on fire (hazards.ts). */
+  hazards?: { readonly exchanging: number; readonly burning: readonly string[] };
 }): ModelConfidence {
   const { topology, components, work } = input;
   const subsystems: SubsystemConfidence[] = [];
@@ -252,6 +254,20 @@ export function assessConfidence(input: {
       );
     }
     add(`plasma:${layout.vesselId}`, level, reasons);
+  }
+  // Heat through space and fire.
+  if (
+    input.hazards !== undefined &&
+    (input.hazards.exchanging > 0 || input.hazards.burning.length > 0)
+  ) {
+    const reasons = [
+      "Radiant heat between parts uses equivalent spheres with far-field view factors and no shadowing.",
+    ];
+    if (input.hazards.burning.length > 0)
+      reasons.push(
+        `${input.hazards.burning.length} part(s) on fire: free-burning rate over the whole outer surface, ignition judged from the part's lumped temperature, flame radiation as a point source. Not a fire-safety assessment.`,
+      );
+    add("hazards", "approximate", reasons);
   }
   if (topology.orphanBlanketIds.length > 0) {
     add("neutronics", "experimental", [

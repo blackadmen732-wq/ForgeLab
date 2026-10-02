@@ -15,6 +15,35 @@ export interface ThermalState {
   readonly heatToCoolantW: number;
   /** Heat lost to surroundings (convection + radiation) this tick, W. */
   readonly heatToAmbientW: number;
+  /**
+   * Net heat received through space from other parts this tick — radiant exchange with
+   * hot neighbours and flame radiation from fires — W (negative when it radiates more to
+   * its neighbours than it receives).
+   */
+  readonly spatialHeatInW: number;
+  /** The part that sent it the most heat through space this tick, or null. */
+  readonly spatialHeatSourceId: string | null;
+}
+
+/**
+ * Burnable material in a part and its fire. Present only for parts that carry fuel with
+ * sourced ignition and burning data; everything else cannot burn in the model.
+ */
+export interface CombustionState {
+  /** Burnable inventory at the start of the run, kg. */
+  readonly fuelKg: number;
+  readonly fuelRemainingKg: number;
+  /** Ignition temperature of its most easily ignited fuel, K. */
+  readonly ignitionK: number;
+  readonly burning: boolean;
+  /** All of its fuel is consumed. */
+  readonly burnedOut: boolean;
+  /** Heat release rate of its fire, W (0 when not burning). */
+  readonly heatReleaseW: number;
+  /** Fuel mass burned per second, kg/s. */
+  readonly burningRateKgS: number;
+  /** Substances that burn (e.g. "xlpe"): smoke and flame follow their chemistry. */
+  readonly substanceIds: readonly string[];
 }
 
 export interface ElectricalState {
@@ -120,11 +149,12 @@ export interface ComponentPlantState {
   readonly coolant: CoolantState | null;
   readonly magnet: MagnetState | null;
   readonly vessel: VesselState | null;
+  readonly combustion: CombustionState | null;
   /** Role-specific scalar outputs, SI, keyed with unit suffixes (e.g. `shaftPowerW`). */
   readonly outputs: Readonly<Record<string, number>>;
   /** Human-readable conditions worth showing in an inspector (not failures). */
   readonly warnings: readonly string[];
-  /** Knocked out by a failure this run (burned-out conductor, tripped coil...). */
+  /** Knocked out by a failure this run (melted conductor, tripped coil...). */
   readonly disabled: boolean;
 }
 
@@ -136,6 +166,8 @@ export const ZERO_THERMAL_STATE: ThermalState = Object.freeze({
   heatGeneratedW: 0,
   heatToCoolantW: 0,
   heatToAmbientW: 0,
+  spatialHeatInW: 0,
+  spatialHeatSourceId: null,
 });
 
 export const ZERO_PLANT_STATE: ComponentPlantState = Object.freeze({
@@ -144,6 +176,7 @@ export const ZERO_PLANT_STATE: ComponentPlantState = Object.freeze({
   coolant: null,
   magnet: null,
   vessel: null,
+  combustion: null,
   outputs: Object.freeze({}),
   warnings: Object.freeze([]),
   disabled: false,

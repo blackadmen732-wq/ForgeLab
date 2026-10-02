@@ -182,7 +182,11 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
     control: control("command"),
   },
   "grid-connection": { power: power("out", 50_000, "GRID SUPPLY") },
-  "bus-bar": { a: power("both", 8000, "BUS"), b: power("both", 8000, "BUS") },
+  "bus-bar": {
+    a: power("both", 8000, "BUS"),
+    b: power("both", 8000, "BUS"),
+    sensor: spare(control("measurement", "THERMOCOUPLE")),
+  },
   breaker: {
     line: power("both", 8000, "LINE"),
     load: power("both", 8000, "LOAD"),
@@ -1065,13 +1069,17 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
         kind: "conductor",
         substanceId: "copper",
         purpose: "Carries the plant current.",
+        // The 100 × 300 mm envelope less a 5 mm sleeve: (0.09 × 0.29) / (0.1 × 0.3).
+        volumeFraction: 0.87,
       },
       {
         id: "sleeve",
         name: "Insulating sleeve",
         kind: "insulation",
         substanceId: "xlpe",
-        purpose: "Polymer insulation over the bar — the fire load if it overheats.",
+        purpose:
+          "5 mm of polymer insulation over the bar — the fire load if it overheats (schematic thickness).",
+        volumeFraction: 0.13,
       },
       {
         id: "supports",
@@ -1082,7 +1090,7 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
         purpose: "Hold the bar off its supports.",
       },
     ],
-    internalsSetMass: false,
+    internalsSetMass: true,
     capabilities: ["electrical", "thermal"],
     ratings: (p) => [rating("Cross-section", `${(n(p, "crossSectionM2") * 1e6).toFixed(0)} mm²`)],
     failureModes: [

@@ -1020,6 +1020,7 @@ export const BUS_BAR = define({
       sockets: [
         socket("a", "electrical", vec3(-L / 2, 0, 0), NX),
         socket("b", "electrical", vec3(L / 2, 0, 0), PX),
+        socket("sensor", "control", vec3(0, 0.05, 0), UP),
         structural("bottom", vec3(0, -0.05, 0), DOWN),
       ],
     };
