@@ -144,6 +144,14 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
   "chamber-end-cap": {
     flange: chamberEnd,
   },
+  "pf-coil": {
+    power: power("in", 400, "CRYOPLANT POWER"),
+    sensor: control("measurement", "QUENCH DETECTION"),
+  },
+  "central-solenoid": {
+    power: power("in", 400, "CRYOPLANT POWER"),
+    sensor: control("measurement", "QUENCH DETECTION"),
+  },
   "tf-coil-set": {
     power: power("in", 400, "CRYOPLANT POWER"),
     "coolant-in": water("in", 0.3, "CASE COOLING IN"),
@@ -325,6 +333,78 @@ const segmentSheet = (summary: string): ProductInfo => ({
   animations: [{ id: "glow", source: "plasma.temperatureKeV" }],
 });
 
+/** A superconducting coil: jacket, insulation, strands, stabiliser and helium. */
+const superconductingCoilSheet = (o: {
+  summary: string;
+  conductor: { id: string; name: string };
+  caseName: string;
+  visual: ProductInfo["visual"];
+}): ProductInfo => ({
+  summary: o.summary,
+  internals: [
+    {
+      id: "case",
+      name: o.caseName,
+      kind: "structure",
+      substanceId: "stainless-steel",
+      purpose: "Carries the electromagnetic forces of the coil's own field.",
+    },
+    {
+      id: "insulation",
+      name: "Ground insulation",
+      kind: "insulation",
+      substanceId: "g10-cr",
+      purpose: "Insulates the winding pack from the jacket.",
+    },
+    {
+      id: "winding",
+      name: o.conductor.name,
+      kind: "superconductor",
+      substanceId: o.conductor.id,
+      purpose: "Carries the coil current with no resistance below its critical surface.",
+    },
+    {
+      id: "stabiliser",
+      name: "Copper stabiliser",
+      kind: "conductor",
+      substanceId: "copper-ofhc",
+      purpose: "Takes the current during a quench while protection dumps the energy.",
+    },
+    {
+      id: "helium",
+      name: "Helium coolant channel",
+      kind: "cryogen",
+      substanceId: "helium",
+      purpose: "Keeps the conductor near 4.5 K.",
+    },
+  ],
+  internalsSetMass: false,
+  capabilities: ["magnetic", "cryogenic", "electrical", "structural", "thermal"],
+  ratings: (p) => [
+    rating("Current", `${(n(p, "currentA") / 1e3).toFixed(0)} kA`),
+    rating("Turns", n(p, "turns").toFixed(0)),
+    rating("Ampere-turns", `${((n(p, "currentA") * n(p, "turns")) / 1e6).toFixed(1)} MA`),
+  ],
+  failureModes: [
+    {
+      id: "quench",
+      name: "Quench",
+      system: "magnetic",
+      description:
+        "Cold mass warms past the critical temperature; the coil turns resistive and dumps its current.",
+    },
+    {
+      id: "hoop",
+      name: "Hoop overstress",
+      system: "magnetic",
+      description: "The coil's own field stretches it beyond what its jacket can carry.",
+    },
+  ],
+  audio: "magnet",
+  visual: o.visual,
+  animations: [{ id: "frost", source: "magnet.currentA" }],
+});
+
 export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
   "structural-beam": structuralSheet(
     "Square hollow section for frames, columns and supports.",
@@ -483,6 +563,67 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     visual: "tokamak-vessel",
     animations: [{ id: "glow", source: "plasma.temperatureKeV" }],
   },
+  "pf-coil": superconductingCoilSheet({
+    summary:
+      "Poloidal-field ring coil: in a real tokamak it shapes the plasma and holds it in place. ForgeLab computes its field; its 0D plasma does not model equilibrium.",
+    conductor: { id: "nbti", name: "NbTi superconducting strands" },
+    caseName: "Steel conductor jacket",
+    visual: "loop-coil",
+  }),
+  "central-solenoid": superconductingCoilSheet({
+    summary:
+      "Central solenoid stack: in a real tokamak its changing flux drives the plasma current. ForgeLab takes that current as given and computes the solenoid's own field, stress and quench.",
+    conductor: { id: "nb3sn", name: "Nb₃Sn superconducting strands" },
+    caseName: "Steel conductor jacket and tie plates",
+    visual: "solenoid",
+  }),
+  cryostat: {
+    summary:
+      "Vacuum-insulated stainless shell around the whole machine. Structure and mass in ForgeLab; its insulation vacuum and thermal shield are not modelled yet.",
+    internals: [
+      {
+        id: "shell",
+        name: "Cryostat shell",
+        kind: "structure",
+        substanceId: "stainless-304l",
+        purpose: "Holds the insulation vacuum against the atmosphere around the cold magnets.",
+      },
+      {
+        id: "shield",
+        name: "Thermal shield (not modelled)",
+        kind: "structure",
+        substanceId: null,
+        materialNote: "Silver-coated stainless panels cooled at ~80 K (not catalogued)",
+        purpose: "Intercepts radiated heat before it reaches the 4 K magnets.",
+      },
+      {
+        id: "insulation-vacuum",
+        name: "Insulation vacuum",
+        kind: "vacuum",
+        substanceId: null,
+        purpose: "Removes convection between the warm shell and the cold mass.",
+      },
+    ],
+    internalsSetMass: false,
+    capabilities: ["structural", "thermal"],
+    ratings: () => [],
+    failureModes: [
+      {
+        id: "yield",
+        name: "Shell overstress",
+        system: "structural",
+        description: "Load on the shell exceeds what its steel can carry.",
+      },
+    ],
+    audio: "structure",
+    visual: "linear-chamber",
+    animations: [],
+  },
+  "stair-tower": structuralSheet(
+    "Switchback stairs with landings: how people reach the platforms around a machine.",
+    "platform",
+    "structural-steel",
+  ),
   "tf-coil-set": {
     summary:
       "Superconducting toroidal-field winding in a steel case: makes the field that confines the plasma.",

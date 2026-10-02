@@ -216,6 +216,156 @@ export function buildReferencePlant(
 }
 
 /* ------------------------------------------------------------------------------------ *
+ * ITER-class plant at true scale
+ * ------------------------------------------------------------------------------------ */
+
+/** Plasma centre height of the ITER-class plant: the core stands on 4 m gravity supports. */
+export const ITER_CLASS_CENTRE_Y = 8.35;
+
+/**
+ * Poloidal-field coils as (ring radius, height above the plasma centre), m — ITER's six
+ * PF coils, approximately (ITER Design Description). They sit outside this plant's
+ * circular-section TF set.
+ */
+const PF_LAYOUT: readonly [string, number, number][] = [
+  ["pf1", 3.9, 7.5],
+  ["pf2", 8.4, 6.5],
+  ["pf3", 12, 3.3],
+  ["pf4", 12, -2.2],
+  ["pf5", 8.4, -6.7],
+  ["pf6", 4.4, -7.6],
+];
+
+/**
+ * The reference plant's machine at true scale, with what surrounds it in a real hall: the
+ * tokamak core standing on four steel gravity supports, six poloidal-field coils and a
+ * central solenoid, a 29 m cryostat around it all, and the heating, fuelling, pumping,
+ * cooling, power-conversion and electrical plant outside its wall, with a maintenance
+ * platform and stairs. Every piece is a catalogue part; nothing is decoration.
+ *
+ * The PF coils and central solenoid are pinned in place: in a real machine they are clamped
+ * to the TF coil cases, which ForgeLab does not model yet. Not tuned to succeed or fail.
+ */
+export function buildIterClassPlant(world: SimulationWorld): void {
+  const c = ITER_CLASS_CENTRE_Y;
+  const put = (type: string, id: string, label: string, extra: Partial<PlaceOptions> = {}) =>
+    placePart(world, type, { id, label, ...extra });
+  const join = (from: [string, string], to: [string, string]) => link(world, from, to);
+
+  // The core: TF set, blanket and vessel nested on one centre, on gravity supports.
+  put("tf-coil-set", "tf-coils", "TF Coil Set", { position: vec3(0, c, 0) });
+  put("breeding-blanket", "blanket", "Breeding Blanket", { position: vec3(0, c, 0) });
+  put("tokamak-vessel", "vessel", "Vacuum Vessel", { position: vec3(0, c, 0) });
+  const tubeRadius = 4.35;
+  const supportM = c - tubeRadius;
+  for (const [suffix, x, z] of [
+    ["px", 6.2, 0],
+    ["nx", -6.2, 0],
+    ["pz", 0, 6.2],
+    ["nz", 0, -6.2],
+  ] as const) {
+    join(["blanket", `foot-${suffix}`], ["tf-coils", `cradle-${suffix}`]);
+    join(["vessel", `foot-${suffix}`], ["blanket", `cradle-${suffix}`]);
+    const id = `support-${suffix}`;
+    put("structural-beam", id, `Gravity Support ${suffix.toUpperCase()}`, {
+      transform: transform(vec3(x, supportM / 2, z), UPRIGHT),
+      dimensions: { lengthM: supportM, sectionM: 1.2, wallM: 0.05 },
+    });
+    join([id, "end-b"], ["tf-coils", `foot-${suffix}`]);
+  }
+
+  // Poloidal-field coils and the central solenoid (pinned: see above).
+  for (const [id, ringRadiusM, dz] of PF_LAYOUT) {
+    put("pf-coil", id, id.toUpperCase(), {
+      position: vec3(0, c + dz, 0),
+      dimensions: { ringRadiusM, windingRadiusM: 0.5, wallM: 0.1 },
+    });
+    world.setAnchored(id, true);
+  }
+  put("central-solenoid", "cs", "Central Solenoid", { position: vec3(0, c, 0) });
+  world.setAnchored("cs", true);
+
+  // The cryostat around the whole machine.
+  put("cryostat", "cryostat", "Cryostat", { position: vec3(0, 13, 0) });
+
+  // Heating, fuelling and pumping outside the cryostat wall.
+  put("neutral-beam", "nbi", "Neutral Beam", {
+    transform: transform(
+      vec3(0, 1.2, 22),
+      QuaternionMath.fromAxisAngle(vec3(0, 1, 0), Math.PI / 2),
+    ),
+  });
+  put("fuel-injector", "injector", "Fuel Injector", { position: vec3(-20, 0.7, 6) });
+  put("vacuum-pump", "cryopump", "Cryopump Bank", { position: vec3(20, 1, 6) });
+  join(["nbi", "port"], ["vessel", "heating"]);
+  join(["injector", "fuel"], ["vessel", "fuel"]);
+  join(["cryopump", "vacuum"], ["vessel", "vacuum"]);
+
+  // Primary coolant loop and power conversion, north of the cryostat.
+  put("coolant-pump", "pump", "Primary Pump", { position: vec3(-10, 1, -24) });
+  put("coolant-pipe", "pipe-hot", "Supply Pipe", { position: vec3(-6, 0.39, -24) });
+  put("coolant-pipe", "pipe-cold", "Return Pipe", { position: vec3(-14, 0.39, -24) });
+  put("steam-generator", "steam-gen", "Steam Generator", { position: vec3(10, 4, -26) });
+  put("steam-turbine", "turbine", "Steam Turbine", { position: vec3(24, 2, -26) });
+  put("generator", "generator", "Generator", { position: vec3(32, 2, -26) });
+  join(["pump", "outlet"], ["pipe-hot", "a"]);
+  join(["pipe-hot", "b"], ["vessel", "coolant-in"]);
+  join(["vessel", "coolant-out"], ["blanket", "coolant-in"]);
+  join(["blanket", "coolant-out"], ["steam-gen", "primary-in"]);
+  join(["steam-gen", "primary-out"], ["pipe-cold", "b"]);
+  join(["pipe-cold", "a"], ["pump", "inlet"]);
+  join(["steam-gen", "steam"], ["turbine", "steam"]);
+  join(["turbine", "shaft"], ["generator", "shaft"]);
+
+  // Electrical: grid and generator feed the bus that feeds every load, magnets included.
+  put("grid-connection", "grid", "Grid Connection", { position: vec3(30, 1.2, 14) });
+  put("bus-bar", "bus", "Main Bus", { position: vec3(24, 0.05, 14) });
+  join(["grid", "power"], ["bus", "b"]);
+  join(["generator", "power"], ["bus", "b"]);
+  for (const id of [
+    "nbi",
+    "injector",
+    "cryopump",
+    "pump",
+    "tf-coils",
+    "cs",
+    ...PF_LAYOUT.map((p) => p[0]),
+  ])
+    join([id, "power"], ["bus", "a"]);
+
+  // Protection: shut the plasma down if the vessel wall passes 900 K.
+  put("sensor", "wall-sensor", "Wall Temperature Sensor", { position: vec3(18, 0.15, -12) });
+  put("interlock", "interlock", "Wall Interlock", {
+    position: vec3(18, 0.9, -15),
+    parameters: { setpoint: 900, comparison: "above", action: "shutdown-plasma" },
+  });
+  join(["wall-sensor", "signal"], ["vessel", "sensor"]);
+  join(["interlock", "signal"], ["wall-sensor", "signal"]);
+  join(["interlock", "signal"], ["nbi", "control"]);
+  join(["interlock", "signal"], ["injector", "control"]);
+
+  // A maintenance platform by the neutral-beam line, reached by a stair tower.
+  const deckTop = 8;
+  put("structural-platform", "platform", "Maintenance Platform", {
+    position: vec3(12, deckTop - 0.1, 20),
+  });
+  for (const [socket, dx, dz] of PLATFORM_CORNERS) {
+    const leg = `platform-${socket}`;
+    put("structural-beam", leg, "Platform Column", {
+      transform: transform(vec3(12 + dx, (deckTop - 0.2) / 2, 20 + dz), UPRIGHT),
+      dimensions: { lengthM: deckTop - 0.2, sectionM: 0.3, wallM: 0.012 },
+    });
+    join(["platform", socket], [leg, "end-b"]);
+  }
+  put("stair-tower", "stairs", "Stair Tower", {
+    position: vec3(16.5, (deckTop - 0.2) / 2, 20),
+    dimensions: { heightM: deckTop - 0.2, widthM: 3, runM: 6 },
+  });
+
+  world.solve();
+}
+
+/* ------------------------------------------------------------------------------------ *
  * Benchmark
  * ------------------------------------------------------------------------------------ */
 

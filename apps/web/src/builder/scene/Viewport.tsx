@@ -694,6 +694,8 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       const request = store.cameraRequest;
       const controls = controlsRef.current;
       if (request === null || controls === null) return;
+      // Walking and flying put the camera where the player takes it; framing would yank it.
+      if (store.getView().cameraMode !== "orbit") return;
       const view = store.getView();
       const target = controls.target.clone();
       if (request.kind === "pose") {
@@ -759,6 +761,7 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       controls?.update();
       invalidate();
     }
+    if (cameraMode !== "orbit") anim.current = null;
     const a = anim.current;
     if (controls !== null && a !== null) {
       const t = a.ms === 0 ? 1 : Math.min(1, (performance.now() - a.t0) / a.ms);

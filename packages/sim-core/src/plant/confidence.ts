@@ -12,7 +12,7 @@ import type {
   VesselState,
 } from "./state.js";
 import type { PlantTopology } from "./topology.js";
-import { combinedRipple, type GeometricCoupling } from "./fieldCoupling.js";
+import { combinedRipple, isPoloidalCoil, type GeometricCoupling } from "./fieldCoupling.js";
 import { numberParameter } from "./roles.js";
 import { getCoolantFluid } from "./fluids.js";
 
@@ -130,10 +130,20 @@ export function assessConfidence(input: {
     let level: ConfidenceLevel = "supported";
     const geometric = input.geometric ?? new Map<string, GeometricCoupling>();
     const idle = topology.orphanCoilIds.filter((id) => !geometric.has(id));
-    if (idle.length > 0) {
+    // Rings and solenoids coaxial with a toroidal vessel are poloidal-field coils and
+    // central solenoids: their field crosses the plasma's toroidal axis.
+    const poloidal = idle.filter((id) => isPoloidalCoil(topology, id));
+    const stray = idle.length - poloidal.length;
+    if (poloidal.length > 0) {
       level = worstLevel([level, "approximate"]);
       reasons.push(
-        `${idle.length} coil(s) put no significant field on any plasma: computed from their geometry, it is negligible on every vessel's axis.`,
+        `${poloidal.length} coil(s) are coaxial with a toroidal vessel (poloidal-field coils or a central solenoid): in a real machine they shape, hold and drive the plasma; ForgeLab's 0D plasma model does not compute equilibrium or flux swing, so their field is computed but not used.`,
+      );
+    }
+    if (stray > 0) {
+      level = worstLevel([level, "approximate"]);
+      reasons.push(
+        `${stray} coil(s) put no significant field on any plasma: computed from their geometry, it is negligible on every vessel's axis.`,
       );
     }
     if (geometric.size > 0) {

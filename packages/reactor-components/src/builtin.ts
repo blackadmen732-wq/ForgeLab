@@ -285,6 +285,83 @@ export const STRUCTURAL_PLATFORM = define({
   keyProperty: "6 × 6 m deck",
 });
 
+/**
+ * Cryostat — the vacuum-insulated stainless shell that encloses a superconducting
+ * tokamak (ITER: 304L, about 29 m across and 29 m tall, 3 850 t). Here it is the shell
+ * and its mass: its insulation vacuum and thermal shield are not modelled yet, so it does
+ * not change what reaches the cold magnets.
+ */
+export const CRYOSTAT = define({
+  type: "cryostat",
+  name: "Cryostat",
+  description:
+    "304L stainless shell around the whole machine, 29 m across and 26 m tall with a 100 mm wall by default (≈3 000 t). Structure and mass only: its insulation vacuum and thermal shield are not modelled yet.",
+  category: "Chambers",
+  role: "structure",
+  material: MaterialIds.Stainless304L,
+  dimensions: [
+    dim("radiusM", "Radius", 14.6, 2, 30),
+    dim("heightM", "Height", 26, 2, 45),
+    dim("wallM", "Wall thickness", 0.1, 0.01, 0.5),
+  ],
+  shape: (d) => {
+    const r = d["radiusM"]!;
+    const h = d["heightM"]!;
+    const t = Math.min(d["wallM"]!, r / 10, h / 10);
+    return {
+      geometry: cylinderGeometry(r, h, "y", t),
+      sockets: [
+        structural("base", vec3(0, -h / 2, 0), DOWN),
+        structural("lid", vec3(0, h / 2, 0), UP),
+        mount("ring-px", vec3(r, 0, 0), PX),
+        mount("ring-nx", vec3(-r, 0, 0), NX),
+        mount("ring-pz", vec3(0, 0, r), PZ),
+        mount("ring-nz", vec3(0, 0, -r), NZ),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder"
+      ? { radiusM: g.radiusM, heightM: g.heightM, wallM: g.wallThicknessM ?? 0.1 }
+      : {},
+  keyProperty: "Ø29 m · 304L",
+});
+
+/**
+ * Stair Tower — switchback steel stairs with landings, for reaching platforms. Its mass is
+ * that of an equivalent thin steel shell over its envelope (a stair tower is mostly air).
+ */
+export const STAIR_TOWER = define({
+  type: "stair-tower",
+  name: "Stair Tower",
+  description:
+    "Switchback steel stairs with a landing every 3.6 m, 12 m tall by default. Its mass is an equivalent 4 mm steel shell over the envelope.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.StructuralSteel,
+  dimensions: [
+    dim("heightM", "Height", 12, 2, 40),
+    dim("widthM", "Width", 3, 1.5, 6),
+    dim("runM", "Run", 6, 3, 12),
+  ],
+  shape: (d) => {
+    const h = d["heightM"]!;
+    const w = d["widthM"]!;
+    const run = d["runM"]!;
+    return {
+      geometry: boxGeometry(vec3(w, h, run), 0.004),
+      sockets: [
+        structural("base", vec3(0, -h / 2, 0), DOWN),
+        structural("top", vec3(0, h / 2, 0), UP),
+        mount("landing", vec3(w / 2, h / 2, 0), PX),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "box" ? { heightM: g.sizeM.y, widthM: g.sizeM.x, runM: g.sizeM.z } : {},
+  keyProperty: "12 m · steel",
+});
+
 /** Equipment Block — a solid aluminium cube standing in for unspecified plant. */
 export const EQUIPMENT_BLOCK = define({
   type: "equipment-block",
@@ -691,6 +768,104 @@ export const CIRCULAR_COIL = define({
 });
 
 /**
+ * Poloidal-Field Coil — a horizontal superconducting ring (NbTi, as in ITER's PF coils).
+ * Rings above and below the plasma shape and hold it in a real machine; ForgeLab's 0D
+ * plasma does not compute equilibrium, so its field is computed (Biot–Savart) and shown,
+ * and the model says it does not use it.
+ */
+export const PF_COIL = define({
+  type: "pf-coil",
+  name: "Poloidal-Field Coil",
+  description:
+    "Horizontal NbTi ring coil in a steel jacket, 8 m ring radius by default (ITER's six PF coils span 8–24 m across). Shapes and positions the plasma in a real machine: ForgeLab computes its field but its 0D plasma does not model equilibrium.",
+  category: "Magnets",
+  role: "magnet-coil",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("ringRadiusM", "Ring radius R", 8, 1, 15),
+    dim("windingRadiusM", "Winding radius", 0.5, 0.1, 2),
+    dim("wallM", "Jacket thickness", 0.1, 0.01, 0.5),
+  ],
+  shape: (d) => {
+    const R = d["ringRadiusM"]!;
+    const a = Math.min(d["windingRadiusM"]!, 0.5 * R);
+    const t = Math.min(d["wallM"]!, 0.9 * a);
+    return {
+      geometry: torusGeometry(R, a, "y", t),
+      sockets: [
+        structural("bracket-px", vec3(R, -a, 0), DOWN),
+        structural("bracket-nx", vec3(-R, -a, 0), DOWN),
+        socket("power", "electrical", vec3(R + a, 0, 0), PX),
+        socket("sensor", "control", vec3(-(R + a), 0, 0), NX),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "torus"
+      ? {
+          ringRadiusM: g.majorRadiusM,
+          windingRadiusM: g.minorRadiusM,
+          wallM: g.wallThicknessM ?? 0.1,
+        }
+      : {},
+  presets: {
+    winding: "loop",
+    turns: 200,
+    currentA: 45000,
+    superconducting: true,
+    conductor: "nbti",
+    cryoCapacityW: 5e3,
+  },
+  keyProperty: "9 MA-turns · NbTi",
+});
+
+/**
+ * Central Solenoid — the superconducting stack in a tokamak's bore (ITER: Nb₃Sn, about
+ * 4 m across and 13 m tall). ForgeLab assumes the plasma current is driven (the vessel's
+ * plasma-current setting) and does not model the solenoid's flux swing; its field, peak
+ * field, stored energy and hoop stress are computed like any solenoid's.
+ */
+export const CENTRAL_SOLENOID = define({
+  type: "central-solenoid",
+  name: "Central Solenoid",
+  description:
+    "Nb₃Sn solenoid stack for a tokamak's central bore, 1.6 m radius and 12 m tall by default, 3000 turns at 40 kA (~12.6 T). The plasma current it would drive is taken as given; its own field, stress and quench are computed.",
+  category: "Magnets",
+  role: "magnet-coil",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("radiusM", "Radius", 1.6, 0.3, 6),
+    dim("lengthM", "Height", 12, 1, 30),
+    dim("wallM", "Winding thickness", 0.7, 0.05, 2),
+  ],
+  shape: (d) => {
+    const r = d["radiusM"]!;
+    const L = d["lengthM"]!;
+    const t = Math.min(d["wallM"]!, r / 2);
+    return {
+      geometry: cylinderGeometry(r, L, "y", t),
+      sockets: [
+        structural("base", vec3(0, -L / 2, 0), DOWN),
+        socket("power", "electrical", vec3(r, L / 2 - 0.5, 0), PX),
+        socket("sensor", "control", vec3(-r, L / 2 - 0.5, 0), NX),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "cylinder"
+      ? { radiusM: g.radiusM, lengthM: g.heightM, wallM: g.wallThicknessM ?? 0.7 }
+      : {},
+  presets: {
+    turns: 3000,
+    currentA: 40000,
+    superconducting: true,
+    conductor: "nb3sn",
+    cryoCapacityW: 1e4,
+  },
+  keyProperty: "120 MA-turns · Nb₃Sn",
+});
+
+/**
  * Solenoid Coil — a short copper solenoid (default r = 2.2 m, 0.8 m long) for linear
  * devices. Resistive by default: it dissipates I²R and needs water cooling.
  */
@@ -1081,12 +1256,16 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   STRUCTURAL_PLATFORM,
   REACTOR_CHAMBER,
   EQUIPMENT_BLOCK,
+  STAIR_TOWER,
   TOKAMAK_VESSEL,
+  CRYOSTAT,
   CHAMBER_STRAIGHT,
   CHAMBER_BEND,
   CHAMBER_END_CAP,
   TF_COIL_SET,
   CIRCULAR_COIL,
+  PF_COIL,
+  CENTRAL_SOLENOID,
   SOLENOID_COIL,
   FUEL_INJECTOR,
   NEUTRAL_BEAM,

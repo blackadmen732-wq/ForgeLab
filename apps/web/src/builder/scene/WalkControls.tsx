@@ -100,7 +100,8 @@ export function WalkControls({ mode }: { mode: CameraMode }) {
     const forward = new Vector3();
     const right = new Vector3();
     const step = (now: number) => {
-      const dt = Math.min(0.1, (now - last) / 1000);
+      // Real elapsed time, capped so a stalled frame never teleports the camera.
+      const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
       const [slow, quick] = mode === "walk" ? WALK_SPEED : FLY_SPEED;
       const d = (fast ? quick : slow) * dt;

@@ -3,7 +3,7 @@ import type { SimulationComponent } from "../component.js";
 import type { Connection } from "../connections.js";
 import { getCoolantFluid, lameHoopStressPa, loopPressurePa } from "./fluids.js";
 import { booleanParameter, COOLED_ROLES, numberParameter, stringParameter } from "./roles.js";
-import { geometricCouplings } from "./fieldCoupling.js";
+import { geometricCouplings, isPoloidalCoil } from "./fieldCoupling.js";
 import { buildTopology, groupsOver, type PlantTopology } from "./topology.js";
 
 /**
@@ -338,7 +338,11 @@ function plasmaSystems(
         message: `No coil puts a significant magnetic field on the plasma in ${name}.`,
       });
   }
-  const idle = topology.orphanCoilIds.filter((id) => !geometric.has(id));
+  // Poloidal-field coils and central solenoids are where they should be; the model's
+  // limits for them are stated in model confidence, not reported as a misplacement.
+  const idle = topology.orphanCoilIds.filter(
+    (id) => !geometric.has(id) && !isPoloidalCoil(topology, id),
+  );
   if (topology.vessels.length > 0 && idle.length > 0)
     out.push({
       code: "COIL_SERVES_NO_PLASMA",

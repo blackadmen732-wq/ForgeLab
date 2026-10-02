@@ -1,3 +1,5 @@
+import { type Vec3, Vec3Math, localDirectionToWorld, vec3 } from "@forgelab/shared";
+import { currentTransform } from "../component.js";
 import { numberParameter } from "./roles.js";
 import {
   type AxisCoupling,
@@ -82,4 +84,35 @@ export function combinedRipple(
   const sameSign = total.every((v) => Math.sign(v) === Math.sign(total[0]!));
   if (!sameSign) return 1;
   return max + min > 0 ? (max - min) / (max + min) : 0;
+}
+
+const AXIS: Readonly<Record<"x" | "y" | "z", Vec3>> = {
+  x: vec3(1, 0, 0),
+  y: vec3(0, 1, 0),
+  z: vec3(0, 0, 1),
+};
+
+/**
+ * A poloidal-field coil or central solenoid: a loop coil or solenoid whose axis runs along
+ * a single torus vessel's axis, centred on it. Its field crosses the plasma's toroidal
+ * axis; it shapes, holds and drives the plasma in a real machine, which the 0D plasma
+ * model does not compute.
+ */
+export function isPoloidalCoil(topology: PlantTopology, coilId: string): boolean {
+  const coil = topology.byId.get(coilId);
+  if (coil === undefined) return false;
+  const g = coil.geometry;
+  if (g.kind !== "torus" && g.kind !== "cylinder") return false;
+  const ct = currentTransform(coil);
+  const coilAxis = localDirectionToWorld(ct, AXIS[g.axis]);
+  return topology.vessels.some((layout) => {
+    const vessel = topology.byId.get(layout.vesselId)!;
+    if (vessel.geometry.kind !== "torus" || layout.chamber.path !== "single") return false;
+    const vt = currentTransform(vessel);
+    const axis = localDirectionToWorld(vt, AXIS[vessel.geometry.axis]);
+    if (Math.abs(Vec3Math.dot(axis, coilAxis)) < 0.99) return false;
+    const offset = Vec3Math.subtract(ct.positionM, vt.positionM);
+    const along = Vec3Math.scale(axis, Vec3Math.dot(offset, axis));
+    return Vec3Math.length(Vec3Math.subtract(offset, along)) < 0.5;
+  });
 }

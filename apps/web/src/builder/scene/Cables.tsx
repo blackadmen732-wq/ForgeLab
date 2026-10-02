@@ -88,6 +88,66 @@ function flange(at: RouteEnd, radius: number): BufferGeometry {
   );
 }
 
+/** A cylindrical shell a run can pass through (a cryostat): axis vertical. */
+interface Shell {
+  readonly x: number;
+  readonly z: number;
+  readonly r: number;
+  readonly yMin: number;
+  readonly yMax: number;
+}
+
+/**
+ * Where a run's path crosses a shell's wall: a penetration, drawn as a collar sleeve around
+ * the run. Each one is a real service entering the machine, not decoration.
+ */
+export function penetrations(
+  path: readonly (readonly [number, number, number])[],
+  shells: readonly Shell[],
+): RouteEnd[] {
+  const out: RouteEnd[] = [];
+  const inside = (p: readonly [number, number, number], s: Shell) =>
+    Math.hypot(p[0] - s.x, p[2] - s.z) < s.r;
+  for (const s of shells) {
+    for (let i = 1; i < path.length; i += 1) {
+      const a = path[i - 1]!;
+      const b = path[i]!;
+      if (inside(a, s) === inside(b, s)) continue;
+      // Bisect for the crossing.
+      let lo = 0;
+      let hi = 1;
+      for (let k = 0; k < 24; k += 1) {
+        const m = (lo + hi) / 2;
+        const p = [
+          a[0] + (b[0] - a[0]) * m,
+          a[1] + (b[1] - a[1]) * m,
+          a[2] + (b[2] - a[2]) * m,
+        ] as const;
+        if (inside(p, s) === inside(a, s)) lo = m;
+        else hi = m;
+      }
+      const t = (lo + hi) / 2;
+      const p: [number, number, number] = [
+        a[0] + (b[0] - a[0]) * t,
+        a[1] + (b[1] - a[1]) * t,
+        a[2] + (b[2] - a[2]) * t,
+      ];
+      if (p[1] < s.yMin || p[1] > s.yMax) continue;
+      const d = new Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]).normalize();
+      out.push({ position: p, normal: [d.x, d.y, d.z] });
+    }
+  }
+  return out;
+}
+
+function sleeve(at: RouteEnd, radius: number): BufferGeometry {
+  const g = new CylinderGeometry(radius * 1.7, radius * 1.7, Math.max(0.3, radius * 1.2), 20);
+  const q = new Quaternion().setFromUnitVectors(Y, new Vector3(...at.normal));
+  return g.applyMatrix4(
+    new Matrix4().compose(new Vector3(...at.position), q, new Vector3(1, 1, 1)),
+  );
+}
+
 export function Cables() {
   const connections = useEditor((v) => v.snapshot.connections);
   const components = useEditor((v) => v.snapshot.components);
@@ -103,6 +163,19 @@ export function Cables() {
 
   const meshes = useMemo(() => {
     const byId = new Map(components.map((c) => [c.id, c]));
+    const shells: Shell[] = components
+      .filter((c) => c.type === "cryostat" && c.geometry.kind === "cylinder" && !peeled.has(c.id))
+      .map((c) => {
+        const g = c.geometry as Extract<typeof c.geometry, { kind: "cylinder" }>;
+        const p = c.state.physical.positionM;
+        return {
+          x: p.x,
+          z: p.z,
+          r: g.radiusM,
+          yMin: p.y - g.heightM / 2,
+          yMax: p.y + g.heightM / 2,
+        };
+      });
     const parts = new Map<ConnectionType, BufferGeometry[]>();
     for (const connection of connections) {
       if (isLoadBearing(connection.type)) continue;
@@ -125,6 +198,7 @@ export function Cables() {
       list.push(tube(path, style.radiusM));
       if (FLANGED.has(connection.type))
         list.push(flange(ea, style.radiusM), flange(eb, style.radiusM));
+      for (const at of penetrations(path, shells)) list.push(sleeve(at, style.radiusM));
       parts.set(connection.type, list);
     }
     return [...parts].map(([type, geometries]) => {

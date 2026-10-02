@@ -1,5 +1,6 @@
 import {
   buildBenchmark,
+  buildIterClassPlant,
   buildOverloadDemo,
   buildReferencePlant,
   buildStarterAssembly,
@@ -52,6 +53,14 @@ export const BLUEPRINTS: readonly Blueprint[] = [
       "An ITER-class tokamak with blanket, superconducting coils, heating, a water loop, steam cycle, generator and grid. It burns D-T — improving its net output is up to you.",
     size: "16 parts",
     build: () => world("Reference Tokamak Plant", (w) => buildReferencePlant(w)),
+  },
+  {
+    id: "iter-class-plant",
+    name: "ITER-class plant (true scale)",
+    description:
+      "The reference machine at real size in its hall: core on steel gravity supports, six poloidal-field coils and a central solenoid, a 29 m cryostat, and the plant around it with a platform and stairs. Walk it at eye height (G), peel it (L) or cut it open.",
+    size: "34 parts",
+    build: () => world("ITER-class Plant", buildIterClassPlant),
   },
   {
     id: "starter-rig",

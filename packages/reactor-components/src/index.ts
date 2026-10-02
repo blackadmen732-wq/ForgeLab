@@ -26,6 +26,8 @@ export {
   buildBenchmark,
   buildOverloadDemo,
   buildReferencePlant,
+  buildIterClassPlant,
+  ITER_CLASS_CENTRE_Y,
   buildStarterAssembly,
   placePart,
   type ReferencePlantOptions,

@@ -245,6 +245,61 @@ type Builder = (
 };
 
 const BUILDERS: Readonly<Record<string, Builder>> = {
+  cryostat: ([r, hy], main, trim) => {
+    // Shell with stiffening rings every ~3 m, vertical ribs, lid and base flanges.
+    main.push(cyl(r, 2 * hy, "y", [0, 0, 0], 96));
+    const rings = Math.max(2, Math.round((2 * hy) / 3));
+    for (let i = 1; i < rings; i += 1)
+      trim.push(ring(r + 0.06, 0.09, "y", [0, -hy + (2 * hy * i) / rings, 0]));
+    for (let i = 0; i < 24; i += 1) {
+      const a = (i / 24) * Math.PI * 2;
+      trim.push(
+        box(0.12, 2 * hy * 0.96, 0.35, Math.cos(a) * (r + 0.1), 0, Math.sin(a) * (r + 0.1)),
+      );
+    }
+    for (const s of [-1, 1]) trim.push(cyl(r + 0.35, 0.3, "y", [0, s * (hy - 0.15), 0], 96));
+    return { accentColor: "#9aa3ad", replacesEnvelope: true };
+  },
+  "stair-tower": ([hx, hy, hz], main, trim, accent) => {
+    // Switchback flights 3.6 m high between landings; stringers, treads, posts, rails.
+    const RISE = 3.6;
+    const flights = Math.max(1, Math.ceil((2 * hy) / RISE));
+    const rise = (2 * hy) / flights;
+    const landing = Math.min(1.2, hz * 0.3);
+    const run = 2 * hz - 2 * landing;
+    const width = hx - 0.1;
+    for (let k = 0; k < flights; k += 1) {
+      const x = (k % 2 === 0 ? -1 : 1) * (hx / 2);
+      const dir = k % 2 === 0 ? 1 : -1;
+      const y0 = -hy + k * rise;
+      const steps = Math.max(4, Math.round(rise / 0.18));
+      for (let j = 0; j < steps; j += 1) {
+        const z = dir * (-run / 2 + ((j + 0.5) * run) / steps);
+        main.push(box(width, 0.04, run / steps, x, y0 + ((j + 1) * rise) / steps, z));
+      }
+      // Stringers and a handrail along the flight.
+      const len = Math.hypot(run, rise);
+      const slope = Math.atan2(rise, run) * dir;
+      for (const side of [-1, 1]) {
+        const g = box(0.06, 0.25, len, x + side * (width / 2), y0 + rise / 2, 0);
+        g.translate(-(x + side * (width / 2)), -(y0 + rise / 2), 0);
+        g.rotateX(-slope);
+        g.translate(x + side * (width / 2), y0 + rise / 2, 0);
+        main.push(g);
+        const rail = box(0.04, 0.04, len, 0, 0, 0).rotateX(-slope);
+        // Handrail 0.9 m above the treads.
+        rail.translate(x + side * (width / 2), y0 + rise / 2 + 0.9, 0);
+        trim.push(rail);
+      }
+      // Landing at the top of the flight.
+      const zl = dir * (hz - landing / 2);
+      accent.push(box(2 * hx, 0.06, landing, 0, y0 + rise, zl));
+    }
+    // Corner posts.
+    for (const sx of [-1, 1])
+      for (const sz of [-1, 1]) trim.push(box(0.12, 2 * hy, 0.12, sx * hx, 0, sz * hz));
+    return { accentColor: "#e0b22b", replacesEnvelope: true };
+  },
   "coolant-pump": ([hx, hy, hz], main, trim, accent) => {
     // Vertical in-line pump: skid, volute casing with suction/discharge, coupling, finned motor.
     trim.push(box(2 * hx, 0.12 * hy, 2 * hz * 0.9, 0, -hy + 0.06 * hy, 0));

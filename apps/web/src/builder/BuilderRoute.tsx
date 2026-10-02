@@ -65,6 +65,7 @@ import { SubmitDialog } from "./ui/SubmitDialog.js";
 import { Timeline } from "./ui/Timeline.js";
 import { CameraModeHint, ToolRail } from "./ui/ToolRail.js";
 import { PlantTree } from "./ui/PlantTree.js";
+import { BLUEPRINTS } from "./blueprints.js";
 import { InspectPanel } from "./ui/InspectPanel.js";
 import { MaterialLegend } from "./ui/MaterialLegend.js";
 import { TopBar } from "./ui/TopBar.js";
@@ -334,6 +335,10 @@ export function BuilderRoute() {
         loadScenario: (id: string) => {
           store.loadFile(serializeWorld(buildScenario(id)));
           store.requestFrame(null);
+        },
+        loadBlueprint: (id: string) => {
+          const blueprint = BLUEPRINTS.find((b) => b.id === id);
+          if (blueprint !== undefined) store.replaceWorld(blueprint.build(), { blueprintId: id });
         },
       };
     return () => director.stop();
