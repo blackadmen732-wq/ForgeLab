@@ -282,6 +282,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
       const group = zones.current[zone];
       if (group) group.visible = !hide[zone];
     }
+    // The fixture lenses hang with the roof: seen from above they go with it.
+    if (lensesRef.current) lensesRef.current.visible = !hide.overhead;
 
     const now = performance.now();
     if (lastTime.current === 0) lastTime.current = now;

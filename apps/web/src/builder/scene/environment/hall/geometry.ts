@@ -206,6 +206,15 @@ export function buildHallGeometry(): HallGeometry {
 
 const LOWER_M = 7; // concrete lower zone
 const { halfX: X, halfZ: Z, eaveM: H, roofM: R, bayM: BAY } = HALL;
+/** Girt heights up the steel zone, about every 6.5 m, the top one just under the eave. */
+const GIRTS_M = (() => {
+  const out = [LOWER_M + 0.3];
+  const n = Math.ceil((H - 1 - LOWER_M) / 6.5);
+  for (let k = 1; k <= n; k += 1) out.push(LOWER_M + 0.3 + ((H - 1.3 - LOWER_M) * k) / n);
+  return out;
+})();
+/** The clerestory window band, just under the eave. */
+const CLERESTORY_M = H - 3.8;
 
 /** Columns, girts, cladding, clerestory and gables common to every side. */
 function shell(c: Collector): void {
@@ -218,13 +227,12 @@ function shell(c: Collector): void {
     for (let x = -X; x <= X + 0.01; x += BAY)
       c.add(zone, "steel", ...column(x, z, 0, H, true, 1.2));
     // Girts across the upper steel zone.
-    for (const y of [LOWER_M + 0.3, 14, 20, 27.5, 33])
-      c.add(zone, "steel", box(2 * X, 0.3, 0.22, 0, y, z + out * 0.2));
+    for (const y of GIRTS_M) c.add(zone, "steel", box(2 * X, 0.3, 0.22, 0, y, z + out * 0.2));
     // Upper ribbed panels, clerestory band, parapet.
     c.add(zone, "panel", box(2 * X + 1, H - LOWER_M, 0.14, 0, (H + LOWER_M) / 2, z + out * 0.62));
-    c.add(zone, "clerestory", box(2 * X - 2, 3.4, 0.06, 0, 30.2, z + out * 0.5));
+    c.add(zone, "clerestory", box(2 * X - 2, 3.4, 0.06, 0, CLERESTORY_M, z + out * 0.5));
     for (let x = -X; x <= X + 0.01; x += 2.5)
-      c.add(zone, "steelDark", box(0.12, 3.6, 0.14, x, 30.2, z + out * 0.44));
+      c.add(zone, "steelDark", box(0.12, 3.6, 0.14, x, CLERESTORY_M, z + out * 0.44));
     c.add(zone, "panel", box(2 * X + 1.4, R - H + 0.6, 0.14, 0, (H + R) / 2, z + out * 0.62));
     // Crane runway on corbels.
     for (let x = -X; x <= X + 0.01; x += BAY)
@@ -240,12 +248,11 @@ function shell(c: Collector): void {
     const out = Math.sign(x);
     for (let z = -Z + BAY; z <= Z - BAY + 0.01; z += BAY)
       c.add(zone, "steel", ...column(x, z, 0, H, false, 1.2));
-    for (const y of [LOWER_M + 0.3, 20, 27.5, 33])
-      c.add(zone, "steel", box(0.22, 0.3, 2 * Z, x + out * 0.2, y, 0));
+    for (const y of GIRTS_M) c.add(zone, "steel", box(0.22, 0.3, 2 * Z, x + out * 0.2, y, 0));
     c.add(zone, "panel", box(0.14, H - LOWER_M, 2 * Z + 1, x + out * 0.62, (H + LOWER_M) / 2, 0));
-    c.add(zone, "clerestory", box(0.06, 3.4, 2 * Z - 2, x + out * 0.5, 30.2, 0));
+    c.add(zone, "clerestory", box(0.06, 3.4, 2 * Z - 2, x + out * 0.5, CLERESTORY_M, 0));
     for (let z = -Z; z <= Z + 0.01; z += 2.5)
-      c.add(zone, "steelDark", box(0.14, 3.6, 0.12, x + out * 0.44, 30.2, z));
+      c.add(zone, "steelDark", box(0.14, 3.6, 0.12, x + out * 0.44, CLERESTORY_M, z));
     c.add(zone, "panel", box(0.14, R - H + 0.6, 2 * Z + 1.4, x + out * 0.62, (H + R) / 2, 0));
   }
   // Cross bracing in selected bays (every third bay of the long walls, end bays of the short).
@@ -263,8 +270,8 @@ function shell(c: Collector): void {
     ["east", X - 0.3],
   ] as const) {
     for (const z0 of [-Z + BAY, Z - 2 * BAY]) {
-      c.add(zone, "steel", strut(v(x, 20, z0), v(x, 33, z0 + BAY), 0.18));
-      c.add(zone, "steel", strut(v(x, 20, z0 + BAY), v(x, 33, z0), 0.18));
+      c.add(zone, "steel", strut(v(x, 20, z0), v(x, H - 1, z0 + BAY), 0.18));
+      c.add(zone, "steel", strut(v(x, 20, z0 + BAY), v(x, H - 1, z0), 0.18));
     }
   }
 }
@@ -711,33 +718,33 @@ function roof(c: Collector, fixtures: Emitter[]): void {
   c.add(zone, "roof", box(2 * X + 1.4, 0.4, 2 * Z + 1.4, 0, R, 0));
   // Supply-air ducts with drop diffusers, hangers.
   for (const z of [-18, 18]) {
-    c.add(zone, "duct", pipe(v(-X, 31.2, z), v(X, 31.2, z), 1.0, 24));
+    c.add(zone, "duct", pipe(v(-X, H - 2.8, z), v(X, H - 2.8, z), 1.0, 24));
     for (let x = -X + 5; x < X; x += 10) {
-      c.add(zone, "duct", pipe(v(x, 31.2, z), v(x, 29.2, z), 0.35, 12));
-      c.add(zone, "duct", new CylinderGeometry(0.75, 0.45, 0.35, 16).translate(x, 29.0, z));
+      c.add(zone, "duct", pipe(v(x, H - 2.8, z), v(x, H - 4.8, z), 0.35, 12));
+      c.add(zone, "duct", new CylinderGeometry(0.75, 0.45, 0.35, 16).translate(x, H - 5, z));
       c.add(
         zone,
         "steelDark",
-        box(0.06, bottom - 31.2 + 1, 0.06, x + 2, (bottom + 31.2) / 2 + 0.5, z),
+        box(0.06, bottom - (H - 2.8) + 1, 0.06, x + 2, (bottom + (H - 2.8)) / 2 + 0.5, z),
       );
     }
   }
   // Cable trays and sprinkler mains.
   for (const z of [-30, 30]) {
-    c.add(zone, "steelDark", box(2 * X, 0.12, 0.9, 0, 32.2, z));
-    c.add(zone, "propGrey", box(2 * X, 0.1, 0.7, 0, 32.32, z));
+    c.add(zone, "steelDark", box(2 * X, 0.12, 0.9, 0, H - 1.8, z));
+    c.add(zone, "propGrey", box(2 * X, 0.1, 0.7, 0, H - 1.68, z));
   }
   for (let z = -Z + 7.5; z < Z; z += 7.5)
-    c.add(zone, "propRed", pipe(v(-X, 33.2, z), v(X, 33.2, z), 0.06, 6));
+    c.add(zone, "propRed", pipe(v(-X, H - 0.8, z), v(X, H - 0.8, z), 0.06, 6));
   // Lighting rigs: unistrut runs with high-bay fixtures, 7 rows along x.
   const rows = [-35, -24, -12, 0, 12, 24, 35];
   for (const z of rows) {
-    c.add(zone, "steelDark", box(2 * X - 6, 0.1, 0.1, 0, 30.2, z));
+    c.add(zone, "steelDark", box(2 * X - 6, 0.1, 0.1, 0, H - 3.8, z));
     for (let x = -X + 5; x < X; x += BAY) {
-      c.add(zone, "steelDark", box(0.05, 3.2, 0.05, x, 31.8, z));
-      // Fixture housing (the lens is an instanced emitter at y = 29.3).
-      c.add(zone, "propGrey", new CylinderGeometry(0.42, 0.62, 0.55, 18).translate(x, 29.7, z));
-      fixtures.push({ position: v(x, 29.4, z), row: Math.round((x + X) / BAY) });
+      c.add(zone, "steelDark", box(0.05, 3.2, 0.05, x, H - 2.2, z));
+      // Fixture housing (the lens is an instanced emitter just below it).
+      c.add(zone, "propGrey", new CylinderGeometry(0.42, 0.62, 0.55, 18).translate(x, H - 4.3, z));
+      fixtures.push({ position: v(x, H - 4.6, z), row: Math.round((x + X) / BAY) });
     }
   }
 }
