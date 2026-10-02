@@ -2596,3 +2596,29 @@
   margin: 0;
   font-size: var(--fs-sm);
 }
+
+/* ---------- walk / fly camera ---------- */
+
+.walk-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  justify-items: center;
+  padding: 8px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid rgba(111, 211, 209, 0.35);
+  background: rgba(18, 22, 28, 0.9);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  pointer-events: none;
+  max-width: calc(100% - 24px);
+  text-align: center;
+}
+.walk-hint strong {
+  color: var(--text);
+  font-weight: 600;
+}

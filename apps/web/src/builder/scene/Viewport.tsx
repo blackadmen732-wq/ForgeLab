@@ -59,6 +59,8 @@ import { Cables } from "./Cables.js";
 import { damageStage, stageDarkening } from "../../presentation/damage.js";
 import { damageState } from "../../presentation/damageState.js";
 import { FieldLines } from "./FieldLines.js";
+import { ScaleFigure } from "./ScaleFigure.js";
+import { WalkControls } from "./WalkControls.js";
 import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
@@ -640,6 +642,7 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
   const store = useEditorStore();
   const cinematic = useCinematic();
   const projection = useEditor((v) => v.projection);
+  const cameraMode = useEditor((v) => v.cameraMode);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const invalidate = useThree((s) => s.invalidate);
@@ -734,6 +737,20 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       cameraMemory.position.copy(camera.position);
       cameraMemory.target.copy(controls.target);
     }
+    // Near plane follows the viewing distance: centimetres when inspecting a flange,
+    // a metre when the whole hall is in view, so depth stays precise at every scale.
+    const perspective = camera as ThreePerspectiveCamera;
+    if (perspective.isPerspectiveCamera) {
+      const d =
+        cameraMode === "orbit" && controls !== null
+          ? camera.position.distanceTo(controls.target)
+          : 5;
+      const near = Math.min(1, Math.max(0.02, d * 0.002));
+      if (Math.abs(near - perspective.near) > perspective.near * 0.2) {
+        perspective.near = near;
+        perspective.updateProjectionMatrix();
+      }
+    }
   });
 
   const distance = cameraMemory.position.distanceTo(cameraMemory.target);
@@ -760,6 +777,7 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       <OrbitControls
         ref={controlsRef}
         makeDefault
+        enabled={cameraMode === "orbit"}
         target={cameraMemory.target.toArray()}
         enableDamping
         dampingFactor={0.14}
@@ -770,6 +788,7 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
         autoRotate={cinematic && motionAllowed()}
         autoRotateSpeed={0.25}
       />
+      <WalkControls mode={cameraMode} />
     </>
   );
 }
@@ -998,6 +1017,7 @@ export function Viewport() {
         <CutPlaneDriver />
         <InternalsSection />
         <FieldLines />
+        <ScaleFigure />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />

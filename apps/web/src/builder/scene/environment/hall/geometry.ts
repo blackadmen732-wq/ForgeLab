@@ -16,7 +16,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
  * hall costs a few dozen draw calls; repeated emitters (fixtures, floor light pools,
  * emergency lamps, beacons) are instanced so the lighting controller can animate them.
  *
- * Layout (metres): 140 × 90 floor, 34 m to the underside of the roof trusses, 40 m to the
+ * Layout (metres): 140 × 90 floor, 50 m to the underside of the roof trusses, 56 m to the
  * roof deck. North (z = −45) is the back wall with the control room; west (x = −70) has
  * the equipment door, loading bay and goods lift; east (x = +70) has the observation
  * galleries; south (z = +45) is behind the default camera.
@@ -25,12 +25,12 @@ export const HALL = Object.freeze({
   halfX: 70,
   halfZ: 45,
   /** Underside of the roof trusses. */
-  eaveM: 34,
+  eaveM: 50,
   /** Roof deck. */
-  roofM: 40,
+  roofM: 56,
   bayM: 10,
   /** Crane runway rail height. */
-  craneRailM: 26,
+  craneRailM: 42,
   /** The clear central build zone. */
   buildHalfX: 40,
   buildHalfZ: 30,

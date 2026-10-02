@@ -4,12 +4,14 @@ import {
   Eye,
   EyeOff,
   Focus,
+  Footprints,
   Grid3x3,
   HelpCircle,
   Layers,
   Magnet,
   MousePointer2,
   PanelLeft,
+  PersonStanding,
   RotateCw,
   Scan,
   Scissors,
@@ -58,6 +60,8 @@ export function ToolRail() {
   const cutaway = useEditor((v) => v.cutaway);
   const xray = useEditor((v) => v.xray);
   const hiddenCount = useEditor((v) => v.hidden.size);
+  const cameraMode = useEditor((v) => v.cameraMode);
+  const showScale = useEditor((v) => v.showScale);
   const hasSelection = useEditor((v) => v.selection.length > 0);
   const building = mode === "build";
   const tools: { id: Tool; label: string; keys: string; icon: ReactNode; buildOnly: boolean }[] = [
@@ -125,10 +129,41 @@ export function ToolRail() {
       <RailButton label="X-ray" keys="Z" active={xray} onClick={store.toggleXray}>
         <Scan />
       </RailButton>
+      <RailButton
+        label={cameraMode === "orbit" ? "Walk at eye height" : "Back to orbit"}
+        keys={cameraMode === "orbit" ? "G" : "Esc"}
+        active={cameraMode !== "orbit"}
+        onClick={() => store.setCameraMode(cameraMode === "orbit" ? "walk" : "orbit")}
+      >
+        <Footprints />
+      </RailButton>
+      <RailButton
+        label="Scale reference (1.75 m person)"
+        keys="U"
+        active={showScale}
+        onClick={store.toggleScale}
+      >
+        <PersonStanding />
+      </RailButton>
       <div className="rail__spacer" />
       <RailButton label="Keyboard shortcuts" keys="?" onClick={() => store.setShowHelp(true)}>
         <HelpCircle />
       </RailButton>
     </nav>
+  );
+}
+
+/** While walking or flying: how to move, and how to get back. */
+export function CameraModeHint() {
+  const cameraMode = useEditor((v) => v.cameraMode);
+  if (cameraMode === "orbit") return null;
+  return (
+    <div className="walk-hint" role="status">
+      <strong>{cameraMode === "walk" ? "Walking · eye height 1.7 m" : "Flying"}</strong>
+      <span>
+        W A S D move{cameraMode === "fly" ? " · Q / E down, up" : ""} · drag to look · Shift faster
+        · Esc orbit
+      </span>
+    </div>
   );
 }

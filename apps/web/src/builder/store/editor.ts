@@ -73,6 +73,11 @@ export type Overlay =
   | "internals"
   | "failures";
 export type Projection = "perspective" | "orthographic";
+/**
+ * How the camera moves. Orbit circles a target; walk puts the eye at human height (1.7 m)
+ * on the floor and moves with W A S D; fly moves freely (Q / E down and up).
+ */
+export type CameraMode = "orbit" | "walk" | "fly";
 export type ViewName = "front" | "right" | "top" | "iso";
 
 export const OVERLAYS: readonly { id: Overlay; label: string; hint: string }[] = [
@@ -154,6 +159,9 @@ export interface EditorView {
   readonly cutaway: boolean;
   readonly xray: boolean;
   readonly projection: Projection;
+  readonly cameraMode: CameraMode;
+  /** A 1.75 m person beside the selection (or the plant), for scale. Presentation only. */
+  readonly showScale: boolean;
   readonly selection: readonly string[];
   readonly hidden: ReadonlySet<string>;
   readonly snapEnabled: boolean;
@@ -247,6 +255,8 @@ export class EditorStore {
   #simOverlay: Overlay = "none";
   #cutaway = false;
   #xray = false;
+  #cameraMode: CameraMode = "orbit";
+  #showScale = false;
   #projection: Projection = "perspective";
   #selection: string[] = [];
   #hidden = new Set<string>();
@@ -389,6 +399,8 @@ export class EditorStore {
       cutaway: this.#cutaway,
       xray: this.#xray,
       projection: this.#projection,
+      cameraMode: this.#cameraMode,
+      showScale: this.#showScale,
       selection: this.#selection,
       hidden: this.#hidden,
       snapEnabled: this.#snapEnabled,
@@ -675,6 +687,19 @@ export class EditorStore {
 
   toggleXray = (): void => {
     this.#xray = !this.#xray;
+    this.#publish();
+  };
+
+  setCameraMode = (mode: CameraMode): void => {
+    if (mode === this.#cameraMode) return;
+    this.#cameraMode = mode;
+    // Walking and flying are perspective views.
+    if (mode !== "orbit") this.#projection = "perspective";
+    this.#publish();
+  };
+
+  toggleScale = (): void => {
+    this.#showScale = !this.#showScale;
     this.#publish();
   };
 

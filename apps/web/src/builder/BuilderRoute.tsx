@@ -63,7 +63,7 @@ import { PublishDialog } from "./ui/PublishDialog.js";
 import { StartDialog } from "./ui/StartDialog.js";
 import { SubmitDialog } from "./ui/SubmitDialog.js";
 import { Timeline } from "./ui/Timeline.js";
-import { ToolRail } from "./ui/ToolRail.js";
+import { CameraModeHint, ToolRail } from "./ui/ToolRail.js";
 import { TopBar } from "./ui/TopBar.js";
 import { VersionNameDialog, VersionsDialog } from "./ui/VersionsDialog.js";
 import { useHover } from "./scene/hover.js";
@@ -263,6 +263,7 @@ function Workspace({
           <InternalsNotice />
           {debugPanel && <EffectsDebugPanel />}
           <Hints />
+          <CameraModeHint />
           <StatusStrip />
           <Timeline />
         </main>
