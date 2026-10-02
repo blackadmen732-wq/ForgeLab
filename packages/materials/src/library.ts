@@ -1115,6 +1115,14 @@ export const MATERIAL_LIBRARY: readonly MaterialRecord[] = Object.freeze([
           note: "Autoignition range quoted for polyethylene; heat of combustion ≈ 46 MJ/kg.",
         }),
         smoke: "sooty",
+        heatOfCombustion: q(43.3e6, "J/kg", "polymer-handbook", "approximate", {
+          range: [38.4e6, 46.5e6],
+          note: "Effective heat of combustion of polyethylene in a fire (SFPE Handbook tabulations); complete combustion ≈ 46 MJ/kg, the chemical heat released by a sooty flame ≈ 38 MJ/kg. XLPE is taken as polyethylene.",
+        }),
+        burningRate: q(0.026, "kg/(m²·s)", "polymer-handbook", "approximate", {
+          range: [0.014, 0.026],
+          note: "Asymptotic free-burning mass flux of polyethylene in large-scale tests (SFPE Handbook); small or vertical samples burn more slowly. Taken as the rate over the part's whole outer surface once alight.",
+        }),
       },
     },
     sourceSummary: "IEC 60502 temperature limits; polymer handbook density and fire data.",

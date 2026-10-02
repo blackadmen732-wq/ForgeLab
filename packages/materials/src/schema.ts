@@ -149,8 +149,19 @@ export interface PresentationProperties {
    * Whether the material can burn in air, and from what temperature (autoignition or
    * the onset of sustained burning, sourced in the physical data). Metals listed here are
    * false: steel and tungsten do not burn like fuel.
+   *
+   * `heatOfCombustion` (J/kg) and `burningRate` (kg/(m²·s), free-burning) are what the
+   * simulation needs to burn the material; where either is not sourced it is left out
+   * and the material is not burned by the model — never given a placeholder.
    */
-  readonly combustible: false | { readonly ignition: Quantity; readonly smoke: "sooty" | "light" };
+  readonly combustible:
+    | false
+    | {
+        readonly ignition: Quantity;
+        readonly smoke: "sooty" | "light";
+        readonly heatOfCombustion?: Quantity;
+        readonly burningRate?: Quantity;
+      };
 }
 
 export type MaterialCategory =

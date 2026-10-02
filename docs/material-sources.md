@@ -676,15 +676,18 @@ Generated from the library; each row is one value with its source and confidence
 
 `xlpe` · insulator-ceramic · Power-cable insulation — and the main fire load in an electrical gallery.
 
-| Property                 | Value                                                           | Conditions | Source             | Confidence  | Note                                                                       |
-| ------------------------ | --------------------------------------------------------------- | ---------- | ------------------ | ----------- | -------------------------------------------------------------------------- |
-| Density                  | 920 kg/m³ (range 910 kg/m³ – 940 kg/m³)                         |            | `polymer-handbook` | typical     |                                                                            |
-| Max. service temperature | 363.15 K (90 °C)                                                |            | `iec-60502`        | specified   | Maximum conductor temperature in normal operation.                         |
-| Electrical               | insulator                                                       |            |                    |             |                                                                            |
-| Ignition (combustible)   | 623.15 K (350 °C) (range 603.15 K (330 °C) – 683.15 K (410 °C)) |            | `polymer-handbook` | approximate | Autoignition range quoted for polyethylene; heat of combustion ≈ 46 MJ/kg. |
+| Property                 | Value                                                           | Conditions  | Source             | Confidence  | Note                                                                                                                                                |
+| ------------------------ | --------------------------------------------------------------- | ----------- | ------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Density                  | 920 kg/m³ (range 910 kg/m³ – 940 kg/m³)                         |             | `polymer-handbook` | typical     |                                                                                                                                                     |
+| Max. service temperature | 363.15 K (90 °C)                                                |             | `iec-60502`        | specified   | Maximum conductor temperature in normal operation.                                                                                                  |
+| Electrical               | insulator                                                       |             |                    |             |                                                                                                                                                     |
+| Ignition (combustible)   | 623.15 K (350 °C) (range 603.15 K (330 °C) – 683.15 K (410 °C)) |             | `polymer-handbook` | approximate | Autoignition range quoted for polyethylene; heat of combustion ≈ 46 MJ/kg.                                                                          |
+| Heat of combustion       | 43.3 MJ/kg (range 38.4 – 46.5 MJ/kg)                            | in a fire   | `polymer-handbook` | approximate | Effective value (SFPE Handbook tabulations); complete combustion ≈ 46 MJ/kg, chemical heat of a sooty flame ≈ 38 MJ/kg. XLPE taken as polyethylene. |
+| Free-burning rate        | 0.026 kg/(m²·s) (range 0.014 – 0.026)                           | large-scale | `polymer-handbook` | approximate | Asymptotic large-scale mass flux of polyethylene (SFPE Handbook); smaller or vertical samples burn more slowly.                                     |
 
 - IEC 60502 allows 250 °C for at most 5 s during a short circuit; beyond that the insulation is damaged.
 - Polyethylene burns with heavy black smoke.
+- Heat of combustion and burning rate are what the simulation burns it with (docs/HAZARDS.md). Its specific heat, conductivity, critical heat flux and ignition-response parameter are not yet sourced and are left missing; graphite and G-10 ignite but have no sourced burning data, so the model reports them above ignition without burning them.
 
 ### Concrete — Normal-weight concrete, strength class C30/37
 

@@ -241,7 +241,22 @@ describe("material library", () => {
       if (record.category === "structural-metal" || record.category === "conductor")
         expect(c, record.id).toBe(false);
       if (c !== false) expect(SOURCES.has(c.ignition.source)).toBe(true);
+      if (c !== false && c.heatOfCombustion !== undefined)
+        expect(SOURCES.has(c.heatOfCombustion.source)).toBe(true);
+      if (c !== false && c.burningRate !== undefined)
+        expect(SOURCES.has(c.burningRate.source)).toBe(true);
     }
+  });
+
+  it("burns only what has sourced burning data, and leaves the rest unburned", () => {
+    const xlpe = getSubstance("xlpe");
+    expect(xlpe.ignitionK).toBeCloseTo(623.15, 6);
+    expect(xlpe.combustion!.heatOfCombustionJPerKg).toBe(43.3e6);
+    expect(xlpe.combustion!.burningRateKgM2S).toBe(0.026);
+    // Graphite and epoxy laminate ignite, but their burning is not sourced: no placeholder.
+    expect(getSubstance("graphite-ig110").ignitionK).toBeGreaterThan(0);
+    expect(getSubstance("graphite-ig110").combustion).toBeUndefined();
+    expect(getSubstance("copper").ignitionK).toBeUndefined();
   });
 
   it("derives the fluid values it states", () => {

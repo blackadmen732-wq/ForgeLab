@@ -34,13 +34,28 @@ export interface SubstanceDefinition {
    * a zero-field Tc (REBCO, MgB₂) have none and cannot set a field-dependent limit.
    */
   readonly superconductor?: SuperconductorProperties;
+  /** Ignition temperature in air, when the material burns (sourced in the record). */
+  readonly ignitionK?: number;
+  /**
+   * What burning needs beyond ignition, only when both values are sourced: without them
+   * the material is not burned by the model (it is reported, not invented).
+   */
+  readonly combustion?: Combustion;
   readonly sourceSummary: string;
   readonly notes: readonly string[];
+}
+
+export interface Combustion {
+  /** Effective heat of combustion, J/kg. */
+  readonly heatOfCombustionJPerKg: number;
+  /** Free-burning mass loss per unit burning area, kg/(m²·s). */
+  readonly burningRateKgM2S: number;
 }
 
 function substanceOf(record: MaterialRecord): SubstanceDefinition {
   const sc = record.superconducting;
   const e = record.electrical;
+  const fire = record.presentation.combustible;
   return Object.freeze({
     id: record.id,
     name: record.name,
@@ -67,6 +82,15 @@ function substanceOf(record: MaterialRecord): SubstanceDefinition {
             upperCriticalFieldZeroTemperatureT: sc.upperCriticalFieldZeroTemperature.value,
             temperatureExponent: sc.temperatureExponent,
             source: sc.note,
+          }),
+        }
+      : {}),
+    ...(fire !== false ? { ignitionK: fire.ignition.value } : {}),
+    ...(fire !== false && fire.heatOfCombustion !== undefined && fire.burningRate !== undefined
+      ? {
+          combustion: Object.freeze({
+            heatOfCombustionJPerKg: fire.heatOfCombustion.value,
+            burningRateKgM2S: fire.burningRate.value,
           }),
         }
       : {}),

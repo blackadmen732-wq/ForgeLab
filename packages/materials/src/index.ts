@@ -39,6 +39,7 @@ export {
   findSubstance,
   getSubstance,
   upperCriticalFieldT,
+  type Combustion,
   type SubstanceDefinition,
   type SuperconductorProperties,
 } from "./substances.js";
