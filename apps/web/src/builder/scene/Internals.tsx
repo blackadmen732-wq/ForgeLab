@@ -1,3 +1,4 @@
+import { cutViewOf } from "./inspection.js";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { Color, DoubleSide, type Group, MeshStandardMaterial } from "three";
@@ -244,7 +245,9 @@ export function showsInternals(type: string): boolean {
 
 export function InternalsSection() {
   const store = useEditorStore();
-  const cutaway = useEditor((v) => v.cutaway);
+  const cutView = useEditor((v) => cutViewOf(v));
+  const hidden = useEditor((v) => v.hidden);
+  const peeled = useEditor((v) => v.peeledIds);
   const overlay = useEditor((v) => v.overlay);
   const selection = useEditor((v) => v.selection);
   const components = useEditor((v) => v.snapshot.components);
@@ -253,11 +256,16 @@ export function InternalsSection() {
 
   const damageVersion = useSyncExternalStore(damageState.subscribe, damageState.version);
   const systems = overlay === "internals";
+  // A section through the plant, or the deepest peel, reveals every machine's insides;
+  // the Cutaway tool reveals the selection's.
   const shown = components.filter(
     (c) =>
       showsInternals(c.type) &&
+      !hidden.has(c.id) &&
+      !peeled.has(c.id) &&
       (systems ||
-        (cutaway && selection.includes(c.id)) ||
+        cutView === "section" ||
+        (cutView === "camera" && selection.includes(c.id)) ||
         (damageVersion > 0 && damageState.isFractured(c.id))),
   );
 
@@ -296,7 +304,8 @@ export function InternalsSection() {
         live && index !== undefined ? readoutFromFrame(frame, index, c) : readoutFromComponent(c);
       const mine = picked?.componentId === c.id ? picked.regionId : null;
       // Cut like the casing: by the cut view's plane, else by the part's breach.
-      const breach = view.cutaway || view.overlay === "internals" ? null : breachPlanes(c.id);
+      const breach =
+        cutViewOf(view) !== "none" || view.overlay === "internals" ? null : breachPlanes(c.id);
       const planes = breach ?? [cutPlaneFor(c.id)];
       for (const region of regions) {
         const m = region.material;

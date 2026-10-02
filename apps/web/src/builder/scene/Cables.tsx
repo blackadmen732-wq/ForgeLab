@@ -1,3 +1,5 @@
+import { plantSystemOfConnection } from "@forgelab/reactor-components";
+import { sectionClipPlane } from "./inspection.js";
 import { useLayoutEffect, useMemo } from "react";
 import {
   type BufferGeometry,
@@ -90,16 +92,22 @@ export function Cables() {
   const connections = useEditor((v) => v.snapshot.connections);
   const components = useEditor((v) => v.snapshot.components);
   const hidden = useEditor((v) => v.hidden);
+  const peeled = useEditor((v) => v.peeledIds);
+  // Runs are drawn between where parts really are: an exploded drawing leaves them out.
+  const exploded = useEditor((v) => v.explode > 0);
+  const section = useEditor((v) => v.section);
+  const clip = useMemo(() => (section === null ? null : [sectionClipPlane(section)]), [section]);
   const overlay = useEditor((v) => v.overlay);
-  const xray = useEditor((v) => v.xray);
+  const xrayAll = useEditor((v) => v.xray);
+  const focusSystem = useEditor((v) => v.focusSystem);
 
   const meshes = useMemo(() => {
     const byId = new Map(components.map((c) => [c.id, c]));
     const parts = new Map<ConnectionType, BufferGeometry[]>();
     for (const connection of connections) {
       if (isLoadBearing(connection.type)) continue;
-      if (hidden.has(connection.from.componentId) || hidden.has(connection.to.componentId))
-        continue;
+      const veiled = (id: string) => hidden.has(id) || peeled.has(id);
+      if (veiled(connection.from.componentId) || veiled(connection.to.componentId)) continue;
       const a = byId.get(connection.from.componentId);
       const b = byId.get(connection.to.componentId);
       if (a === undefined || b === undefined) continue;
@@ -124,7 +132,7 @@ export function Cables() {
       for (const g of geometries) g.dispose();
       return { type, geometry: merged, look: LOOK[type] ?? DEFAULT_LOOK };
     });
-  }, [connections, components, hidden]);
+  }, [connections, components, hidden, peeled]);
 
   useLayoutEffect(
     () => () => {
@@ -142,10 +150,14 @@ export function Cables() {
         : overlay === "vacuum"
           ? ["vacuum"]
           : [];
+  if (exploded) return null;
   return (
     <group name="services">
-      {meshes.map((m) =>
-        m.geometry === null ? null : (
+      {meshes.map((m) => {
+        // An isolated system keeps its own runs solid; X-ray and isolation ghost the rest.
+        const inFocus = focusSystem !== null && plantSystemOfConnection(m.type) === focusSystem;
+        const xray = (xrayAll && !inFocus) || (focusSystem !== null && !inFocus);
+        return m.geometry === null ? null : (
           <mesh
             key={m.type}
             geometry={m.geometry}
@@ -154,6 +166,9 @@ export function Cables() {
             renderOrder={xray ? 3 : 0}
           >
             <meshStandardMaterial
+              // Remount when transparency flips: three only recompiles a material's
+              // shader on needsUpdate, which a changed prop does not set.
+              key={xray ? "ghost" : "solid"}
               attach="material"
               color={m.look.color}
               metalness={m.look.metalness}
@@ -165,12 +180,13 @@ export function Cables() {
               }
               emissiveIntensity={highlight.includes(m.type) ? 0.9 : 0}
               transparent={xray}
-              opacity={xray ? 0.3 : 1}
+              opacity={xray ? (focusSystem !== null ? 0.08 : 0.3) : 1}
               depthWrite={!xray}
+              clippingPlanes={clip}
             />
           </mesh>
-        ),
-      )}
+        );
+      })}
     </group>
   );
 }

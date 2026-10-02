@@ -3,6 +3,8 @@ import {
   COMPONENT_DEFINITIONS,
   findComponentDefinition,
   getComponentDefinition,
+  plantSystemOf,
+  type PlantSystem,
 } from "@forgelab/reactor-components";
 import {
   QuaternionMath,
@@ -50,6 +52,7 @@ import {
   designHash,
 } from "@forgelab/sim-runner";
 import { toast } from "../../lib/toast.js";
+import { MAX_PEEL, peeledIds, type SectionPlane } from "../scene/inspection.js";
 import { SimulationClient } from "../sim/client.js";
 import { SocketIndex } from "./socketIndex.js";
 import { CloudSync, type CloudBinding, type SaveState, writeLocalDraft } from "./persistence.js";
@@ -175,6 +178,25 @@ export interface EditorView {
   readonly redoLabel: string | null;
   readonly connectFrom: ConnectionEndpoint | null;
   readonly drawerOpen: boolean;
+  /** The plant tree (systems → parts), sharing the left panel with the parts drawer. */
+  readonly treeOpen: boolean;
+  /**
+   * A plant system shown on its own: its parts stay solid, everything else ghosts.
+   * Presentation only — the simulation never sees it.
+   */
+  readonly focusSystem: PlantSystem | null;
+  /** The parts of `focusSystem`, or null when no system is isolated. */
+  readonly focusIds: ReadonlySet<string> | null;
+  /** The inspection-views panel (section, peel, explode). */
+  readonly inspectOpen: boolean;
+  /** One plane through the whole plant, or null. */
+  readonly section: SectionPlane | null;
+  /** How many layers are peeled off (0 = full machine; see PEEL_LEVELS). */
+  readonly peel: number;
+  /** Parts hidden by the peel level. */
+  readonly peeledIds: ReadonlySet<string>;
+  /** 0 assembled … 1 fully exploded. Build mode only. */
+  readonly explode: number;
   readonly timelineOpen: boolean;
   readonly advanced: boolean;
   readonly cloud: CloudBinding | null;
@@ -267,6 +289,12 @@ export class EditorStore {
   #connectFrom: ConnectionEndpoint | null = null;
   // The 3D world is the product: panels start closed and open when needed.
   #drawerOpen = false;
+  #treeOpen = false;
+  #inspectOpen = false;
+  #section: SectionPlane | null = null;
+  #peel = 0;
+  #explode = 0;
+  #focusSystem: PlantSystem | null = null;
   #timelineOpen = false;
   #advanced = false;
   #showHelp = false;
@@ -414,6 +442,21 @@ export class EditorStore {
       redoLabel: redoTop?.label ?? null,
       connectFrom: this.#connectFrom,
       drawerOpen: this.#drawerOpen,
+      treeOpen: this.#treeOpen,
+      inspectOpen: this.#inspectOpen,
+      section: this.#section,
+      peel: this.#peel,
+      peeledIds: peeledIds(this.#snapshot.components, this.#peel),
+      explode: this.#mode === "build" ? this.#explode : 0,
+      focusSystem: this.#focusSystem,
+      focusIds:
+        this.#focusSystem === null
+          ? null
+          : new Set(
+              this.#snapshot.components
+                .filter((c) => plantSystemOf(c) === this.#focusSystem)
+                .map((c) => c.id),
+            ),
       timelineOpen: this.#timelineOpen,
       advanced: this.#advanced,
       cloud: this.cloud.binding,
@@ -520,6 +563,11 @@ export class EditorStore {
     // An empty hall needs machines, so the parts library opens; a loaded design gets the
     // whole view.
     this.#drawerOpen = world.listComponents().length === 0;
+    if (this.#drawerOpen) this.#treeOpen = false;
+    this.#focusSystem = null;
+    this.#section = null;
+    this.#peel = 0;
+    this.#explode = 0;
     this.#afterDesignChange(true);
     this.requestFrame(null);
   }
@@ -730,7 +778,46 @@ export class EditorStore {
 
   toggleDrawer = (open?: boolean): void => {
     this.#drawerOpen = open ?? !this.#drawerOpen;
+    if (this.#drawerOpen) this.#treeOpen = false;
     this.#publish();
+  };
+
+  toggleTree = (open?: boolean): void => {
+    this.#treeOpen = open ?? !this.#treeOpen;
+    if (this.#treeOpen) this.#drawerOpen = false;
+    this.#publish();
+  };
+
+  toggleInspect = (open?: boolean): void => {
+    this.#inspectOpen = open ?? !this.#inspectOpen;
+    this.#publish();
+  };
+
+  setSection = (section: SectionPlane | null): void => {
+    this.#section = section;
+    this.#publish();
+  };
+
+  /** Peels to a level and frames what is left, so each layer opens up in view. */
+  setPeel = (level: number): void => {
+    const next = Math.max(0, Math.min(MAX_PEEL, Math.round(level)));
+    if (next === this.#peel) return;
+    this.#peel = next;
+    this.#publish();
+    this.requestFrame(null);
+  };
+
+  setExplode = (factor: number): void => {
+    this.#explode = Math.max(0, Math.min(1, factor));
+    this.#publish();
+  };
+
+  /** Shows one plant system on its own (again to show everything). Frames it. */
+  isolateSystem = (system: PlantSystem | null): void => {
+    this.#focusSystem = system === this.#focusSystem ? null : system;
+    this.#publish();
+    const ids = this.getView().focusIds;
+    if (ids !== null && ids.size > 0) this.requestFrame([...ids]);
   };
 
   toggleTimeline = (open?: boolean): void => {

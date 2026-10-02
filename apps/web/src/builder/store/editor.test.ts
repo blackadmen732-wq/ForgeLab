@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { vec3 } from "@forgelab/shared";
-import { buildTopology, worldAabb } from "@forgelab/sim-core";
+import { SimulationWorld, buildTopology, worldAabb } from "@forgelab/sim-core";
+import { buildReferencePlant } from "@forgelab/reactor-components";
 import { EditorStore } from "./editor.js";
 
 /** Editing semantics of the builder store, run against the real engine in Node. */
@@ -157,6 +158,42 @@ describe("editor store", () => {
     expect(open.chamber.openings).toHaveLength(2);
     store.undo();
     expect(chamber()).toHaveLength(1);
+  });
+
+  it("isolates a plant system, peels layers and explodes without touching the design", () => {
+    const store = new EditorStore();
+    const world = new SimulationWorld({ name: "Reference" });
+    buildReferencePlant(world);
+    store.replaceWorld(world);
+    const hash = store.designHash();
+
+    store.isolateSystem("magnets");
+    expect([...store.getView().focusIds!]).toEqual(["tf-coils"]);
+    store.isolateSystem("magnets");
+    expect(store.getView().focusIds).toBeNull();
+
+    store.setPeel(3);
+    expect(store.getView().peeledIds.has("tf-coils")).toBe(true);
+    expect(store.getView().peeledIds.has("vessel")).toBe(false);
+    store.setPeel(99);
+    expect(store.getView().peel).toBe(5);
+
+    store.setExplode(1);
+    store.setSection({ axis: "x", offsetM: 0, flip: false });
+    // Views only: the design and its hash are untouched, and nothing went on the undo stack.
+    expect(store.designHash()).toBe(hash);
+    expect(store.getView().canUndo).toBe(false);
+    // Exploding is a Build-mode view.
+    expect(store.getView().explode).toBe(1);
+  });
+
+  it("shares the left panel between the parts drawer and the plant tree", () => {
+    const store = new EditorStore();
+    store.toggleDrawer(true);
+    store.toggleTree(true);
+    expect(store.getView().drawerOpen).toBe(false);
+    store.toggleDrawer(true);
+    expect(store.getView().treeOpen).toBe(false);
   });
 
   it("rows and mirrors a linked selection, copying its links into each instance", () => {

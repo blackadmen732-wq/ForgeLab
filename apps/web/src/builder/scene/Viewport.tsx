@@ -63,6 +63,8 @@ import { ScaleFigure } from "./ScaleFigure.js";
 import { WalkControls } from "./WalkControls.js";
 import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
+import { ExplodeDriver } from "./ExplodeDriver.js";
+import { cutViewOf, sectionClipPlane } from "./inspection.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { useEditor, useEditorStore } from "../store/context.js";
@@ -94,6 +96,7 @@ function Parts() {
   const components = useEditor((v) => v.snapshot.components);
   const selection = useEditor((v) => v.selection);
   const hidden = useEditor((v) => v.hidden);
+  const peeled = useEditor((v) => v.peeledIds);
   const selected = useMemo(() => new Set(selection), [selection]);
   const onPick = useCallback(
     (id: string, event: ThreeEvent<MouseEvent>) => {
@@ -114,7 +117,7 @@ function Parts() {
           key={c.id}
           component={c}
           selected={selected.has(c.id)}
-          visible={!hidden.has(c.id)}
+          visible={!hidden.has(c.id) && !peeled.has(c.id)}
           onPick={onPick}
           onHover={onHover}
         />
@@ -224,8 +227,13 @@ function AppearanceDriver() {
         emissive = Math.max(emissive, 0.14);
       }
       body.emissiveIntensity = emissive;
+      // An isolated plant system stays solid and everything else ghosts; with X-ray on as
+      // well, the isolated system is what you see through the rest.
+      const focused = view.focusIds?.has(c.id) ?? false;
+      const ghost = view.focusIds !== null && !focused;
       const xray =
-        view.xray ||
+        (view.xray && !focused) ||
+        ghost ||
         ghostedIn(view.overlay, readout) ||
         (view.overlay === "internals" && showsInternals(c.type));
       if (body.transparent !== xray) {
@@ -233,11 +241,12 @@ function AppearanceDriver() {
         body.depthWrite = !xray;
         body.needsUpdate = true;
       }
-      body.opacity = xray ? 0.16 : 1;
+      body.opacity = xray ? (ghost ? 0.07 : 0.16) : 1;
       // The cutaway plane, else the breach of a part that broke up this run (fracture.ts).
       const breach = live ? breachPlanes(c.id) : null;
-      const planes = view.cutaway ? [cutPlaneFor(c.id)] : breach;
-      const intersect = !view.cutaway && breach !== null;
+      const cut = cutViewOf(view) !== "none";
+      const planes = cut ? [cutPlaneFor(c.id)] : breach;
+      const intersect = !cut && breach !== null;
       if (
         (body.clippingPlanes?.length ?? 0) !== (planes?.length ?? 0) ||
         body.clipIntersection !== intersect
@@ -258,7 +267,7 @@ function AppearanceDriver() {
           extra.clipIntersection = intersect;
           extra.needsUpdate = true;
         }
-        extra.opacity = xray ? 0.12 : 1;
+        extra.opacity = xray ? (ghost ? 0.05 : 0.12) : 1;
       }
       if (handle.glow !== null) {
         const glow = plasmaGlow(readout.vessel);
@@ -278,6 +287,7 @@ function CutPlaneDriver() {
   const store = useEditorStore();
   const centre = useMemo(() => new Vector3(), []);
   const orientation = useMemo(() => new ThreeQuaternion(), []);
+  const section = useMemo(() => new Plane(), []);
   useFrame(({ camera }) => {
     // Breaches follow their parts wherever they are.
     for (const id of breachedIds()) {
@@ -287,7 +297,13 @@ function CutPlaneDriver() {
       aimBreach(id, handle.group.matrixWorld);
     }
     const view = store.getView();
-    if (!view.cutaway && view.overlay !== "internals") return;
+    // One plane through the whole plant: every part is cut by the same plane.
+    if (view.section !== null) {
+      sectionClipPlane(view.section, section);
+      for (const id of meshRegistry.keys()) cutPlaneFor(id).copy(section);
+      return;
+    }
+    if (cutViewOf(view) === "none" && view.overlay !== "internals") return;
     for (const [id, handle] of meshRegistry) {
       handle.group.getWorldPosition(centre);
       handle.group.getWorldQuaternion(orientation);
@@ -519,8 +535,10 @@ function Gizmo() {
 
   const primary = selection[selection.length - 1];
   const primaryComponent = components.find((c) => c.id === primary);
+  const exploded = useEditor((v) => v.explode > 0);
   const show =
     mode === "build" &&
+    !exploded &&
     (tool === "select" || tool === "move" || tool === "rotate") &&
     primaryComponent !== undefined;
 
@@ -682,12 +700,18 @@ function CameraRig({ controlsRef }: { controlsRef: MutableRefObject<OrbitControl
       let bounds: { centre: Vector3; radius: number } | null;
       if (request.kind === "frame") {
         const pool = view.snapshot.components.filter((c) =>
-          request.ids === null ? !view.hidden.has(c.id) : request.ids.includes(c.id),
+          request.ids === null
+            ? !view.hidden.has(c.id) && !view.peeledIds.has(c.id)
+            : request.ids.includes(c.id),
         );
         bounds = boundsOf(pool);
       } else {
         direction = VIEW_DIRECTIONS[request.view].clone();
-        bounds = boundsOf(view.snapshot.components.filter((c) => !view.hidden.has(c.id))) ?? {
+        bounds = boundsOf(
+          view.snapshot.components.filter(
+            (c) => !view.hidden.has(c.id) && !view.peeledIds.has(c.id),
+          ),
+        ) ?? {
           centre: target,
           radius: target.distanceTo(camera.position) / 2.4,
         };
@@ -1018,6 +1042,7 @@ export function Viewport() {
         <InternalsSection />
         <FieldLines />
         <ScaleFigure />
+        <ExplodeDriver />
         <Sockets />
         <Gizmo />
         <AppearanceDriver />

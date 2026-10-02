@@ -64,6 +64,8 @@ import { StartDialog } from "./ui/StartDialog.js";
 import { SubmitDialog } from "./ui/SubmitDialog.js";
 import { Timeline } from "./ui/Timeline.js";
 import { CameraModeHint, ToolRail } from "./ui/ToolRail.js";
+import { PlantTree } from "./ui/PlantTree.js";
+import { InspectPanel } from "./ui/InspectPanel.js";
 import { TopBar } from "./ui/TopBar.js";
 import { VersionNameDialog, VersionsDialog } from "./ui/VersionsDialog.js";
 import { useHover } from "./scene/hover.js";
@@ -177,6 +179,7 @@ function Workspace({
   const [manage, setManage] = useState(false);
   const showTeam = teamOpen && context.toggleTeam !== undefined;
   const drawerOpen = useEditor((v) => v.drawerOpen);
+  const treeOpen = useEditor((v) => v.treeOpen);
   const mode = useEditor((v) => v.mode);
   const hasSelection = useEditor((v) => v.selection.length > 0);
   const dialog = useEditor((v) => v.dialog);
@@ -243,6 +246,10 @@ function Workspace({
                 componentExists={(id) => store.world.getComponent(id) !== undefined}
               />
             </div>
+          ) : treeOpen ? (
+            <div className="panel panel--left">
+              <PlantTree />
+            </div>
           ) : (
             drawerOpen &&
             building && (
@@ -264,6 +271,7 @@ function Workspace({
           {debugPanel && <EffectsDebugPanel />}
           <Hints />
           <CameraModeHint />
+          <InspectPanel />
           <StatusStrip />
           <Timeline />
         </main>

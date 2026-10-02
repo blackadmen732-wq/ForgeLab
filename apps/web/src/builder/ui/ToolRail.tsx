@@ -6,8 +6,10 @@ import {
   Focus,
   Footprints,
   Grid3x3,
+  ListTree,
   HelpCircle,
   Layers,
+  Layers2,
   Magnet,
   MousePointer2,
   PanelLeft,
@@ -62,6 +64,9 @@ export function ToolRail() {
   const hiddenCount = useEditor((v) => v.hidden.size);
   const cameraMode = useEditor((v) => v.cameraMode);
   const showScale = useEditor((v) => v.showScale);
+  const treeOpen = useEditor((v) => v.treeOpen);
+  const inspectOpen = useEditor((v) => v.inspectOpen);
+  const inspecting = useEditor((v) => v.section !== null || v.peel > 0 || v.explode > 0);
   const hasSelection = useEditor((v) => v.selection.length > 0);
   const building = mode === "build";
   const tools: { id: Tool; label: string; keys: string; icon: ReactNode; buildOnly: boolean }[] = [
@@ -128,6 +133,17 @@ export function ToolRail() {
       </RailButton>
       <RailButton label="X-ray" keys="Z" active={xray} onClick={store.toggleXray}>
         <Scan />
+      </RailButton>
+      <RailButton label="Plant tree" keys="O" active={treeOpen} onClick={() => store.toggleTree()}>
+        <ListTree />
+      </RailButton>
+      <RailButton
+        label="Inspection views"
+        keys="L"
+        active={inspectOpen || inspecting}
+        onClick={() => store.toggleInspect()}
+      >
+        <Layers2 />
       </RailButton>
       <RailButton
         label={cameraMode === "orbit" ? "Walk at eye height" : "Back to orbit"}

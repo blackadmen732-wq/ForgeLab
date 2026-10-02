@@ -32,4 +32,11 @@ export {
 } from "./designs.js";
 
 export { PLANT_BUS_V, V01_PORTS, V01_PRODUCTS } from "./products.js";
+export {
+  PLANT_SYSTEMS,
+  PLANT_SYSTEM_LABELS,
+  plantSystemOf,
+  plantSystemOfConnection,
+  type PlantSystem,
+} from "./systems.js";
 export { SHOWROOM_SCENARIOS, buildScenario, type ShowroomScenario } from "./scenarios.js";
