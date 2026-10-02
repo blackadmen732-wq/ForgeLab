@@ -3,6 +3,7 @@ import { materialColor } from "../scene/appearance.js";
 import { findComponentDefinition, type ProductInfo } from "@forgelab/reactor-components";
 import {
   ROLE_PARAMETERS,
+  buildTopology,
   type ParameterSpec,
   type PlantSummary,
   type SimulationComponent,
@@ -269,6 +270,73 @@ function Condition({ component }: { component: SimulationComponent }) {
   );
 }
 
+const CHAMBER_SHAPE: Record<string, string> = {
+  single: "Single vessel",
+  loop: "Closed ring (toroidal)",
+  chain: "Column (linear)",
+  branched: "Branched — no plasma model",
+};
+
+/**
+ * The chamber a vessel segment belongs to, as sim-core's topology sees it: how many
+ * segments, what shape they make, where it is open, and which segment carries the plasma.
+ */
+function ChamberSection({ component }: { component: SimulationComponent }) {
+  const store = useEditorStore();
+  const snapshot = useEditor((v) => v.snapshot);
+  const layout = useMemo(
+    () =>
+      buildTopology(snapshot.components, snapshot.connections).vessels.find((v) =>
+        v.chamber.memberIds.includes(component.id),
+      ),
+    [snapshot, component.id],
+  );
+  if (layout === undefined) return null;
+  const { chamber } = layout;
+  if (chamber.path === "single" && chamber.openings.length === 0) return null;
+  const lead = snapshot.components.find((c) => c.id === layout.vesselId);
+  return (
+    <Section title="Chamber">
+      <Row label="Shape">{CHAMBER_SHAPE[chamber.path]}</Row>
+      <Row label="Segments">{chamber.memberIds.length}</Row>
+      {chamber.path === "loop" && (
+        <Row label="Major radius" tip="Centreline length / 2π: the ring the plasma model sees.">
+          {chamber.majorRadiusM.toFixed(2)} m
+        </Row>
+      )}
+      {chamber.lengthM > 0 && <Row label="Centreline">{chamber.lengthM.toFixed(2)} m</Row>}
+      <Row label="Narrowest bore" tip="Inner radius; the plasma fills a fraction of it.">
+        {chamber.boreRadiusM.toFixed(2)} m
+      </Row>
+      {!chamber.regular && (
+        <p className="insp-note">
+          The centreline strays {chamber.departureM.toFixed(2)} m from the shape the plasma model
+          assumes: results here are experimental.
+        </p>
+      )}
+      {chamber.openings.length > 0 && (
+        <p className="insp-alert">
+          Open to the hall at{" "}
+          {chamber.openings.map((o) => `${o.componentId} ${o.connectionPointId}`).join(", ")}: it
+          cannot hold a vacuum.
+        </p>
+      )}
+      {layout.vesselId !== component.id && lead !== undefined && (
+        <p className="insp-note">
+          Plasma settings and readouts are on the lead segment, {lead.label ?? lead.id}.{" "}
+          <button
+            type="button"
+            className="btn btn--sm btn--ghost"
+            onClick={() => store.select([lead.id])}
+          >
+            Select it
+          </button>
+        </p>
+      )}
+    </Section>
+  );
+}
+
 function StateReadouts({ component }: { component: SimulationComponent }) {
   const s = component.state.structural;
   const p = component.state.plant;
@@ -387,6 +455,7 @@ function StateReadouts({ component }: { component: SimulationComponent }) {
           )}
         </Section>
       )}
+      {role === "vacuum-vessel" && <ChamberSection component={component} />}
       {p.vessel !== null && (
         <Section
           title="Vessel & plasma"

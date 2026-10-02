@@ -1076,7 +1076,10 @@ export class EditorStore {
       const component = world.getComponent(id);
       if (component === undefined) continue;
       for (const connection of component.connections) {
-        if (isLoadBearing(connection.type) && !socketsTouch(world, connection))
+        if (
+          (isLoadBearing(connection.type) || isFlangeJoint(world, connection)) &&
+          !socketsTouch(world, connection)
+        )
           world.disconnect(connection.id);
       }
     }
@@ -1456,6 +1459,24 @@ const EMPTY_SIM: SimView = Object.freeze({
 
 function sameEnd(a: ConnectionEndpoint, b: ConnectionEndpoint): boolean {
   return a.componentId === b.componentId && a.connectionPointId === b.connectionPointId;
+}
+
+/**
+ * A bolted joint between two chamber-segment end flanges. Like a load-bearing joint it
+ * exists only while the flanges touch: pull the segments apart and the chamber opens.
+ */
+function isFlangeJoint(world: SimulationWorld, connection: Connection): boolean {
+  if (connection.type !== "vacuum") return false;
+  const isEnd = (componentId: string, pointId: string) => {
+    const port = world
+      .getComponent(componentId)
+      ?.connectionPoints.find((p) => p.id === pointId)?.port;
+    return port?.domain === "vacuum" && port.opening === "chamber-end";
+  };
+  return (
+    isEnd(connection.from.componentId, connection.from.connectionPointId) &&
+    isEnd(connection.to.componentId, connection.to.connectionPointId)
+  );
 }
 
 function socketsTouch(world: SimulationWorld, connection: Connection): boolean {

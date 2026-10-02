@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { vec3 } from "@forgelab/shared";
-import { worldAabb } from "@forgelab/sim-core";
+import { buildTopology, worldAabb } from "@forgelab/sim-core";
 import { EditorStore } from "./editor.js";
 
 /** Editing semantics of the builder store, run against the real engine in Node. */
@@ -126,6 +126,37 @@ describe("editor store", () => {
     expect(store.getView().selection).toHaveLength(6);
     store.undo();
     expect(store.getView().snapshot.components).toHaveLength(1);
+  });
+
+  it("closes a ring of chamber bends with one radial array, joining their flanges", () => {
+    const store = new EditorStore();
+    const bend = store.addPart("chamber-bend", vec3(4, 0, 0))!;
+    store.select([bend]);
+    store.patternSelected({ kind: "radial", origin: vec3(0, 0, 0), axis: vec3(0, 1, 0), count: 8 });
+    const chamber = () =>
+      buildTopology(store.world.listComponents(), store.world.listConnections()).vessels;
+    expect(chamber()).toHaveLength(1);
+    expect(chamber()[0]!.chamber.path).toBe("loop");
+    expect(chamber()[0]!.chamber.openings).toHaveLength(0);
+
+    // Pull one segment out of the ring: its flange joints break and the chamber opens.
+    const [, second] = store.getView().selection;
+    const c = store.world.requireComponent(second!);
+    store.moveComponents(
+      [
+        {
+          id: second!,
+          position: vec3(20, c.transform.positionM.y, 20),
+          rotation: c.transform.rotation,
+        },
+      ],
+      true,
+    );
+    const open = chamber().find((v) => v.chamber.memberIds.length === 7)!;
+    expect(open.chamber.path).toBe("chain");
+    expect(open.chamber.openings).toHaveLength(2);
+    store.undo();
+    expect(chamber()).toHaveLength(1);
   });
 
   it("rows and mirrors a linked selection, copying its links into each instance", () => {

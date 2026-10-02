@@ -528,6 +528,9 @@
 }
 .insp-panel {
   display: grid;
+  /* One column no wider than the panel: long values wrap or ellipsise, never push the
+     panel past its edge. */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   padding-bottom: 24px;
 }
@@ -614,6 +617,7 @@
 }
 .insp-section__body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   padding: 0 12px 10px;
 }
