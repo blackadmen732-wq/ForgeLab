@@ -38,7 +38,7 @@ interaction. No elastic compatibility for indeterminate frames. No overturning. 
 
 ## Phase 1 — Electrical circuits and power ✅ V0.1
 
-**In V0.1:** DC nodal analysis per island, sources, loads, conductors with R = ρ(T)L/A (copper follows the CRC resistivity table, so an overloaded bus heats faster as it heats), breakers, proportional curtailment, supply-shortfall and burn-out failures.
+**In V0.1:** DC nodal analysis per island, sources, loads, conductors with R = ρ(T)L/A (copper follows the CRC resistivity table, so an overloaded bus heats faster as it heats), breakers, proportional curtailment, supply-shortfall failures; an overloaded conductor keeps conducting past its service limit (over-temperature) and opens when it melts.
 **Still missing:** AC, transients, fault currents, protection coordination.
 
 Conductors, sources, loads and switches as a graph; nodal analysis for DC steady state.
@@ -55,7 +55,8 @@ already sourced, and nearly everything later needs power.
 
 **In V0.1:** Lumped capacitance per part with specific heat, conduction along links, convection and radiation to ambient, cryogenic loads, over-temperature and quench failures.
 **Temperature-dependent properties:** carbon steels (A36, A572) lose yield strength and stiffness per EN 1993-1-2 Table 3.1 at the part's lumped temperature, and structure is re-solved as they heat, so a hot support can yield or buckle; copper resistivity follows the CRC table. Materials without a sourced curve keep their room-temperature values.
-**Still missing:** Spatial temperature gradients, temperature-dependent heat capacity and conductivity, curves for stainless steels and other alloys.
+**Heat through space and fire (H1):** radiant exchange between unconnected parts and fires of sourced combustibles (XLPE), with neighbours' failures attributed to the part that heated them — see `docs/HAZARDS.md`.
+**Still missing:** Spatial temperature gradients (a thin combustible skin on a massive part ignites with its bulk), temperature-dependent heat capacity and conductivity, curves for stainless steels and other alloys, fire suppression, smoke and oxygen depletion.
 
 Lumped thermal masses with conduction between connected components
 (`Q̇ = kA·ΔT/L`, using the thermal conductivity already in the database), specific heat

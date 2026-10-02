@@ -453,21 +453,26 @@ validated SI `parameters`; `ROLE_PARAMETERS` in `roles.ts` is the single definit
 what each role accepts, its range, and how an interface should display it. The
 `PlantSolver` runs once per tick after the structural solve, in this order:
 
-| Subsystem   | Model                                                                                                                                                                                                                                           |
-| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Electrical  | DC nodal analysis per connected island (Gaussian elimination); sources, loads, `R = ρL/A` conductors; proportional curtailment when supply is short.                                                                                            |
-| Thermal     | Lumped capacitance per part: generated heat, conduction along links, convection (h = 10 W/m²K) and radiation (ε = 0.3) to ambient; cryoplant load for superconductors.                                                                          |
-| Coolant     | Closed loops found from `coolant` links; Darcy–Weisbach with Swamee–Jain friction, parabolic pump curves, operating point by bisection, ε-NTU exchangers. Hot-standby start by default.                                                         |
-| Vacuum      | Pressure balance `V·dp/dt = Q_gas − S·p` with pump speed and gas loads (fuelling, exhaust).                                                                                                                                                     |
-| Magnetics   | Ideal toroidal winding `B = μ₀NI/2πR`; on-axis finite solenoid; Princeton-D tension for TF coils, thin-shell hoop stress for solenoids; quench above critical temperature (fixed, or NbTi Tc(B) at peak field).                                 |
-| Plasma (0D) | Breakdown conditions, current ramp, IPB98(y,2) confinement (tokamaks) or Bohm (linear devices), ohmic, auxiliary and alpha heating, bremsstrahlung, density feedback; Greenwald, Troyon, q95 and β limits; density-limited controlled shutdown. |
-| Fusion      | Bosch–Hale D-T reactivity; 20 % alpha / 80 % neutron split.                                                                                                                                                                                     |
-| Neutronics  | Exponential attenuation (λ = 0.12 m) through wall, blanket and coils — not transport.                                                                                                                                                           |
-| Conversion  | Steam cycle as a fraction of Carnot between loop and condenser temperatures; generator efficiency.                                                                                                                                              |
-| Power       | **Net electric = gross generation − house load** (every load plus resistive losses).                                                                                                                                                            |
+| Subsystem   | Model                                                                                                                                                                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Electrical  | DC nodal analysis per connected island (Gaussian elimination); sources, loads, `R = ρL/A` conductors; proportional curtailment when supply is short.                                                                                                              |
+| Thermal     | Lumped capacitance per part: generated heat, conduction along links, convection (h = 10 W/m²K) and radiation (ε = 0.3) to ambient; cryoplant load for superconductors.                                                                                            |
+| Hazards     | Heat through space between parts that share no port: grey-body radiant exchange between equivalent spheres, and fires (sourced ignition, burning rate and heat of combustion) radiating χr = 0.35 of their heat release as a point source. See `docs/HAZARDS.md`. |
+| Coolant     | Closed loops found from `coolant` links; Darcy–Weisbach with Swamee–Jain friction, parabolic pump curves, operating point by bisection, ε-NTU exchangers. Hot-standby start by default.                                                                           |
+| Vacuum      | Pressure balance `V·dp/dt = Q_gas − S·p` with pump speed and gas loads (fuelling, exhaust).                                                                                                                                                                       |
+| Magnetics   | Ideal toroidal winding `B = μ₀NI/2πR`; on-axis finite solenoid; Princeton-D tension for TF coils, thin-shell hoop stress for solenoids; quench above critical temperature (fixed, or NbTi Tc(B) at peak field).                                                   |
+| Plasma (0D) | Breakdown conditions, current ramp, IPB98(y,2) confinement (tokamaks) or Bohm (linear devices), ohmic, auxiliary and alpha heating, bremsstrahlung, density feedback; Greenwald, Troyon, q95 and β limits; density-limited controlled shutdown.                   |
+| Fusion      | Bosch–Hale D-T reactivity; 20 % alpha / 80 % neutron split.                                                                                                                                                                                                       |
+| Neutronics  | Exponential attenuation (λ = 0.12 m) through wall, blanket and coils — not transport.                                                                                                                                                                             |
+| Conversion  | Steam cycle as a fraction of Carnot between loop and condenser temperatures; generator efficiency.                                                                                                                                                                |
+| Power       | **Net electric = gross generation − house load** (every load plus resistive losses).                                                                                                                                                                              |
 
 Failures carry `causeKeys` and a reconstructed `causalChain`, root first, so "pump off →
-loss of flow → wall over-temperature → disruption" is one readable story. Tunable modelling
+loss of flow → wall over-temperature → disruption" is one readable story. A conductor past
+its service limit keeps conducting (the limit is an annealing and insulation limit); it
+opens only when it reaches its sourced melting point (`melted`), so "undersized bus →
+over-temperature → insulation fire → melted → supply shortfall → disruption" emerges
+from the physics rather than a script. Tunable modelling
 constants (substeps, implicit hose and cable sizes, thresholds) are named and documented in
 `constants.ts`.
 
