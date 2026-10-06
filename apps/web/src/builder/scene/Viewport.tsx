@@ -27,6 +27,7 @@ import {
   Plane,
   Quaternion as ThreeQuaternion,
   Raycaster,
+  type ShaderMaterial,
   SphereGeometry,
   Vector2,
   Vector3,
@@ -70,6 +71,7 @@ import { familyColor } from "./materialView.js";
 import { trimVisibleAt } from "./lod.js";
 import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
+import { applyPlasmaState } from "./plasma.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import type { EditorStore, ViewName } from "../store/editor.js";
 import {
@@ -79,7 +81,6 @@ import {
   surfaceMaterial,
   ghostedIn,
   materialColor,
-  plasmaGlow,
   readoutFromComponent,
   readoutFromFrame,
 } from "./appearance.js";
@@ -287,9 +288,8 @@ function AppearanceDriver() {
         extra.opacity = xray ? (ghost ? 0.05 : 0.12) : 1;
       }
       if (handle.glow !== null) {
-        const glow = plasmaGlow(readout.vessel);
-        handle.glow.visible = glow > 0;
-        (handle.glow.material as MeshBasicMaterial).opacity = 0.2 + 0.6 * glow;
+        const brightness = applyPlasmaState(handle.glow.material as ShaderMaterial, readout.vessel);
+        handle.glow.visible = brightness > 0;
       }
     }
   });

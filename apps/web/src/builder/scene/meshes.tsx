@@ -2,7 +2,6 @@ import type { ThreeEvent } from "@react-three/fiber";
 import { Edges } from "@react-three/drei";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import {
-  AdditiveBlending,
   BoxGeometry,
   type BufferGeometry,
   CylinderGeometry,
@@ -22,6 +21,7 @@ import {
 import { findMaterialRecord } from "@forgelab/materials";
 import { boxProjectUVs, partWearMaps } from "./environment/surfaces.js";
 import { arcTube, machineModel } from "./machines.js";
+import { createPlasmaMaterial } from "./plasma.js";
 
 /**
  * Procedural presentation meshes.
@@ -364,15 +364,8 @@ export const ComponentMesh = memo(function ComponentMesh({
     [role, geometry],
   );
   const glowMaterial = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: "#f472b6",
-        transparent: true,
-        opacity: 0.6,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
+    () => createPlasmaMaterial(geometry.kind === "torus"),
+    [geometry.kind],
   );
   useLayoutEffect(() => () => glowGeometry?.dispose(), [glowGeometry]);
 

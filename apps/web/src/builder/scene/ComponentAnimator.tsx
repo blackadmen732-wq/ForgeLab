@@ -1,11 +1,12 @@
 import { useFrame } from "@react-three/fiber";
 import { useContext, useRef } from "react";
-import { Color, type MeshBasicMaterial } from "three";
+import { Color, type MeshBasicMaterial, type ShaderMaterial } from "three";
 import { PresentationContext } from "../../presentation/context.js";
 import { motionAllowed, getSettings } from "../../presentation/settings.js";
 import type { VisualState } from "../../presentation/visualState.js";
 import { plasmaUnrest } from "./appearance.js";
 import { meshRegistry } from "./meshes.js";
+import { animatePlasma } from "./plasma.js";
 
 /**
  * Spins rotors and lights status lamps from the director's per-machine visual state.
@@ -36,6 +37,8 @@ const scratch = new Color();
 export function ComponentAnimator() {
   const director = useContext(PresentationContext);
   const speeds = useRef(new Map<string, number>());
+  const phases = useRef(new Map<string, string>());
+  const flashAt = useRef(new Map<string, number>());
   const last = useRef(0);
 
   useFrame(({ invalidate }) => {
@@ -64,6 +67,17 @@ export function ComponentAnimator() {
         );
         moving = true;
       } else if (handle.shake.position.lengthSq() > 0) handle.shake.position.set(0, 0, 0);
+      if (handle.glow !== null && handle.glow.visible) {
+        // Filaments drift and the breakdown flash fades in presentation time.
+        const phase = state.reading?.vessels[id]?.plasma.phase ?? "off";
+        const before = phases.current.get(id);
+        if (phase === "ramp-up" && before !== "ramp-up") flashAt.current.set(id, t);
+        phases.current.set(id, phase);
+        const since = t - (flashAt.current.get(id) ?? -Infinity);
+        const flash = motion && since < 1.5 ? Math.exp(-since / 0.35) : 0;
+        animatePlasma(handle.glow.material as ShaderMaterial, motion ? t : 0, flash);
+        if (motion) moving = true;
+      } else if (handle.glow !== null) phases.current.set(id, "off");
       if (handle.glow !== null) {
         const unrest = motion ? plasmaUnrest(state.reading?.vessels[id] ?? null) : 0;
         if (unrest > 0) {
