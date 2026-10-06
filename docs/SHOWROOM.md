@@ -150,7 +150,12 @@ light the metal around it.
 Media are physically distinct particle systems: smoke (sooty, rises), electrical smoke
 (thin, blue-grey), steam (white, rises fast and disperses), cold vapour (dense, sinks
 then rises as it warms), dust (settles), fire (short-lived, buoyant), sparks and spray
-(ballistic, fall under gravity).
+(ballistic, fall under gravity). Each soft particle is a noise-eroded billow with its own
+seed and slow spin, lit from above when normally blended, and fire has a hot core, so a
+plume reads as rolling cloud rather than discs. Sparks and spray draw as streaks along
+their own screen-space velocity (45 ms and 30 ms of motion blur), brightest at the head.
+Flashes are view-facing glows with no hard rim. All of it is drawing only: emission,
+motion and timing are unchanged.
 
 **Precursors** warn before a failure, each from a published value: a cavitating pump
 shudders in proportion to the head it lost (`headFraction`); a plasma within 15 % of the

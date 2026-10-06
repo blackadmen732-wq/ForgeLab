@@ -26,7 +26,8 @@ export function VfxLayer() {
   useLayoutEffect(() => {
     const scale = size.height / (2 * Math.tan((fov * Math.PI) / 360));
     runtime.setScale(scale * gl.getPixelRatio());
-  }, [runtime, size.height, fov, gl]);
+    runtime.setViewport(size.width * gl.getPixelRatio(), size.height * gl.getPixelRatio());
+  }, [runtime, size.width, size.height, fov, gl]);
   useEffect(() => {
     if (director === null) return;
     runtime.setTimeScale(() => cinema?.timeScale() ?? 1);

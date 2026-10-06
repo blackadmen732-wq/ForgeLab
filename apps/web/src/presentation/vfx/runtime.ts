@@ -19,6 +19,7 @@ import {
   type Scene,
   type WebGLRenderer,
   RingGeometry,
+  ShaderMaterial,
   SphereGeometry,
   Vector3,
 } from "three";
@@ -271,15 +272,7 @@ export class VfxRuntime {
     });
     const sphere = (this.#sphere = new SphereGeometry(1, 24, 16));
     this.flashes = Array.from({ length: 4 }, () => {
-      const mesh = new Mesh(
-        sphere,
-        new MeshBasicMaterial({
-          transparent: true,
-          blending: AdditiveBlending,
-          depthWrite: false,
-          toneMapped: false,
-        }),
-      );
+      const mesh = new Mesh(sphere, flashMaterial());
       mesh.visible = false;
       root.add(mesh);
       return { mesh, age: 1, duration: 0, radius: 1 };
@@ -295,6 +288,10 @@ export class VfxRuntime {
 
   setScale(scale: number): void {
     for (const s of Object.values(this.systems)) s.setScale(scale);
+  }
+
+  setViewport(width: number, height: number): void {
+    for (const s of Object.values(this.systems)) s.setViewport(width, height);
   }
 
   /** Subscribes to the director; returns the unsubscribe. */
@@ -523,7 +520,7 @@ export class VfxRuntime {
         if (reduced) break;
         const flash = this.flashes.find((f) => f.age >= f.duration) ?? this.flashes[0]!;
         flash.mesh.position.set(...cmd.origin);
-        (flash.mesh.material as MeshBasicMaterial).color.set(cmd.color);
+        ((flash.mesh.material as ShaderMaterial).uniforms["uColor"]!.value as Color).set(cmd.color);
         flash.age = 0;
         flash.duration = cmd.duration;
         flash.radius = cmd.radius;
@@ -715,7 +712,7 @@ export class VfxRuntime {
       const t = Math.min(1, flash.age / flash.duration);
       flash.mesh.visible = true;
       flash.mesh.scale.setScalar(flash.radius * (0.6 + 0.6 * t));
-      (flash.mesh.material as MeshBasicMaterial).opacity = (1 - t) * (1 - t);
+      (flash.mesh.material as ShaderMaterial).uniforms["uOpacity"]!.value = (1 - t) * (1 - t);
     }
     // Debris and the camera guard.
     state.camera.getWorldDirection(this.#forward);
@@ -776,4 +773,37 @@ export class VfxRuntime {
     for (const t of [...this.rings, ...this.flashes])
       (t.mesh.material as MeshBasicMaterial).dispose();
   }
+}
+
+/**
+ * A flash is light, not a ball: brightest where the eye looks through the most of it
+ * (the centre) and fading to nothing at the rim, so it has no hard edge.
+ */
+function flashMaterial(): ShaderMaterial {
+  return new ShaderMaterial({
+    transparent: true,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    toneMapped: false,
+    uniforms: { uColor: { value: new Color("#ffffff") }, uOpacity: { value: 0 } },
+    vertexShader: /* glsl */ `
+      varying float vFacing;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vec3 n = normalize(normalMatrix * normal);
+        vFacing = abs(dot(n, normalize(-mv.xyz)));
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform vec3 uColor;
+      uniform float uOpacity;
+      varying float vFacing;
+      void main() {
+        float core = pow(vFacing, 3.0);
+        vec3 c = mix(uColor, vec3(1.0), core * 0.6);
+        gl_FragColor = vec4(c * (0.25 * vFacing + 1.6 * core), uOpacity * vFacing * vFacing);
+      }
+    `,
+  });
 }
