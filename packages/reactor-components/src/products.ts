@@ -197,6 +197,16 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
     "coolant-out": water("out", 1),
     sensor: control("measurement"),
   },
+  "shield-block": {
+    "coolant-in": water("in", 0.06),
+    "coolant-out": water("out", 0.06),
+    "fw-supply": water("out", 0.04, "TO FIRST WALL"),
+    "fw-return": water("in", 0.04, "FROM FIRST WALL"),
+  },
+  "first-wall-panel": {
+    "coolant-in": water("in", 0.04),
+    "coolant-out": water("out", 0.04),
+  },
   "coolant-pipe": {
     a: (d) => water("both", pipeBore(d), "END A"),
     b: (d) => water("both", pipeBore(d), "END B"),
@@ -1101,6 +1111,105 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
   "concrete-slab": concreteSheet(
     "Cast concrete floor slab: makes another storey. It carries what stands on it and separates the levels.",
   ),
+  "shield-block": {
+    summary:
+      "Blanket shield block: thick water-cooled steel behind the first wall. Soaks up neutron energy and shields the vessel and coils.",
+    internals: [
+      {
+        id: "steel",
+        name: "Shield block body",
+        kind: "structure",
+        substanceId: "stainless-steel",
+        purpose:
+          "Forged 316L steel: its mass stops neutrons and gammas; slots relieve electromagnetic loads.",
+        volumeFraction: 0.8,
+      },
+      {
+        id: "water",
+        name: "Coolant channels",
+        kind: "coolant",
+        substanceId: "water",
+        purpose: "Drilled channels carry the neutron heat away, and feed the first wall.",
+      },
+      {
+        id: "keys",
+        name: "Keys, central bolt and electrical straps",
+        kind: "structure",
+        substanceId: "stainless-steel",
+        purpose:
+          "Fix the module to the vessel and carry its electromagnetic loads (schematic: lumped with the body).",
+        volumeFraction: 0.02,
+      },
+    ],
+    internalsSetMass: true,
+    capabilities: ["nuclear", "thermal", "fluid", "structural"],
+    ratings: (p) => [
+      rating("Energy multiplication", `×${n(p, "energyMultiplication").toFixed(2)}`),
+    ],
+    failureModes: [
+      {
+        id: "overheat",
+        name: "Over-temperature",
+        system: "thermal",
+        description: "Neutron heating exceeds what its coolant carries away.",
+      },
+    ],
+    audio: "none",
+    visual: "block",
+    animations: [],
+  },
+  "first-wall-panel": {
+    summary:
+      "First-wall panel: the plasma-facing skin of a blanket module — beryllium tiles on a copper-alloy heat sink on steel.",
+    internals: [
+      {
+        id: "armour",
+        name: "Beryllium armour tiles",
+        kind: "plasma-facing",
+        substanceId: "beryllium",
+        purpose: "Low-Z tiles facing the plasma: erode without poisoning it.",
+        volumeFraction: 0.12,
+      },
+      {
+        id: "heat-sink",
+        name: "Copper-alloy heat sink",
+        kind: "conductor",
+        substanceId: "copper-ofhc",
+        purpose:
+          "Spreads the surface heat into the cooling channels (CuCrZr in ITER; modelled as OFHC copper).",
+        volumeFraction: 0.3,
+      },
+      {
+        id: "water",
+        name: "Cooling channels",
+        kind: "coolant",
+        substanceId: "water",
+        purpose: "Water fed from the shield block carries the heat away.",
+      },
+      {
+        id: "structure",
+        name: "Steel structure",
+        kind: "structure",
+        substanceId: "stainless-steel",
+        purpose: "Backing plate and the leg the central bolt pulls on.",
+        volumeFraction: 0.4,
+      },
+    ],
+    internalsSetMass: true,
+    capabilities: ["nuclear", "thermal", "fluid"],
+    ratings: () => [rating("Armour", "Be on Cu on steel")],
+    failureModes: [
+      {
+        id: "overheat",
+        name: "Over-temperature",
+        system: "thermal",
+        description: "Neutron heating exceeds what its coolant carries away.",
+      },
+    ],
+    audio: "none",
+    visual: "block",
+    animations: [],
+  },
   "battery-module-nmc": {
     summary:
       "Rack-mounted lithium-ion module (NMC). Stores energy — and can heat itself into thermal runaway.",

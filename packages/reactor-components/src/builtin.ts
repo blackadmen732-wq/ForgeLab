@@ -1377,6 +1377,94 @@ export const CONCRETE_SLAB = define({
   keyProperty: "8 × 8 m · 300 mm",
 });
 
+/* ------------------------------------------------------------------------------------ *
+ * Blanket modules: build a blanket the way ITER does, one module at a time
+ * ------------------------------------------------------------------------------------ */
+
+/** Design coolant parameters of one module (a design choice, editable in the Inspector). */
+const MODULE_COOLANT = { coolantConductanceWK: 0.2e6, channelDiameterM: 0.05, channelLengthM: 6 };
+
+/**
+ * Shield Block — the thick water-cooled steel body of a blanket module (ITER: modules about
+ * 1 × 1.5 m, up to 4.6 t each, 440 of them). Faces +Z toward the plasma: the first-wall
+ * panel bolts to its front, keys on its back fix it to the vessel. Placed inside or around
+ * a tokamak, it catches neutrons by where it is (sim-core blanketModules.ts).
+ */
+export const SHIELD_BLOCK = define({
+  type: "shield-block",
+  name: "Shield Block",
+  description:
+    "Water-cooled 316L steel block of a blanket module, 1.5 × 1.0 m and 0.45 m thick by default. Face it toward the plasma; bolt a First Wall Panel to its front. It heats from the neutrons it catches where it stands.",
+  category: "Thermal",
+  role: "blanket",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("widthM", "Width", 1.5, 0.3, 4),
+    dim("heightM", "Height", 1.0, 0.3, 4),
+    dim("thicknessM", "Thickness", 0.45, 0.1, 1.5),
+  ],
+  shape: (d) => {
+    const w = d["widthM"]!;
+    const h = d["heightM"]!;
+    const t = d["thicknessM"]!;
+    return {
+      geometry: boxGeometry(vec3(w, h, t)),
+      sockets: [
+        base(h),
+        mount("first-wall", vec3(0, 0, t / 2), PZ),
+        mount("key-upper", vec3(0, h / 4, -t / 2), NZ),
+        mount("key-lower", vec3(0, -h / 4, -t / 2), NZ),
+        socket("coolant-in", "coolant", vec3(-w / 4, -h / 2, -t / 4), DOWN),
+        socket("coolant-out", "coolant", vec3(w / 4, -h / 2, -t / 4), DOWN),
+        socket("fw-supply", "coolant", vec3(-w / 4, 0, t / 2), PZ),
+        socket("fw-return", "coolant", vec3(w / 4, 0, t / 2), PZ),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "box" ? { widthM: g.sizeM.x, heightM: g.sizeM.y, thicknessM: g.sizeM.z } : {},
+  presets: { energyMultiplication: 1, ...MODULE_COOLANT },
+  keyProperty: "1.5 × 1.0 m · 316L",
+});
+
+/**
+ * First Wall Panel — the plasma-facing skin of a blanket module: beryllium tiles on a
+ * copper-alloy heat sink on a steel backing. Bolts to a Shield Block's front, cooled in
+ * series with it.
+ */
+export const FIRST_WALL_PANEL = define({
+  type: "first-wall-panel",
+  name: "First Wall Panel",
+  description:
+    "Plasma-facing panel, 1.5 × 1.0 m and 80 mm thick by default: beryllium armour on a copper heat sink on steel. Bolt it to a Shield Block's front and run its water through the block.",
+  category: "Thermal",
+  role: "blanket",
+  material: MaterialIds.StainlessSteel,
+  dimensions: [
+    dim("widthM", "Width", 1.5, 0.3, 4),
+    dim("heightM", "Height", 1.0, 0.3, 4),
+    dim("thicknessM", "Thickness", 0.08, 0.02, 0.3),
+  ],
+  shape: (d) => {
+    const w = d["widthM"]!;
+    const h = d["heightM"]!;
+    const t = d["thicknessM"]!;
+    return {
+      geometry: boxGeometry(vec3(w, h, t)),
+      sockets: [
+        base(h),
+        mount("shield", vec3(0, 0, -t / 2), NZ),
+        socket("coolant-in", "coolant", vec3(-w / 4, 0, -t / 2), NZ),
+        socket("coolant-out", "coolant", vec3(w / 4, 0, -t / 2), NZ),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "box" ? { widthM: g.sizeM.x, heightM: g.sizeM.y, thicknessM: g.sizeM.z } : {},
+  presets: { energyMultiplication: 1, ...MODULE_COOLANT },
+  keyProperty: "Be · Cu · steel",
+});
+
 export const BATTERY_MODULE_NMC = batteryModule("nmc", "NMC");
 export const BATTERY_MODULE_LFP = batteryModule("lfp", "LFP");
 
@@ -1388,6 +1476,8 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   STAIR_TOWER,
   CONCRETE_WALL,
   CONCRETE_SLAB,
+  SHIELD_BLOCK,
+  FIRST_WALL_PANEL,
   TOKAMAK_VESSEL,
   CRYOSTAT,
   CHAMBER_STRAIGHT,

@@ -32,6 +32,7 @@ export {
   placePart,
   type ReferencePlantOptions,
 } from "./designs.js";
+export { KITS, buildBlanketModule, findKit, type Kit } from "./kits.js";
 
 export { PLANT_BUS_V, V01_PORTS, V01_PRODUCTS } from "./products.js";
 export {

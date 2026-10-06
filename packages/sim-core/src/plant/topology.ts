@@ -6,6 +6,7 @@ import { cylinderSurroundsCoaxially, coaxialRelation, torusEnclosesTorus } from 
 import type { PlantRole } from "./roles.js";
 import { torusWinding } from "./biotSavart.js";
 import { type ChamberShape, buildChambers } from "./chamber.js";
+import { moduleInterception, plasmaRing } from "./blanketModules.js";
 
 /** A plant link: one connection with both endpoints resolved and its physical length. */
 export interface PlantLink {
@@ -32,6 +33,8 @@ export interface VesselLayout {
   /** Coils whose field ForgeLab can compute at this vessel's plasma. */
   readonly coilIds: readonly string[];
   readonly blanketIds: readonly string[];
+  /** Box blanket/shield modules placed around this tokamak (blanketModules.ts). */
+  readonly moduleIds: readonly string[];
   readonly heaterIds: readonly string[];
   readonly injectorIds: readonly string[];
   readonly pumpIds: readonly string[];
@@ -181,11 +184,29 @@ export function buildTopology(
       chamber,
       coilIds,
       blanketIds,
+      moduleIds: [] as string[],
       heaterIds: linked("port", "plasma-heater"),
       injectorIds: linked("fuel", "fuel-injector"),
       pumpIds: linked("vacuum", "vacuum-pump"),
     };
   });
+
+  // Box modules serve the nearest tokamak whose plasma they are within reach of.
+  for (const blanket of blankets) {
+    if (blanketVessel.has(blanket.id) || blanket.geometry.kind !== "box") continue;
+    let best: { layout: VesselLayout; distance: number } | null = null;
+    for (const layout of vessels) {
+      if (layout.configuration !== "tokamak" || layout.chamber.path !== "single") continue;
+      const vessel = byId.get(layout.vesselId)!;
+      const hit = moduleInterception(blanket, plasmaRing(vessel), vessel, 1);
+      if (hit !== null && (best === null || hit.distanceToAxisM < best.distance))
+        best = { layout, distance: hit.distanceToAxisM };
+    }
+    if (best !== null) {
+      (best.layout.moduleIds as string[]).push(blanket.id);
+      blanketVessel.set(blanket.id, best.layout.vesselId);
+    }
+  }
 
   return {
     byId,

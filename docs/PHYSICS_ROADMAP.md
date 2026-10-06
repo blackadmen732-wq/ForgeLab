@@ -135,6 +135,13 @@ than a checkbox. Tritium breeding requirements appear as a constraint.
 ## Phase 8 — Neutron transport and blanket ◐ partial
 
 **In V0.1:** Exponential attenuation of neutron power through wall, blanket and coils; blanket heat to the coolant loop.
+**Modular blankets:** Shield Blocks and First Wall Panels placed one by one (as ITER lines its
+vessel with 440 modules) catch neutrons by where they are (`plant/blanketModules.ts`): the
+plasma is a ring of 72 isotropic sources on the magnetic axis; each box module takes
+A⊥/4πd² from each (capped at one half), absorbs 1 − exp(−ℓ/λ) over its mean chord
+ℓ = 4V/S, and modules inside the bore shield the vessel wall while those outside share what
+gets through it. Modules do not shadow one another individually (shares are scaled to fit
+the whole flux). Confidence: approximate.
 **Still missing:** Transport (no Monte Carlo in scope), tritium breeding ratio, activation, damage.
 
 Neutron production from Phase 7, simplified attenuation and heating through blanket and

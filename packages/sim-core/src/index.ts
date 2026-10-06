@@ -181,7 +181,12 @@ export type {
 } from "./dynamics/backend.js";
 
 export { SimulationLoop, type SimulationLoopOptions } from "./clock.js";
-export { SimulationWorld, type SimulationSnapshot, type WorldOptions } from "./world.js";
+export {
+  SimulationWorld,
+  type ComponentGroup,
+  type SimulationSnapshot,
+  type WorldOptions,
+} from "./world.js";
 
 export {
   CURRENT_SCHEMA_VERSION,
@@ -191,6 +196,7 @@ export {
   type SerializedComponent,
   type SerializedConnection,
   type SerializedConnectionPoint,
+  type SerializedGroup,
   type SerializedGeometry,
   type SerializedPhysicalState,
   type SerializedQuaternion,
@@ -203,7 +209,9 @@ export {
 export {
   AssemblyFileError,
   deserializeWorld,
+  extractAssembly,
   fromJson,
+  insertAssembly,
   parseAssemblyFile,
   serializeComponent,
   serializeWorld,

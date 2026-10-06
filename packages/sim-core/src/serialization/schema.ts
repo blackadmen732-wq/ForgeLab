@@ -160,11 +160,20 @@ export interface SerializedRuntime {
   readonly idCounter: number;
 }
 
+/** Parts grouped in the design (optional; design organisation only, never physics). */
+export interface SerializedGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly componentIds: readonly string[];
+}
+
 export interface AssemblyFileV2 {
   readonly schemaVersion: typeof CURRENT_SCHEMA_VERSION;
   readonly name: string;
   readonly components: readonly SerializedComponent[];
   readonly connections: readonly SerializedConnection[];
+  /** Optional (added without a version bump; older readers ignore it). */
+  readonly groups?: readonly SerializedGroup[];
   readonly simulationSettings: SerializedSimulationSettings;
   readonly runtime?: SerializedRuntime;
   /** Informational only; never read back by the engine. */

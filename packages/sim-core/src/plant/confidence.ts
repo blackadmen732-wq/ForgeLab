@@ -269,9 +269,15 @@ export function assessConfidence(input: {
       );
     add("hazards", "approximate", reasons);
   }
+  const moduleCount = topology.vessels.reduce((n, v) => n + v.moduleIds.length, 0);
+  if (moduleCount > 0) {
+    add("neutronics", "approximate", [
+      `${moduleCount} blanket module(s): each catches the plasma's neutrons by its projected area from a ring source on the magnetic axis, absorbing over its mean chord. Modules do not shadow one another individually; no Monte Carlo transport.`,
+    ]);
+  }
   if (topology.orphanBlanketIds.length > 0) {
     add("neutronics", "experimental", [
-      `${topology.orphanBlanketIds.length} blanket(s) do not enclose a vessel and receive no neutrons.`,
+      `${topology.orphanBlanketIds.length} blanket(s) neither enclose a vessel nor sit within reach of a tokamak plasma, so they receive no neutrons.`,
     ]);
   }
 

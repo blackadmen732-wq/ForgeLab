@@ -103,6 +103,7 @@ import {
   loopPeakFieldT,
 } from "./magnetics.js";
 import { torusWinding } from "./biotSavart.js";
+import { fitShares, moduleInterception, plasmaRing } from "./blanketModules.js";
 import { openingConductanceM3PerS, wallShares } from "./chamber.js";
 import { type GeometricCoupling, geometricCouplings } from "./fieldCoupling.js";
 import {
@@ -1494,6 +1495,36 @@ export class PlantSolver {
       const neutronW = outputs?.["neutronPowerW"] ?? 0;
       if (!(neutronW > 0)) continue;
       const vessel = topology.byId.get(layout.vesselId)!;
+      // Blanket and shield modules placed one by one (blanketModules.ts): those inside the
+      // vessel's bore see the plasma first and shield the wall; those outside it share what
+      // the wall lets through.
+      const ring = layout.moduleIds.length > 0 ? plasmaRing(vessel) : [];
+      const modules = layout.moduleIds.flatMap((id) => {
+        const hit = moduleInterception(
+          topology.byId.get(id)!,
+          ring,
+          vessel,
+          NEUTRON_ATTENUATION_LENGTH_M,
+        );
+        return hit === null ? [] : [{ id, ...hit }];
+      });
+      const deposit = (id: string, enteringW: number, absorbed: number) => {
+        const module = topology.byId.get(id)!;
+        const multiplication = numberParameter(module.parameters, "energyMultiplication");
+        const depositedW = enteringW * absorbed * multiplication;
+        addHeat(work, id, depositedW);
+        const record = work.outputs.get(id) ?? {};
+        record["neutronHeatingW"] = depositedW;
+        record["neutronsInW"] = enteringW;
+        work.outputs.set(id, record);
+        return enteringW * absorbed;
+      };
+      const inner = modules.filter((m) => m.inside);
+      const innerScale = fitShares(inner.map((m) => m.fraction));
+      let stoppedInsideW = 0;
+      for (const m of inner)
+        stoppedInsideW += deposit(m.id, neutronW * m.fraction * innerScale, m.absorbed);
+      const atWallW = neutronW - stoppedInsideW;
       // Each segment of the wall intercepts neutrons in proportion to its area and
       // absorbs according to its own thickness.
       let wallHeatingW = 0;
@@ -1501,10 +1532,17 @@ export class PlantSolver {
       for (const { id, share } of wallShares(layout.chamber.memberIds, topology.byId)) {
         const wallM = topology.byId.get(id)!.geometry.wallThicknessM ?? 0;
         const throughWall = Math.exp(-wallM / NEUTRON_ATTENUATION_LENGTH_M);
-        addHeat(work, id, neutronW * share * (1 - throughWall));
-        wallHeatingW += neutronW * share * (1 - throughWall);
-        transmitted += neutronW * share * throughWall;
+        addHeat(work, id, atWallW * share * (1 - throughWall));
+        wallHeatingW += atWallW * share * (1 - throughWall);
+        transmitted += atWallW * share * throughWall;
       }
+      const outer = modules.filter((m) => !m.inside);
+      const outerScale = fitShares(outer.map((m) => m.fraction));
+      let stoppedOutsideW = 0;
+      const throughWallW = transmitted;
+      for (const m of outer)
+        stoppedOutsideW += deposit(m.id, throughWallW * m.fraction * outerScale, m.absorbed);
+      transmitted -= stoppedOutsideW;
       const vesselRecord = work.outputs.get(vessel.id) ?? {};
       vesselRecord["neutronHeatingW"] = wallHeatingW;
       work.outputs.set(vessel.id, vesselRecord);

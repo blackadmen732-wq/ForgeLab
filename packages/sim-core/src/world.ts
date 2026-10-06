@@ -81,6 +81,13 @@ export interface WorldOptions {
  * no React in this file, no Three.js, and no DOM; the class runs unchanged in Node, in a
  * worker, or on a server.
  */
+/** Parts grouped in the design (see `SimulationWorld.createGroup`). */
+export interface ComponentGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly componentIds: readonly ComponentId[];
+}
+
 export class SimulationWorld {
   #name: string;
   #settings: SimulationSettings;
@@ -105,6 +112,8 @@ export class SimulationWorld {
   #structureSolvedAtRevision = -1;
   #plantSummary: PlantSummary = EMPTY_PLANT_SUMMARY;
   #plantDiagnostics: readonly string[] = [];
+  /** Design organisation only: never read by a solver. */
+  #groups = new Map<string, ComponentGroup>();
 
   constructor(options: WorldOptions = {}) {
     this.#name = options.name ?? "Untitled Assembly";
@@ -211,6 +220,7 @@ export class SimulationWorld {
       }
     }
     this.#failedComponentIds.delete(id);
+    this.#dropFromGroups([id]);
     this.#markDirty();
     this.#refreshComponentConnections();
   }
@@ -321,6 +331,69 @@ export class SimulationWorld {
       role: source.role,
       parameters: source.parameters,
     });
+  }
+
+  /* ---------------------------------------------------------------------------------- *
+   * Groups (assemblies placed in the design)
+   * ---------------------------------------------------------------------------------- */
+
+  /**
+   * Groups parts so they select and move together — a coolant loop, a magnet power module,
+   * a blanket module. Design organisation only: no solver reads groups, and a part keeps
+   * its own physics. A part belongs to at most one group; grouping it again moves it.
+   * Groups of fewer than two parts are not kept.
+   */
+  createGroup(
+    componentIds: readonly ComponentId[],
+    options: { id?: string; name?: string } = {},
+  ): ComponentGroup {
+    const ids = [...new Set(componentIds)].filter((id) => this.#components.has(id)).sort();
+    if (ids.length < 2) throw new Error("A group needs at least two parts.");
+    const id = options.id ?? this.nextId("group");
+    if (this.#groups.has(id)) throw new Error(`A group with id "${id}" already exists.`);
+    this.#dropFromGroups(ids);
+    const group: ComponentGroup = Object.freeze({
+      id,
+      name: options.name?.trim() || `Group ${this.#groups.size + 1}`,
+      componentIds: Object.freeze(ids),
+    });
+    this.#groups.set(id, group);
+    return group;
+  }
+
+  /** Takes a group apart: its parts stay where they are, ungrouped. */
+  ungroup(groupId: string): void {
+    this.#groups.delete(groupId);
+  }
+
+  renameGroup(groupId: string, name: string): ComponentGroup {
+    const group = this.#groups.get(groupId);
+    if (group === undefined) throw new Error(`Unknown group "${groupId}".`);
+    const next = Object.freeze({ ...group, name: name.trim() || group.name });
+    this.#groups.set(groupId, next);
+    return next;
+  }
+
+  listGroups(): readonly ComponentGroup[] {
+    return [...this.#groups.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** The group a part belongs to, if any. */
+  groupOf(componentId: ComponentId): ComponentGroup | undefined {
+    for (const group of this.#groups.values())
+      if (group.componentIds.includes(componentId)) return group;
+    return undefined;
+  }
+
+  #dropFromGroups(ids: readonly ComponentId[]): void {
+    const gone = new Set(ids);
+    for (const [groupId, group] of [...this.#groups]) {
+      if (!group.componentIds.some((id) => gone.has(id))) continue;
+      const kept = group.componentIds.filter((id) => !gone.has(id));
+      if (kept.length < 2) this.#groups.delete(groupId);
+      else
+        this.#groups.set(groupId, Object.freeze({ ...group, componentIds: Object.freeze(kept) }));
+    }
   }
 
   /* ---------------------------------------------------------------------------------- *

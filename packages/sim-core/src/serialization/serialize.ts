@@ -63,6 +63,15 @@ export function serializeWorld(
     name: world.name,
     components: world.listComponents().map(serializeComponent),
     connections: world.listConnections().map(serializeConnection),
+    ...(world.listGroups().length > 0
+      ? {
+          groups: world.listGroups().map((g) => ({
+            id: g.id,
+            name: g.name,
+            componentIds: [...g.componentIds],
+          })),
+        }
+      : {}),
     simulationSettings: serializeSettings(world.settings),
     runtime: {
       tick: world.tick,
@@ -300,6 +309,11 @@ export function deserializeWorld(
     });
   }
 
+  for (const group of file.groups ?? []) {
+    const members = group.componentIds.filter((id) => world.getComponent(id) !== undefined);
+    if (members.length >= 2) world.createGroup(members, { id: group.id, name: group.name });
+  }
+
   world.restoreRuntime({
     tick: file.runtime?.tick ?? 0,
     simulatedTimeSec: file.runtime?.simulatedTimeSec ?? 0,
@@ -396,12 +410,30 @@ function validateFile(record: Record<string, unknown>, version: number): Assembl
 
   const runtime = record["runtime"];
   const meta = record["meta"];
+  // Groups are optional organisation: malformed entries are dropped, never fatal.
+  const groups = Array.isArray(record["groups"])
+    ? record["groups"].flatMap((g) =>
+        isRecord(g) &&
+        typeof g["id"] === "string" &&
+        Array.isArray(g["componentIds"]) &&
+        g["componentIds"].every((id) => typeof id === "string" && componentIds.has(id))
+          ? [
+              {
+                id: g["id"],
+                name: typeof g["name"] === "string" ? g["name"].slice(0, 80) : "Group",
+                componentIds: g["componentIds"] as string[],
+              },
+            ]
+          : [],
+      )
+    : [];
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     name,
     components,
     connections,
+    ...(groups.length > 0 ? { groups } : {}),
     simulationSettings: settings,
     ...(isRecord(runtime)
       ? {
@@ -697,3 +729,103 @@ const finiteOr = (value: unknown, fallback: number): number =>
 
 const positiveOr = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
+/* ------------------------------------------------------------------------------------ *
+ * Assemblies: reusable pieces of a design
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Cuts parts out of a design as a reusable assembly: those parts, exactly as authored, and
+ * the connections between them (connections to anything outside are left behind). The
+ * pieces are positioned relative to the centre of their footprint on the floor, so the
+ * assembly can be put down anywhere. The result is an ordinary assembly file.
+ */
+export function extractAssembly(
+  world: SimulationWorld,
+  componentIds: readonly string[],
+  name: string,
+): AssemblyFileV1 {
+  const ids = new Set(componentIds.filter((id) => world.getComponent(id) !== undefined));
+  if (ids.size === 0) throw new AssemblyFileError("An assembly needs at least one part.");
+  const parts = world.listComponents().filter((c) => ids.has(c.id));
+  const cx = parts.reduce((sum, c) => sum + c.transform.positionM.x, 0) / parts.length;
+  const cz = parts.reduce((sum, c) => sum + c.transform.positionM.z, 0) / parts.length;
+  const components = parts.map((c) => {
+    const { physical: _physical, ...authored } = serializeComponent(c);
+    const p = authored.transform.positionM;
+    return {
+      ...authored,
+      transform: { ...authored.transform, positionM: { x: p.x - cx, y: p.y, z: p.z - cz } },
+    };
+  });
+  const connections = world
+    .listConnections()
+    .filter((c) => ids.has(c.from.componentId) && ids.has(c.to.componentId))
+    .map(serializeConnection);
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    name,
+    components,
+    connections,
+    simulationSettings: serializeSettings(world.settings),
+  };
+}
+
+/**
+ * Puts an assembly down in a design with the centre of its footprint at `at` (its
+ * heights are offset by `at.y`): fresh ids, its internal connections re-made, and its parts
+ * grouped so they select and move together. Ungroup to take it apart.
+ */
+export function insertAssembly(
+  world: SimulationWorld,
+  input: unknown,
+  at: { x: number; y: number; z: number },
+  options: { name?: string } = {},
+): { componentIds: string[]; groupId: string | null } {
+  const file = parseAssemblyFile(input);
+  const idMap = new Map<string, string>();
+  for (const component of file.components) {
+    const id = world.nextId(component.type);
+    idMap.set(component.id, id);
+    const p = component.transform.positionM;
+    world.addComponent({
+      id,
+      type: component.type,
+      label: component.label,
+      materialId: component.materialId,
+      geometry: deserializeGeometry(component.geometry),
+      transform: transform(
+        vec3(p.x + at.x, p.y + at.y, p.z + at.z),
+        toQuaternion(component.transform.rotation),
+      ),
+      connectionPoints: component.connectionPoints.map(deserializeConnectionPoint),
+      additionalMassKg: component.additionalMassKg,
+      anchored: component.anchored,
+      role: component.role,
+      parameters: component.parameters,
+      ...(component.composition === undefined ? {} : { composition: component.composition }),
+    });
+  }
+  for (const connection of file.connections) {
+    world.connect(
+      {
+        componentId: idMap.get(connection.from.componentId)!,
+        connectionPointId: connection.from.connectionPointId,
+      },
+      {
+        componentId: idMap.get(connection.to.componentId)!,
+        connectionPointId: connection.to.connectionPointId,
+      },
+      {
+        type: connection.type,
+        ...(connection.maxLoadN === undefined ? {} : { maxLoadN: connection.maxLoadN }),
+      },
+    );
+  }
+  const componentIds = [...idMap.values()];
+  const groupId =
+    componentIds.length >= 2
+      ? world.createGroup(componentIds, { name: options.name ?? file.name }).id
+      : null;
+  return { componentIds, groupId };
+}
