@@ -14,7 +14,11 @@ import { SURFACE_EMISSIVITY } from "./constants.js";
  * the exchange area is A₁F₁₂ = π r₁² r₂² / d² (the far-field view factor r₂² / 4d², which
  * is symmetric, so reciprocity holds). Overlapping spheres are held at touching distance;
  * one sphere entirely inside another is skipped, because the model cannot tell which
- * surfaces face each other. No shadowing: a part between two others does not block them.
+ * surfaces face each other.
+ *
+ * Shadowing: a third part whose equivalent sphere crosses the line between two others
+ * blocks part of what they exchange (`occlusionTransmission`, cached by `ShadowIndex`). A
+ * fire wall between a burning cable tray and a battery cabinet protects the cabinet.
  */
 
 /** Below this temperature on both surfaces a pair is not evaluated (culling, not physics). */
@@ -44,7 +48,7 @@ export interface HazardPair {
   readonly b: string;
   /** Centre distance used by the model (never less than touching), m. */
   readonly distanceM: number;
-  /** Exchange area A_a F_ab = A_b F_ba, m². */
+  /** Exchange area A_a F_ab = A_b F_ba, m², before shadowing (see `ShadowIndex`). */
   readonly exchangeAreaM2: number;
 }
 
@@ -102,6 +106,7 @@ export function hazardPairs(bodies: readonly HazardBody[]): HazardPair[] {
   });
   const seen = new Set<string>();
   const out: HazardPair[] = [];
+
   const consider = (i: number, j: number) => {
     if (i === j) return;
     const [lo, hi] = i < j ? [i, j] : [j, i];
@@ -131,6 +136,52 @@ export function hazardPairs(bodies: readonly HazardBody[]): HazardPair[] {
   return out.sort((p, q) =>
     p.a !== q.a ? (p.a < q.a ? -1 : 1) : p.b < q.b ? -1 : p.b > q.b ? 1 : 0,
   );
+}
+
+/**
+ * How much of the line of sight between a and b the other parts leave open.
+ *
+ * REDUCED MODEL (approximate). A part c shadows the pair when its equivalent sphere
+ * crosses the segment between their centres, between their surfaces, and neither a nor b
+ * sits inside it. The beam between two spheres is never wider than the smaller one, so c
+ * blocks the fraction min(1, (r_c / r_small)²) of it; shadows combine multiplicatively.
+ * It ignores how far along the beam c sits and penumbra, and cannot see a part that only
+ * grazes the beam with its sphere outside the line.
+ */
+export function occlusionTransmission(
+  a: HazardBody,
+  b: HazardBody,
+  others: readonly HazardBody[],
+): { transmission: number; shadowedBy: string[] } {
+  const ab = {
+    x: b.centreM.x - a.centreM.x,
+    y: b.centreM.y - a.centreM.y,
+    z: b.centreM.z - a.centreM.z,
+  };
+  const length = Math.hypot(ab.x, ab.y, ab.z);
+  if (length <= 0) return { transmission: 1, shadowedBy: [] };
+  const small = Math.min(a.radiusM, b.radiusM);
+  let transmission = 1;
+  const shadowedBy: string[] = [];
+  for (const c of others) {
+    if (c.id === a.id || c.id === b.id || c.radiusM <= 0) continue;
+    // Parts that contain either end are enclosures, not shadows.
+    if (distance(c.centreM, a.centreM) <= c.radiusM || distance(c.centreM, b.centreM) <= c.radiusM)
+      continue;
+    const ac = {
+      x: c.centreM.x - a.centreM.x,
+      y: c.centreM.y - a.centreM.y,
+      z: c.centreM.z - a.centreM.z,
+    };
+    const along = (ac.x * ab.x + ac.y * ab.y + ac.z * ab.z) / length;
+    if (along <= a.radiusM || along >= length - b.radiusM) continue;
+    const perp = Math.sqrt(Math.max(0, ac.x ** 2 + ac.y ** 2 + ac.z ** 2 - along * along));
+    if (perp >= c.radiusM) continue;
+    transmission *= 1 - Math.min(1, (c.radiusM / small) ** 2);
+    shadowedBy.push(c.id);
+    if (transmission <= 0) return { transmission: 0, shadowedBy };
+  }
+  return { transmission, shadowedBy };
 }
 
 /**
@@ -239,6 +290,92 @@ export function unmodelledCombustibles(
       out.push({ ...region, ignitionK: substance.ignitionK });
   }
   return out;
+}
+
+/**
+ * Shadowing for coupled pairs, computed lazily: only pairs that actually exchange heat
+ * (a hot surface or a fire) are ever asked, and each answer is cached for the design.
+ *
+ * Candidate shadows are found without testing every part: parts no bigger than a grid
+ * cell are looked up in the cells the segment passes through and their neighbours; the
+ * few bigger ones are always candidates. `occlusionTransmission` makes the decision.
+ */
+export class ShadowIndex {
+  readonly #grid = new Map<string, number[]>();
+  readonly #large: number[] = [];
+  readonly #bodies: readonly HazardBody[];
+  readonly #cell: number;
+
+  readonly #byId = new Map<string, HazardBody>();
+  readonly #cache = new Map<string, { transmission: number; shadowedBy: string[] }>();
+
+  constructor(bodies: readonly HazardBody[], cell = 4) {
+    this.#bodies = [...bodies].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    this.#cell = cell;
+    for (const body of this.#bodies) this.#byId.set(body.id, body);
+    bodies = this.#bodies;
+    bodies.forEach((body, index) => {
+      if (body.radiusM > cell) {
+        this.#large.push(index);
+        return;
+      }
+      const c = cellOf(body.centreM, cell);
+      const k = `${c[0]},${c[1]},${c[2]}`;
+      const list = this.#grid.get(k);
+      if (list === undefined) this.#grid.set(k, [index]);
+      else list.push(index);
+    });
+  }
+
+  readonly #byPair = new Map<HazardPair, number>();
+
+  /** Open fraction for a coupled pair; cached on the pair object (hot-path lookup). */
+  forPair(pair: HazardPair): number {
+    let t = this.#byPair.get(pair);
+    if (t === undefined) {
+      t = this.between(pair.a, pair.b).transmission;
+      this.#byPair.set(pair, t);
+    }
+    return t;
+  }
+
+  /** Fraction of the line of sight between two parts left open, and who blocks it. */
+  between(aId: string, bId: string): { transmission: number; shadowedBy: readonly string[] } {
+    const key = aId < bId ? `${aId}|${bId}` : `${bId}|${aId}`;
+    let result = this.#cache.get(key);
+    if (result === undefined) {
+      const a = this.#byId.get(aId)!;
+      const b = this.#byId.get(bId)!;
+      result = occlusionTransmission(a, b, this.#along(a, b));
+      this.#cache.set(key, result);
+    }
+    return result;
+  }
+
+  #along(a: HazardBody, b: HazardBody): HazardBody[] {
+    const found = new Set<number>(this.#large);
+    const d = distance(a.centreM, b.centreM);
+    const steps = Math.max(1, Math.ceil(d / (this.#cell / 2)));
+    const visited = new Set<string>();
+    for (let s = 0; s <= steps; s += 1) {
+      const t = s / steps;
+      const p = {
+        x: a.centreM.x + (b.centreM.x - a.centreM.x) * t,
+        y: a.centreM.y + (b.centreM.y - a.centreM.y) * t,
+        z: a.centreM.z + (b.centreM.z - a.centreM.z) * t,
+      };
+      const c = cellOf(p, this.#cell);
+      for (let x = -1; x <= 1; x += 1)
+        for (let y = -1; y <= 1; y += 1)
+          for (let z = -1; z <= 1; z += 1) {
+            const k = `${c[0] + x},${c[1] + y},${c[2] + z}`;
+            if (visited.has(k)) continue;
+            visited.add(k);
+            for (const i of this.#grid.get(k) ?? []) found.add(i);
+          }
+    }
+    return [...found].sort((x, y) => x - y).map((i) => this.#bodies[i]!);
+  }
 }
 
 function distance(a: Vec3, b: Vec3): number {

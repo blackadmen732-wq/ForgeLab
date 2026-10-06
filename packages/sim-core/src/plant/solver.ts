@@ -69,6 +69,7 @@ import {
   hazardBody,
   hazardPairs,
   radiantExchangeW,
+  ShadowIndex,
   unmodelledCombustibles,
 } from "./hazards.js";
 import {
@@ -1694,7 +1695,7 @@ export class PlantSolver {
       });
     });
 
-    const { capacity, conduction, outerArea, superconducting, bodies, pairs, fuel } =
+    const { capacity, conduction, outerArea, superconducting, bodies, pairs, fuel, shadows } =
       this.#thermalStatic(topology, components);
 
     // Bodies whose temperature rides on a coolant loop: heat reaching them through space
@@ -1837,7 +1838,7 @@ export class PlantSolver {
         const tb = temperatureOf(pair.b);
         if (ta >= RADIANT_ONSET_K || tb >= RADIANT_ONSET_K) {
           const q = clampPair(
-            radiantExchangeW(pair.exchangeAreaM2, ta, tb),
+            radiantExchangeW(pair.exchangeAreaM2 * shadows.forPair(pair), ta, tb),
             ta,
             tb,
             capacityOf(pair.a),
@@ -1857,7 +1858,8 @@ export class PlantSolver {
           if (releaseW === undefined || superconducting.has(target)) continue;
           receive(
             target,
-            fireRadiationAbsorbedW(releaseW, bodies.get(target)!.radiusM, pair.distanceM),
+            fireRadiationAbsorbedW(releaseW, bodies.get(target)!.radiusM, pair.distanceM) *
+              shadows.forPair(pair),
             source,
           );
         }
@@ -2009,6 +2011,7 @@ export class PlantSolver {
         superconducting: Set<string>;
         bodies: Map<string, HazardBody>;
         pairs: readonly HazardPair[];
+        shadows: ShadowIndex;
         fuel: Map<string, FuelInventory>;
         unburnable: Map<string, ReturnType<typeof unmodelledCombustibles>>;
       }
@@ -2067,6 +2070,7 @@ export class PlantSolver {
       superconducting,
       bodies,
       pairs,
+      shadows: new ShadowIndex([...bodies.values()]),
       fuel,
       unburnable,
     };

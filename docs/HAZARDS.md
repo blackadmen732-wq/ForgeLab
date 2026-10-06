@@ -24,6 +24,15 @@ heat exchanger body goes into its coolant loop, because those bodies ride at the
 temperature. Superconducting coils are excluded: their radiative load is part of their
 static heat leak behind the thermal shield.
 
+**Shadowing.** A part whose equivalent sphere crosses the line between two others blocks
+part of what they exchange — both surface radiation and flame radiation. The beam between
+two spheres is never wider than the smaller one, so a part of radius r_c blocks
+min(1, (r_c / r_small)²) of it, and shadows combine multiplicatively
+(`occlusionTransmission`). A fire wall or a large cabinet between a burning tray and a
+battery rack therefore protects the rack. Shadowing is computed lazily — only for pairs
+that are actually exchanging heat — and cached per design (`ShadowIndex`), so cold designs
+pay nothing for it.
+
 **Fire.** A part burns only if one of its material regions has sourced fire data — an
 ignition temperature, an effective heat of combustion and a free-burning rate — in the
 material library (today: XLPE cable insulation). Its burnable inventory comes from the
@@ -80,8 +89,10 @@ cooling, because those are what the physics contains.
   part (the sleeve on a 0.9 t copper bar) ignites only when the whole part does, so fire
   does not spread from bar to bar the way it would along real cable trays. Surface
   ignition needs XLPE's thermal inertia or critical heat flux, which are not yet sourced.
-- **Spheres and no shadowing.** Shape, orientation and parts in between are ignored.
-  Nested parts (one equivalent sphere inside another) do not exchange.
+- **Spheres.** Shape and orientation are ignored. Shadowing uses the same spheres: a
+  slender wall seen edge-on blocks as much as one seen face-on, a part that grazes the
+  beam without crossing its centre line casts no shadow, and there is no penumbra. Nested
+  parts (one equivalent sphere inside another) do not exchange.
 - **The burning part's own heating** by its flame is not added: the free-burning rate
   already contains that feedback.
 - **No suppression, smoke transport, oxygen depletion, gas accumulation, battery

@@ -379,12 +379,15 @@ export {
 
 export {
   FIRE_RADIANT_FRACTION,
+  MIN_VIEW_FACTOR,
   RADIANT_ONSET_K,
   equivalentRadiusM,
   fireRadiationAbsorbedW,
   fuelInventory,
   hazardBody,
   hazardPairs,
+  occlusionTransmission,
+  ShadowIndex,
   pairGeometry,
   radiantExchangeW,
   type FuelInventory,

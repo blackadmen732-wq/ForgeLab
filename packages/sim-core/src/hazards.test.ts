@@ -4,7 +4,9 @@ import {
   type HazardBody,
   equivalentRadiusM,
   fireRadiationAbsorbedW,
+  ShadowIndex,
   hazardPairs,
+  occlusionTransmission,
   pairGeometry,
   radiantExchangeW,
 } from "./index.js";
@@ -67,5 +69,45 @@ describe("spatial hazards", () => {
     expect(hazardPairs([...bodies].reverse())).toEqual(pairs);
     // Small parts far apart are never coupled.
     expect(pairs.some((p) => p.a === "p00" && p.b === "p01")).toBe(false);
+  });
+
+  describe("shadowing by parts in between", () => {
+    const fire = body("fire", 0, 0.5);
+    const target = body("target", 4, 0.5);
+
+    it("a part as wide as the beam blocks it completely", () => {
+      const wall = body("wall", 2, 1);
+      const { transmission, shadowedBy } = occlusionTransmission(fire, target, [
+        fire,
+        target,
+        wall,
+      ]);
+      expect(transmission).toBe(0);
+      expect(shadowedBy).toEqual(["wall"]);
+      expect(new ShadowIndex([fire, target, wall]).between("target", "fire").transmission).toBe(0);
+    });
+
+    it("a slender part blocks only its share, (r_c / r_small)²", () => {
+      const rod = body("rod", 2, 0.1);
+      const { transmission } = occlusionTransmission(fire, target, [rod]);
+      expect(transmission).toBeCloseTo(1 - (0.1 / 0.5) ** 2, 12);
+      expect(new ShadowIndex([fire, target, rod]).between("fire", "target").transmission).toBe(
+        transmission,
+      );
+    });
+
+    it("a part beside the line of sight, behind either end, or enclosing an end is no shadow", () => {
+      expect(occlusionTransmission(fire, target, [body("beside", 2, 0.5, 3)]).transmission).toBe(1);
+      expect(occlusionTransmission(fire, target, [body("behind", 6, 1)]).transmission).toBe(1);
+      expect(occlusionTransmission(fire, target, [body("room", 2, 20)]).transmission).toBe(1);
+    });
+
+    it("is symmetric, so radiant exchange stays reciprocal", () => {
+      const rod = body("rod", 1.5, 0.2, 0.1);
+      expect(occlusionTransmission(fire, target, [rod]).transmission).toBeCloseTo(
+        occlusionTransmission(target, fire, [rod]).transmission,
+        12,
+      );
+    });
   });
 });
