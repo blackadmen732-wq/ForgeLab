@@ -1148,6 +1148,9 @@ export const MATERIAL_LIBRARY: readonly MaterialRecord[] = Object.freeze([
       compressiveStrength: MPa(30, "en1992", "specified", {
         note: "Characteristic cylinder strength fck.",
       }),
+      tensileStrength: MPa(2.9, "en1992", "specified", {
+        note: "Mean axial tensile strength fctm (EN 1992-1-1 Table 3.1); 5 % fractile 2.0 MPa. Plain concrete: reinforcement is not modelled.",
+      }),
       youngsModulus: GPa(33, "en1992", "specified", { note: "Secant modulus Ecm." }),
     },
     thermal: {
@@ -1156,6 +1159,17 @@ export const MATERIAL_LIBRARY: readonly MaterialRecord[] = Object.freeze([
         range: [1.36, 1.95],
         at: "20 °C",
         note: "EN 1992-1-2 lower and upper limits.",
+      }),
+      maxService: q(C(100), "K", "en1992", "specified", {
+        note: "EN 1992-1-2 Table 3.1: siliceous-aggregate concrete keeps its full compressive strength up to 100 °C; above that it weakens, and wet concrete can spall in fire.",
+      }),
+    },
+    electrical: {
+      insulator: false,
+      resistivity: q(60, "Ω·m", "ieee-80", "approximate", {
+        range: [30, 90],
+        at: "moist (buried or weather-exposed)",
+        note: "Strongly moisture-dependent: dry indoor concrete is orders of magnitude more resistive, oven-dried about 1e6 Ω·m.",
       }),
     },
     nuclear: {
@@ -1172,9 +1186,9 @@ export const MATERIAL_LIBRARY: readonly MaterialRecord[] = Object.freeze([
       thermalResponse: "ceramic",
       combustible: false,
     },
-    sourceSummary: "EN 1992 / EN 1991 values for C30/37.",
+    sourceSummary: "EN 1992 / EN 1991 values for C30/37; resistivity IEEE Std 80.",
     notes: [
-      "Reference data only: concrete is strong in compression and weak in tension, which the structural solver does not distinguish.",
+      "Plain (unreinforced) concrete: the structural solver does not distinguish tension from compression, so it uses the tensile strength fctm as the limit everywhere. Conservative in compression; reinforcement is not modelled.",
     ],
   },
 

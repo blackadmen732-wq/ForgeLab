@@ -110,4 +110,69 @@ describe("spatial hazards", () => {
       );
     });
   });
+
+  describe("walls and slabs block with their true extent", () => {
+    const panel = (
+      id: string,
+      centre: [number, number, number],
+      half: [number, number, number],
+    ) => ({
+      ...body(
+        id,
+        centre[0],
+        equivalentRadiusM(8 * (half[0] * half[1] + half[1] * half[2] + half[0] * half[2])),
+        centre[1],
+      ),
+      centreM: vec3(...centre),
+      box: {
+        frame: { positionM: vec3(...centre), rotation: { x: 0, y: 0, z: 0, w: 1 } },
+        halfM: vec3(...half),
+      },
+    });
+    const fire = body("fire", 0, 0.5, 1);
+    const target = body("target", 6, 0.5, 1);
+
+    it("a thin wall across the line blocks it, however small its equivalent sphere", () => {
+      // 0.2 m thick, 4 m high, 8 m long: its equivalent sphere would barely shade the pair.
+      const wall = panel("wall", [3, 2, 0], [0.1, 2, 4]);
+      const { transmission, shadowedBy } = occlusionTransmission(fire, target, [wall]);
+      expect(transmission).toBe(0);
+      expect(shadowedBy).toEqual(["wall"]);
+    });
+
+    it("a wall too low or off to the side leaves the line partly or fully open", () => {
+      const low = panel("low", [3, 0.25, 0], [0.1, 0.25, 4]);
+      expect(occlusionTransmission(fire, target, [low]).transmission).toBe(1);
+      const beside = panel("beside", [3, 2, 6], [0.1, 2, 1]);
+      expect(occlusionTransmission(fire, target, [beside]).transmission).toBe(1);
+      // A wall whose top edge cuts through the beam blocks the lower part of it.
+      const half = panel("half", [3, 0.5, 0], [0.1, 0.55, 4]);
+      const t = occlusionTransmission(fire, target, [half]).transmission;
+      expect(t).toBeGreaterThan(0);
+      expect(t).toBeLessThan(1);
+    });
+
+    it("a floor slab separates the storeys above and below it", () => {
+      const below = body("below", 0, 0.5, 1);
+      const above = body("above", 0.5, 0.5, 6);
+      const slab = panel("slab", [0, 3, 0], [5, 0.15, 5]);
+      expect(occlusionTransmission(below, above, [slab]).transmission).toBe(0);
+      expect(occlusionTransmission(above, below, [slab]).transmission).toBe(0);
+    });
+
+    it("parts inside a box (a room, an enclosure) are not shadowed by it", () => {
+      const room = panel("room", [3, 2, 0], [6, 3, 6]);
+      expect(occlusionTransmission(fire, target, [room]).transmission).toBe(1);
+    });
+
+    it("the ground is opaque: no sight line slips under a wall standing on it", () => {
+      const lowFire = body("fire", 0, 1, 0.3);
+      const lowTarget = body("target", 6, 1, 0.3);
+      const wall = panel("wall", [3, 2, 0], [0.1, 2, 4]);
+      expect(occlusionTransmission(lowFire, lowTarget, [wall]).transmission).toBeGreaterThan(0);
+      expect(occlusionTransmission(lowFire, lowTarget, [wall], 0).transmission).toBe(0);
+      const index = new ShadowIndex([lowFire, lowTarget, wall], 4, 0);
+      expect(index.between("fire", "target").transmission).toBe(0);
+    });
+  });
 });

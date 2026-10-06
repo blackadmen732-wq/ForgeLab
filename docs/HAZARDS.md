@@ -24,12 +24,18 @@ heat exchanger body goes into its coolant loop, because those bodies ride at the
 temperature. Superconducting coils are excluded: their radiative load is part of their
 static heat leak behind the thermal shield.
 
-**Shadowing.** A part whose equivalent sphere crosses the line between two others blocks
-part of what they exchange — both surface radiation and flame radiation. The beam between
-two spheres is never wider than the smaller one, so a part of radius r_c blocks
-min(1, (r_c / r_small)²) of it, and shadows combine multiplicatively
-(`occlusionTransmission`). A fire wall or a large cabinet between a burning tray and a
-battery rack therefore protects the rack. Shadowing is computed lazily — only for pairs
+**Shadowing.** A part that crosses the line between two others blocks part of what they
+exchange — both surface radiation and flame radiation (`occlusionTransmission`).
+Box-shaped parts — the Concrete Wall and Floor Slab, decks, cabinets, battery modules —
+block with their true oriented box: five parallel sight lines (the centre line and four
+at half the smaller radius) are tested and the open fraction is the share no box crosses
+with both ends outside it. Lines running below the ground plane are left out, so nothing
+slips under a wall standing on the floor. Other shapes block with their equivalent
+sphere: the beam between two spheres is never wider than the smaller one, so a part of
+radius r_c blocks min(1, (r_c / r_small)²) of it. Shadows combine multiplicatively. A
+wall between a burning bus and a battery module keeps the fire's heat off the module
+(`reactor-components/src/rooms.test.ts`); a slab between two storeys separates them; parts
+inside a box (a room, an enclosure) are not shadowed by it. Shadowing is computed lazily — only for pairs
 that are actually exchanging heat — and cached per design (`ShadowIndex`), so cold designs
 pay nothing for it.
 
@@ -114,10 +120,12 @@ cooling, because those are what the physics contains.
   part (the sleeve on a 0.9 t copper bar) ignites only when the whole part does, so fire
   does not spread from bar to bar the way it would along real cable trays. Surface
   ignition needs XLPE's thermal inertia or critical heat flux, which are not yet sourced.
-- **Spheres.** Shape and orientation are ignored. Shadowing uses the same spheres: a
-  slender wall seen edge-on blocks as much as one seen face-on, a part that grazes the
-  beam without crossing its centre line casts no shadow, and there is no penumbra. Nested
-  parts (one equivalent sphere inside another) do not exchange.
+- **Spheres.** For exchange, shape and orientation are ignored: a long wall heated by a
+  fire is an equivalent sphere at its centre. Box parts shadow with their true box, but
+  only five sight lines are sampled (coarse penumbra); other shapes shadow with their
+  sphere, so a part that grazes the beam without crossing its centre line casts no
+  shadow. Nested parts (one equivalent sphere inside another) do not exchange. A room has
+  no air volume of its own: walls stop radiation, not hot gas (there is no plume yet).
 - **The burning part's own heating** by its flame is not added: the free-burning rate
   already contains that feedback.
 - **A battery module is one lumped temperature,** so all its cells run away together and

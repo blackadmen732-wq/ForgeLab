@@ -19,9 +19,11 @@ export function structuralDefinition(record: MaterialRecord): MaterialDefinition
   const m = record.mechanical;
   const t = record.thermal;
   const e = record.electrical;
+  // Brittle materials have no yield point: their tensile strength is the limit.
+  const strength = m?.yieldStrength ?? m?.tensileStrength;
   if (
-    m?.yieldStrength === undefined ||
-    m.youngsModulus === undefined ||
+    strength === undefined ||
+    m?.youngsModulus === undefined ||
     t?.specificHeat === undefined ||
     t.conductivity === undefined ||
     t.maxService === undefined ||
@@ -33,7 +35,7 @@ export function structuralDefinition(record: MaterialRecord): MaterialDefinition
     name: record.name,
     grade: record.grade,
     densityKgM3: record.density.value,
-    yieldStrengthPa: m.yieldStrength.value,
+    yieldStrengthPa: strength.value,
     youngsModulusPa: m.youngsModulus.value,
     specificHeatJkgK: t.specificHeat.value,
     maxOperatingTemperatureK: t.maxService.value,
@@ -67,6 +69,7 @@ export const MaterialIds = Object.freeze({
   Titanium: "titanium-6al4v",
   CopperOFHC: "copper-ofhc",
   Molybdenum: "molybdenum",
+  Concrete: "concrete-c30",
 } as const);
 
 export type KnownMaterialId = (typeof MaterialIds)[keyof typeof MaterialIds];

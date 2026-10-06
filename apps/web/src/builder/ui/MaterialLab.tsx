@@ -211,6 +211,7 @@ function SolidDetail({ record, other }: { record: MaterialRecord; other: Materia
         <PropRow label="Poisson's ratio" q={m?.poissonsRatio} />
         <PropRow label="Flexural strength" q={m?.flexuralStrength} />
         <PropRow label="Compressive strength" q={m?.compressiveStrength} />
+        <PropRow label="Tensile strength" q={m?.tensileStrength} />
       </Group>
       {t !== undefined && (
         <Group title="Thermal">

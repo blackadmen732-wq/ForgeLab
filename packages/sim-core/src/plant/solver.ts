@@ -1735,7 +1735,7 @@ export class PlantSolver {
       fuel,
       shadows,
       cells,
-    } = this.#thermalStatic(topology, components);
+    } = this.#thermalStatic(topology, components, work.settings.groundLevelM);
 
     // Bodies whose temperature rides on a coolant loop: heat reaching them through space
     // goes into the loop's coolant.
@@ -2105,6 +2105,7 @@ export class PlantSolver {
   #thermalCache:
     | {
         topology: PlantTopology;
+        groundLevelM: number;
         capacity: Map<string, number>;
         conduction: { a: string; b: string; conductanceWK: number }[];
         outerArea: Map<string, number>;
@@ -2119,8 +2120,16 @@ export class PlantSolver {
     | undefined;
 
   /** Heat capacities, surface areas and joint conductances: fixed for a given design. */
-  #thermalStatic(topology: PlantTopology, components: readonly SimulationComponent[]) {
-    if (this.#thermalCache?.topology === topology) return this.#thermalCache;
+  #thermalStatic(
+    topology: PlantTopology,
+    components: readonly SimulationComponent[],
+    groundLevelM: number,
+  ) {
+    if (
+      this.#thermalCache?.topology === topology &&
+      this.#thermalCache.groundLevelM === groundLevelM
+    )
+      return this.#thermalCache;
     const capacity = new Map<string, number>();
     const outerArea = new Map<string, number>();
     const superconducting = new Set<string>();
@@ -2168,13 +2177,14 @@ export class PlantSolver {
     const pairs: readonly HazardPair[] = hazardPairs([...bodies.values()]);
     this.#thermalCache = {
       topology,
+      groundLevelM,
       capacity,
       conduction,
       outerArea,
       superconducting,
       bodies,
       pairs,
-      shadows: new ShadowIndex([...bodies.values()]),
+      shadows: new ShadowIndex([...bodies.values()], 4, groundLevelM),
       fuel,
       cells,
       unburnable,
@@ -2454,7 +2464,11 @@ export class PlantSolver {
   #thermalFailures(work: Work, components: readonly SimulationComponent[]): void {
     if (work.dt === 0) return;
     const { topology } = work;
-    const { fuel, unburnable, cells } = this.#thermalStatic(topology, components);
+    const { fuel, unburnable, cells } = this.#thermalStatic(
+      topology,
+      components,
+      work.settings.groundLevelM,
+    );
     for (const component of components) {
       const runtime = this.#components.get(component.id)!;
       for (const region of unburnable.get(component.id) ?? []) {

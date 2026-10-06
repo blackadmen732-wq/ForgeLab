@@ -54,6 +54,11 @@ export interface MechanicalProperties {
   /** Brittle materials: flexural (modulus of rupture) and compressive strength. */
   readonly flexuralStrength?: Quantity;
   readonly compressiveStrength?: Quantity;
+  /**
+   * Brittle materials: direct tensile strength. With no yield point, this is the stress the
+   * structural model treats as the limit (a plain concrete wall or slab cracks in tension).
+   */
+  readonly tensileStrength?: Quantity;
   /** Yield strength at temperature ÷ room-temperature yield strength. */
   readonly yieldReduction?: Curve;
   /** Young's modulus at temperature ÷ room-temperature modulus. */

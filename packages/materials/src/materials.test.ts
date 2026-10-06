@@ -32,6 +32,7 @@ describe("material catalogue", () => {
       "titanium-6al4v",
       "copper-ofhc",
       "molybdenum",
+      "concrete-c30",
     ]);
   });
 
@@ -66,7 +67,9 @@ describe("material catalogue", () => {
   });
 
   it("stores every property in SI units with physically plausible magnitudes", () => {
-    for (const material of MATERIAL_CATALOG) {
+    for (const material of MATERIAL_CATALOG.filter(
+      (m) => findMaterialRecord(m.id)?.category !== "civil",
+    )) {
       // Densities of engineering metals: lithium ~530, osmium ~22590 kg/m^3.
       expect(material.densityKgM3).toBeGreaterThan(500);
       expect(material.densityKgM3).toBeLessThan(23000);
@@ -270,5 +273,14 @@ describe("material library", () => {
     expect(tritium.decayHeat.value / 1000).toBeLessThan(0.34);
     const pbli = findFluid("lithium-lead")!.states[0]!.density!.value;
     expect(pbli).toBeCloseTo(10520.35 - 1.19051 * 773.15, 6);
+  });
+
+  it("builds plain concrete from its tensile strength, with no yield point invented", () => {
+    const concrete = getMaterial("concrete-c30");
+    expect(findMaterialRecord("concrete-c30")?.mechanical?.yieldStrength).toBeUndefined();
+    expect(concrete.yieldStrengthPa).toBe(2.9e6); // EN 1992-1-1 fctm, C30/37
+    expect(concrete.densityKgM3).toBe(2400);
+    expect(concrete.maxOperatingTemperatureK).toBeCloseTo(373.15, 6);
+    expect(concrete.thermalConductivityWmK).toBe(1.36);
   });
 });

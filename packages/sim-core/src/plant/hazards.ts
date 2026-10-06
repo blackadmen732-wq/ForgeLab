@@ -1,5 +1,10 @@
 import { type RunawayData, getSubstance } from "@forgelab/materials";
-import { STEFAN_BOLTZMANN_W_M2_K4, type Vec3 } from "@forgelab/shared";
+import {
+  STEFAN_BOLTZMANN_W_M2_K4,
+  type Transform,
+  type Vec3,
+  worldPointToLocal,
+} from "@forgelab/shared";
 import { type SimulationComponent, componentCenterOfMassM } from "../component.js";
 import { geometryOuterSurfaceM2, geometryVolumeM3 } from "../geometry.js";
 import { SURFACE_EMISSIVITY } from "./constants.js";
@@ -16,9 +21,11 @@ import { SURFACE_EMISSIVITY } from "./constants.js";
  * one sphere entirely inside another is skipped, because the model cannot tell which
  * surfaces face each other.
  *
- * Shadowing: a third part whose equivalent sphere crosses the line between two others
- * blocks part of what they exchange (`occlusionTransmission`, cached by `ShadowIndex`). A
- * fire wall between a burning cable tray and a battery cabinet protects the cabinet.
+ * Shadowing: a third part that crosses the line between two others blocks part of what
+ * they exchange (`occlusionTransmission`, cached by `ShadowIndex`). A box-shaped part —
+ * a wall, a floor slab, a deck, a cabinet — blocks with its true oriented rectangle; other
+ * shapes block with their equivalent sphere. A wall between a burning cable tray and a
+ * battery cabinet protects the cabinet; a slab between two storeys separates them.
  */
 
 /** Below this temperature on both surfaces a pair is not evaluated (culling, not physics). */
@@ -41,6 +48,14 @@ export interface HazardBody {
   readonly centreM: Vec3;
   readonly radiusM: number;
   readonly areaM2: number;
+  /** A box-shaped part's true extent, used when it stands in another pair's line of sight. */
+  readonly box?: HazardBox;
+}
+
+/** An oriented box in world space: its frame (centre and local → world rotation) and half sizes. */
+export interface HazardBox {
+  readonly frame: Transform;
+  readonly halfM: Vec3;
 }
 
 export interface HazardPair {
@@ -57,13 +72,64 @@ export function equivalentRadiusM(areaM2: number): number {
 }
 
 export function hazardBody(component: SimulationComponent): HazardBody {
-  const areaM2 = geometryOuterSurfaceM2(component.geometry);
+  const g = component.geometry;
+  const areaM2 = geometryOuterSurfaceM2(g);
+  const { positionM, rotation } = component.state.physical;
   return {
     id: component.id,
     centreM: componentCenterOfMassM(component),
     radiusM: equivalentRadiusM(areaM2),
     areaM2,
+    ...(g.kind === "box"
+      ? {
+          box: {
+            frame: { positionM, rotation },
+            halfM: { x: g.sizeM.x / 2, y: g.sizeM.y / 2, z: g.sizeM.z / 2 },
+          },
+        }
+      : {}),
   };
+}
+
+function toBoxLocal(box: HazardBox, p: Vec3): Vec3 {
+  return worldPointToLocal(box.frame, p);
+}
+
+function insideBox(box: HazardBox, p: Vec3): boolean {
+  const l = toBoxLocal(box, p);
+  return (
+    Math.abs(l.x) <= box.halfM.x && Math.abs(l.y) <= box.halfM.y && Math.abs(l.z) <= box.halfM.z
+  );
+}
+
+/**
+ * Whether the segment p→q passes through the box with both ends outside it (slab test in
+ * the box's frame). A segment that starts or ends inside does not count: that end is
+ * touching the box, not looking through it.
+ */
+export function segmentCrossesBox(box: HazardBox, p: Vec3, q: Vec3): boolean {
+  const a = toBoxLocal(box, p);
+  const b = toBoxLocal(box, q);
+  const inside = (v: Vec3) =>
+    Math.abs(v.x) <= box.halfM.x && Math.abs(v.y) <= box.halfM.y && Math.abs(v.z) <= box.halfM.z;
+  if (inside(a) || inside(b)) return false;
+  let t0 = 0;
+  let t1 = 1;
+  for (const axis of ["x", "y", "z"] as const) {
+    const d = b[axis] - a[axis];
+    const h = box.halfM[axis];
+    if (Math.abs(d) < 1e-12) {
+      if (Math.abs(a[axis]) > h) return false;
+      continue;
+    }
+    let lo = (-h - a[axis]) / d;
+    let hi = (h - a[axis]) / d;
+    if (lo > hi) [lo, hi] = [hi, lo];
+    t0 = Math.max(t0, lo);
+    t1 = Math.min(t1, hi);
+    if (t0 > t1) return false;
+  }
+  return true;
 }
 
 /**
@@ -147,11 +213,20 @@ export function hazardPairs(bodies: readonly HazardBody[]): HazardPair[] {
  * blocks the fraction min(1, (r_c / r_small)²) of it; shadows combine multiplicatively.
  * It ignores how far along the beam c sits and penumbra, and cannot see a part that only
  * grazes the beam with its sphere outside the line.
+ *
+ * Box-shaped parts block with their oriented box instead: five parallel sight lines (the
+ * centre line and four at half the smaller radius) are tested, and the open fraction is
+ * the share that no box crosses with both ends outside it (lines running below the ground
+ * plane are left out: the floor is opaque). A wall or slab therefore blocks
+ * by where it actually is, however long and thin, and a part touching it is still seen
+ * as being against it rather than through it. Boxes enclosing a or b are skipped as rooms
+ * are: what is inside sees the walls themselves.
  */
 export function occlusionTransmission(
   a: HazardBody,
   b: HazardBody,
   others: readonly HazardBody[],
+  groundLevelM = -Infinity,
 ): { transmission: number; shadowedBy: string[] } {
   const ab = {
     x: b.centreM.x - a.centreM.x,
@@ -163,8 +238,14 @@ export function occlusionTransmission(
   const small = Math.min(a.radiusM, b.radiusM);
   let transmission = 1;
   const shadowedBy: string[] = [];
+  const boxes: HazardBody[] = [];
   for (const c of others) {
     if (c.id === a.id || c.id === b.id || c.radiusM <= 0) continue;
+    if (c.box !== undefined) {
+      // Parts inside the box (a room's walls, a hollow enclosure) are enclosed, not shadowed.
+      if (!insideBox(c.box, a.centreM) && !insideBox(c.box, b.centreM)) boxes.push(c);
+      continue;
+    }
     // Parts that contain either end are enclosures, not shadows.
     if (distance(c.centreM, a.centreM) <= c.radiusM || distance(c.centreM, b.centreM) <= c.radiusM)
       continue;
@@ -181,7 +262,48 @@ export function occlusionTransmission(
     shadowedBy.push(c.id);
     if (transmission <= 0) return { transmission: 0, shadowedBy };
   }
+  if (boxes.length > 0) {
+    // Five parallel sight lines across the beam (its axis and four at half the smaller
+    // radius); the open fraction is the share no box crosses.
+    const n = { x: ab.x / length, y: ab.y / length, z: ab.z / length };
+    const helper = Math.abs(n.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+    const u = normalize(cross(n, helper));
+    const v = cross(n, u);
+    const s = 0.5 * small;
+    const offsets = [{ x: 0, y: 0, z: 0 }, scale(u, s), scale(u, -s), scale(v, s), scale(v, -s)];
+    const blockers = new Set<string>();
+    let open = 0;
+    let seen = 0;
+    for (const o of offsets) {
+      const p = add(a.centreM, o);
+      const q = add(b.centreM, o);
+      // A sight line that runs below the floor is not part of the beam: the ground is
+      // opaque, so it can neither pass under a wall nor count as open. The centre line
+      // always counts.
+      if (o !== offsets[0] && (p.y < groundLevelM || q.y < groundLevelM)) continue;
+      seen += 1;
+      const hit = boxes.find((c) => segmentCrossesBox(c.box!, p, q));
+      if (hit === undefined) open += 1;
+      else blockers.add(hit.id);
+    }
+    transmission *= open / seen;
+    shadowedBy.push(...[...blockers].sort());
+  }
   return { transmission, shadowedBy };
+}
+
+function add(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+}
+function scale(a: Vec3, k: number): Vec3 {
+  return { x: a.x * k, y: a.y * k, z: a.z * k };
+}
+function cross(a: Vec3, b: Vec3): Vec3 {
+  return { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+}
+function normalize(a: Vec3): Vec3 {
+  const l = Math.hypot(a.x, a.y, a.z);
+  return { x: a.x / l, y: a.y / l, z: a.z / l };
 }
 
 /**
@@ -309,13 +431,21 @@ export class ShadowIndex {
   readonly #byId = new Map<string, HazardBody>();
   readonly #cache = new Map<string, { transmission: number; shadowedBy: string[] }>();
 
-  constructor(bodies: readonly HazardBody[], cell = 4) {
+  readonly #groundLevelM: number;
+
+  constructor(bodies: readonly HazardBody[], cell = 4, groundLevelM = -Infinity) {
+    this.#groundLevelM = groundLevelM;
     this.#bodies = [...bodies].sort((x, y) => (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
     this.#cell = cell;
     for (const body of this.#bodies) this.#byId.set(body.id, body);
     bodies = this.#bodies;
     bodies.forEach((body, index) => {
-      if (body.radiusM > cell) {
+      // A box can reach further than its equivalent sphere (a long wall): boxes are always
+      // candidates unless their half-diagonal is well inside one cell.
+      const large = body.box
+        ? Math.hypot(body.box.halfM.x, body.box.halfM.y, body.box.halfM.z) > cell / 2
+        : body.radiusM > cell;
+      if (large) {
         this.#large.push(index);
         return;
       }
@@ -346,7 +476,7 @@ export class ShadowIndex {
     if (result === undefined) {
       const a = this.#byId.get(aId)!;
       const b = this.#byId.get(bId)!;
-      result = occlusionTransmission(a, b, this.#along(a, b));
+      result = occlusionTransmission(a, b, this.#along(a, b), this.#groundLevelM);
       this.#cache.set(key, result);
     }
     return result;

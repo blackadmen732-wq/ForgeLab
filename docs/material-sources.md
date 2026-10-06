@@ -35,8 +35,9 @@ carbon steels, and the CRC resistivity of copper from 100 K to 900 K.
 
 **Structural catalogue.** Only a material with every value the solvers need — density,
 yield strength, Young's modulus, specific heat, conductivity, resistivity and a service
-limit — can be assigned to a placed part. The others (EUROFER97, graphite, SiC, beryllium,
-1350 aluminium, concrete, the superconductors and insulators) are reference data, used as
+limit — can be assigned to a placed part (for a brittle material with no yield point, its
+tensile strength stands in for yield: plain concrete). The others (EUROFER97, graphite,
+SiC, beryllium, 1350 aluminium, the superconductors and insulators) are reference data, used as
 internal regions of finished machines or shown in the Material Lab, until their missing
 values are sourced. Nothing is filled in to make them placeable.
 
@@ -190,6 +191,7 @@ yet derate stiffness or strength with temperature.
 | `astm-b170`             | ASTM B170, Oxygen-Free Electrolytic Copper — Refinery Shapes (C10100, minimum conductivity 101 % IACS).                                                                                                                 |
 | `en1993-1-1`            | EN 1993-1-1 (Eurocode 3), Design of steel structures — General rules, §3.2.6.                                                                                                                                           |
 | `en1993-1-2`            | EN 1993-1-2 (Eurocode 3), Structural fire design, Table 3.1: reduction factors for carbon steel at elevated temperature.                                                                                                |
+| `ieee-80`               | IEEE Std 80, Guide for Safety in AC Substation Grounding, §14.6: resistivity of concrete encased in moist soil, 30–90 Ω·m.                                                                                              |
 | `en1992`                | EN 1992-1-1 Table 3.1 (strength classes) and EN 1992-1-2 §3.3 (thermal properties of concrete); EN 1991-1-1 Annex A (densities).                                                                                        |
 | `asm-datasheet`         | ASM International / producer datasheets for the named wrought grade (typical values; ASM Handbook Vol. 2 for aluminium alloys).                                                                                         |
 | `supplier-datasheet`    | Producer datasheets for the named grade (typical values; supplier-to-supplier spread is stated in the note).                                                                                                            |
@@ -697,15 +699,18 @@ Generated from the library; each row is one value with its source and confidence
 
 `concrete-c30` · civil · Floors, foundations and the biological shield around a reactor.
 
-| Property             | Value                                            | Conditions     | Source   | Confidence | Note                                                                       |
-| -------------------- | ------------------------------------------------ | -------------- | -------- | ---------- | -------------------------------------------------------------------------- |
-| Density              | 2400 kg/m³                                       |                | `en1992` | specified  | EN 1991-1-1 plain normal-weight concrete (24 kN/m³); 2500 when reinforced. |
-| Young's modulus      | 33 GPa                                           |                | `en1992` | specified  | Secant modulus Ecm.                                                        |
-| Compressive strength | 30 MPa                                           |                | `en1992` | specified  | Characteristic cylinder strength fck.                                      |
-| Specific heat        | 900 J/(kg·K)                                     | 20–100 °C, dry | `en1992` | specified  |                                                                            |
-| Thermal conductivity | 1.36 W/(m·K) (range 1.36 W/(m·K) – 1.95 W/(m·K)) | 20 °C          | `en1992` | specified  | EN 1992-1-2 lower and upper limits.                                        |
+| Property                 | Value                                            | Conditions                        | Source    | Confidence  | Note                                                                                                                 |
+| ------------------------ | ------------------------------------------------ | --------------------------------- | --------- | ----------- | -------------------------------------------------------------------------------------------------------------------- |
+| Density                  | 2400 kg/m³                                       |                                   | `en1992`  | specified   | EN 1991-1-1 plain normal-weight concrete (24 kN/m³); 2500 when reinforced.                                           |
+| Young's modulus          | 33 GPa                                           |                                   | `en1992`  | specified   | Secant modulus Ecm.                                                                                                  |
+| Compressive strength     | 30 MPa                                           |                                   | `en1992`  | specified   | Characteristic cylinder strength fck.                                                                                |
+| Tensile strength         | 2.9 MPa                                          |                                   | `en1992`  | specified   | Mean axial tensile strength fctm (Table 3.1); 5 % fractile 2.0 MPa. The structural limit of plain concrete.          |
+| Specific heat            | 900 J/(kg·K)                                     | 20–100 °C, dry                    | `en1992`  | specified   |                                                                                                                      |
+| Thermal conductivity     | 1.36 W/(m·K) (range 1.36 W/(m·K) – 1.95 W/(m·K)) | 20 °C                             | `en1992`  | specified   | EN 1992-1-2 lower and upper limits.                                                                                  |
+| Max. service temperature | 373.15 K (100 °C)                                |                                   | `en1992`  | specified   | EN 1992-1-2 Table 3.1: siliceous concrete keeps full compressive strength to 100 °C; wet concrete can spall in fire. |
+| Electrical resistivity   | 60 Ω·m (range 30–90)                             | moist (buried or weather-exposed) | `ieee-80` | approximate | Strongly moisture-dependent: dry indoor concrete is orders of magnitude higher, oven-dried about 1e6 Ω·m.            |
 
-- Reference data only: concrete is strong in compression and weak in tension, which the structural solver does not distinguish.
+- Placeable as **plain** concrete (Concrete Wall, Floor Slab). With no yield point, its tensile strength fctm is the structural limit; the solver does not distinguish tension from compression, so this is conservative in compression. Reinforcement is not modelled.
 - Its hydrogen (in bound water) slows neutrons and its mass stops gamma rays: the standard biological shield.
 
 ### Li-ion cell (NMC) — large-format prismatic, NMC / graphite, charged

@@ -240,6 +240,41 @@ export const V01_PORTS: Readonly<Record<string, Readonly<Record<string, PortSour
 
 /* ---------------- product sheets ---------------- */
 
+/** Plain concrete walls and slabs: one region of C30/37, cracking in tension. */
+const concreteSheet = (summary: string): ProductInfo => ({
+  summary,
+  internals: [
+    {
+      id: "concrete",
+      name: "Plain concrete",
+      kind: "structure",
+      substanceId: "concrete-c30",
+      purpose:
+        "Carries load and stands in the way of heat. Reinforcement is not modelled, so tension governs.",
+    },
+  ],
+  internalsSetMass: false,
+  capabilities: ["structural", "thermal"],
+  ratings: () => [rating("Grade", "C30/37 plain")],
+  failureModes: [
+    {
+      id: "yield",
+      name: "Cracking",
+      system: "structural",
+      description: "Stress exceeds the concrete's tensile strength (fctm).",
+    },
+    {
+      id: "bending",
+      name: "Flexural cracking",
+      system: "structural",
+      description: "A span's tension face cracks: plain concrete has no steel to carry it.",
+    },
+  ],
+  audio: "none",
+  visual: "block",
+  animations: [],
+});
+
 const structuralSheet = (
   summary: string,
   visual: ProductInfo["visual"],
@@ -1060,6 +1095,12 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     visual: "grid-connection",
     animations: [],
   },
+  "concrete-wall": concreteSheet(
+    "Cast concrete wall: divides the hall into rooms. It blocks radiant heat and fire between them by where it stands.",
+  ),
+  "concrete-slab": concreteSheet(
+    "Cast concrete floor slab: makes another storey. It carries what stands on it and separates the levels.",
+  ),
   "battery-module-nmc": {
     summary:
       "Rack-mounted lithium-ion module (NMC). Stores energy — and can heat itself into thermal runaway.",

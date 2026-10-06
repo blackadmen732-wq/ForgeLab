@@ -1295,6 +1295,88 @@ function batteryModule(chemistry: "nmc" | "lfp", label: string) {
   });
 }
 
+/* ------------------------------------------------------------------------------------ *
+ * Building: walls and floors that make rooms and storeys
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Concrete Wall — a cast plain-concrete wall (6 m long, 4 m high, 300 mm thick by default),
+ * along its local X axis. Rooms are made of these: the hazard model blocks radiant heat
+ * and fire with the wall's true extent.
+ */
+export const CONCRETE_WALL = define({
+  type: "concrete-wall",
+  name: "Concrete Wall",
+  description:
+    "Plain C30/37 concrete, 6 m long, 4 m high and 300 mm thick by default. Divides the hall into rooms: heat and fire on one side do not see the other.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.Concrete,
+  dimensions: [
+    dim("lengthM", "Length", 6, 0.5, 40),
+    dim("heightM", "Height", 4, 0.5, 30),
+    dim("thicknessM", "Thickness", 0.3, 0.1, 3),
+  ],
+  shape: (d) => {
+    const L = d["lengthM"]!;
+    const h = d["heightM"]!;
+    const t = d["thicknessM"]!;
+    return {
+      geometry: boxGeometry(vec3(L, h, t)),
+      sockets: [
+        base(h),
+        structural("top", vec3(0, h / 2, 0), UP),
+        structural("end-a", vec3(-L / 2, 0, 0), NX),
+        structural("end-b", vec3(L / 2, 0, 0), PX),
+        mount("face-pz", vec3(0, 0, t / 2), PZ),
+        mount("face-nz", vec3(0, 0, -t / 2), NZ),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "box" ? { lengthM: g.sizeM.x, heightM: g.sizeM.y, thicknessM: g.sizeM.z } : {},
+  keyProperty: "6 × 4 m · 300 mm",
+});
+
+/**
+ * Floor Slab — a cast plain-concrete slab (8 × 8 m, 300 mm deep by default) for another
+ * storey, with corner bearings underneath for columns or walls.
+ */
+export const CONCRETE_SLAB = define({
+  type: "concrete-slab",
+  name: "Floor Slab",
+  description:
+    "Plain C30/37 concrete slab, 8 × 8 m and 300 mm deep by default, with four corner bearings underneath. Stack storeys on columns or walls; the slab separates the levels.",
+  category: "Structure",
+  role: "structure",
+  material: MaterialIds.Concrete,
+  dimensions: [
+    dim("spanXM", "Span (X)", 8, 1, 40),
+    dim("spanZM", "Span (Z)", 8, 1, 40),
+    dim("depthM", "Depth", 0.3, 0.1, 2),
+  ],
+  shape: (d) => {
+    const x = d["spanXM"]!;
+    const z = d["spanZM"]!;
+    const depth = d["depthM"]!;
+    const cx = x / 2 - Math.min(0.3, x / 10);
+    const cz = z / 2 - Math.min(0.3, z / 10);
+    return {
+      geometry: boxGeometry(vec3(x, depth, z)),
+      sockets: [
+        structural("top", vec3(0, depth / 2, 0), UP),
+        structural("bottom-nx-nz", vec3(-cx, -depth / 2, -cz), DOWN),
+        structural("bottom-nx-pz", vec3(-cx, -depth / 2, cz), DOWN),
+        structural("bottom-px-nz", vec3(cx, -depth / 2, -cz), DOWN),
+        structural("bottom-px-pz", vec3(cx, -depth / 2, cz), DOWN),
+      ],
+    };
+  },
+  dimensionsOf: (g) =>
+    g.kind === "box" ? { spanXM: g.sizeM.x, spanZM: g.sizeM.z, depthM: g.sizeM.y } : {},
+  keyProperty: "8 × 8 m · 300 mm",
+});
+
 export const BATTERY_MODULE_NMC = batteryModule("nmc", "NMC");
 export const BATTERY_MODULE_LFP = batteryModule("lfp", "LFP");
 
@@ -1304,6 +1386,8 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   REACTOR_CHAMBER,
   EQUIPMENT_BLOCK,
   STAIR_TOWER,
+  CONCRETE_WALL,
+  CONCRETE_SLAB,
   TOKAMAK_VESSEL,
   CRYOSTAT,
   CHAMBER_STRAIGHT,

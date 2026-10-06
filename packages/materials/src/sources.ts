@@ -73,6 +73,12 @@ const list: readonly SourceReference[] = [
       "EN 1992-1-1 Table 3.1 (strength classes) and EN 1992-1-2 §3.3 (thermal properties of concrete); EN 1991-1-1 Annex A (densities).",
   },
   {
+    key: "ieee-80",
+    kind: "standard",
+    citation:
+      "IEEE Std 80, Guide for Safety in AC Substation Grounding, §14.6: resistivity of concrete encased in moist soil, 30–90 Ω·m.",
+  },
+  {
     key: "asm-datasheet",
     kind: "datasheet",
     citation:

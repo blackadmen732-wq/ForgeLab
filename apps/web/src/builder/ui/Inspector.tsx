@@ -1,4 +1,10 @@
-import { MATERIAL_CATALOG, findFluid, findSubstance, getMaterial } from "@forgelab/materials";
+import {
+  MATERIAL_CATALOG,
+  findFluid,
+  findMaterialRecord,
+  findSubstance,
+  getMaterial,
+} from "@forgelab/materials";
 import { materialColor } from "../scene/appearance.js";
 import {
   PLANT_SYSTEM_LABELS,
@@ -1012,8 +1018,17 @@ function PartPanel({ component }: { component: SimulationComponent }) {
             ))}
           </select>
         </Row>
-        <Row label="Yield strength">{pascals(material.yieldStrengthPa)}</Row>
-        <Row label="Density">{si(material.densityKgM3, "kg/m³")}</Row>
+        {/* Brittle materials (concrete) have no yield point: the limit is their tensile strength. */}
+        <Row
+          label={
+            findMaterialRecord(material.id)?.mechanical?.yieldStrength === undefined
+              ? "Tensile strength"
+              : "Yield strength"
+          }
+        >
+          {pascals(material.yieldStrengthPa)}
+        </Row>
+        <Row label="Density">{`${Math.round(material.densityKgM3).toLocaleString("en-US")} kg/m³`}</Row>
         <Row label="Max temperature">{kelvin(material.maxOperatingTemperatureK)}</Row>
         <button
           type="button"
