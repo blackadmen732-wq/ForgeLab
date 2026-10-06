@@ -477,3 +477,51 @@
   font-size: var(--fs-sm);
   color: var(--text-dim);
 }
+
+/* ----- presence orbs (3D labels) ----- */
+
+.presence-orb__label {
+  display: grid;
+  gap: 1px;
+  padding: 5px 10px 6px;
+  border-left: 3px solid;
+  border-radius: 4px;
+  background: rgba(10, 14, 20, 0.86);
+  backdrop-filter: blur(4px);
+  color: #e8eef6;
+  font:
+    600 13px/1.25 "IBM Plex Sans",
+    system-ui,
+    sans-serif;
+  white-space: nowrap;
+  transform: translate(58%, -40%);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+.presence-orb__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.presence-orb__activity {
+  color: #a9b7c8;
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.presence-orb__mic {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #5c6b7c;
+}
+
+.presence-orb__mic.is-speaking {
+  background: #36d17a;
+  box-shadow: 0 0 8px #36d17a;
+}
+
+.presence-orb__mic.is-muted {
+  background: #ff5b5b;
+}

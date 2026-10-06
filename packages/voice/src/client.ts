@@ -19,6 +19,8 @@ export type MicBlock = null | "viewer" | MicProblem;
 
 export interface VoiceMember extends VoiceParticipant {
   readonly speaking: boolean;
+  /** Loudness 0–1 while speaking (0 when silent or not transmitting). Presentation only. */
+  readonly level: number;
 }
 
 export interface VoiceState {
@@ -86,6 +88,7 @@ export class VoiceClient {
   private unlisten: (() => void) | null = null;
   private participants: readonly VoiceParticipant[] = [];
   private speakers = new Set<string>();
+  private levels: Readonly<Record<string, number>> = {};
   /** Bumped on every join/leave so late results of an abandoned attempt are discarded. */
   private generation = 0;
   private micAcquired = false;
@@ -196,10 +199,15 @@ export class VoiceClient {
       next.micBlock === null &&
       !next.deafened &&
       (next.mode === "open" ? !next.muted : next.pttHeld);
-    const members = this.participants.map((p) => ({
-      ...p,
-      speaking: this.speakers.has(p.identity) && (!p.isLocal || transmitting),
-    }));
+    const members = this.participants
+      .map((p) => ({
+        ...p,
+        speaking: this.speakers.has(p.identity) && (!p.isLocal || transmitting),
+      }))
+      .map((m) => ({
+        ...m,
+        level: m.speaking ? Math.min(1, Math.max(0, this.levels[m.identity] ?? 0.5)) : 0,
+      }));
     this.state = { ...next, transmitting, members };
     for (const listener of this.listeners) listener(this.state);
   }
@@ -259,6 +267,7 @@ export class VoiceClient {
         return;
       case "speakers":
         this.speakers = new Set(event.identities);
+        this.levels = event.levels ?? {};
         this.set({});
         return;
       case "reconnecting":
@@ -321,6 +330,7 @@ export class VoiceClient {
     this.unlisten = null;
     this.participants = [];
     this.speakers = new Set();
+    this.levels = {};
     this.micAcquired = false;
     if (transport !== null) await transport.disconnect().catch(() => undefined);
   }

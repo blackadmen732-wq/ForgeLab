@@ -235,6 +235,20 @@ describe("mute, deafen, push-to-talk", () => {
     expect(speaking()).toEqual(["Andre"]);
   });
 
+  it("carries each speaker's loudness, and none for the silent or untransmitted", async () => {
+    const { client, last } = setup();
+    await client.join(GENERAL);
+    last().fire({ type: "speakers", identities: ["andre", "me"], levels: { andre: 0.8, me: 0.3 } });
+    const level = (name: string) => client.getState().members.find((m) => m.name === name)!.level;
+    expect(level("Andre")).toBe(0.8);
+    expect(level("Mark")).toBe(0.3);
+    await client.setMuted(true);
+    expect(level("Mark")).toBe(0);
+    // A transport that reports who speaks but not how loudly gets a neutral level.
+    last().fire({ type: "speakers", identities: ["andre"] });
+    expect(level("Andre")).toBe(0.5);
+  });
+
   it("switches devices on the live connection", async () => {
     const { client, last } = setup();
     await client.join(GENERAL);

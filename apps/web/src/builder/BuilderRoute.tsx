@@ -1,3 +1,5 @@
+import { orbPreview } from "./scene/PresenceOrbs.js";
+import type { OrbEntry } from "../collab/orbs.js";
 import "./builder.css";
 import { SIMULATION_ENGINE_VERSION, parseAssemblyFile, serializeWorld } from "@forgelab/sim-core";
 import { designHash } from "@forgelab/sim-runner";
@@ -6,7 +8,7 @@ import { MonitorX, Smartphone } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Link, useBlocker, useNavigate, useParams, useSearchParams } from "react-router";
 import { CollabBanner } from "../collab/CollabBanner.js";
-import { CollabContext } from "../collab/context.js";
+import { CollabContext, useCollabController } from "../collab/context.js";
 import { CollabController } from "../collab/controller.js";
 import { ManageDialog } from "../collab/ManageDialog.js";
 import { TeamPanel } from "../collab/TeamPanel.js";
@@ -334,6 +336,11 @@ export function BuilderRoute() {
         scenarios: SHOWROOM_SCENARIOS.map((s) => s.id),
         loadScenario: (id: string) => {
           store.loadFile(serializeWorld(buildScenario(id)));
+          store.requestFrame(null);
+        },
+        /** Shows preview presence orbs (no live team needed); [] clears them. */
+        previewPresence: (entries: readonly OrbEntry[]) => {
+          orbPreview.set(entries);
           store.requestFrame(null);
         },
         loadBlueprint: (id: string) => {
@@ -919,6 +926,7 @@ export function BuilderRoute() {
         <AudioEngineContext.Provider value={audio}>
           <CinemaContext.Provider value={cinema}>
             <CollabContext.Provider value={collab}>
+              <PresenceFocus />
               <Workspace
                 context={context}
                 teamOpen={teamOpen}
@@ -974,4 +982,14 @@ export function BuilderRoute() {
       )}
     </EditorContext.Provider>
   );
+}
+
+/** Publishes the selected part as this member's presence focus: teammates see an orb there. */
+function PresenceFocus() {
+  const collab = useCollabController();
+  const focusId = useEditor((v) => v.selection[v.selection.length - 1] ?? null);
+  useEffect(() => {
+    collab?.setFocus(focusId !== null && /^[A-Za-z0-9:_-]{1,80}$/.test(focusId) ? focusId : null);
+  }, [collab, focusId]);
+  return null;
 }

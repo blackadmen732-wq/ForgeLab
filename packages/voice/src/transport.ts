@@ -24,7 +24,12 @@ export type DisconnectCause =
 
 export type TransportEvent =
   | { readonly type: "participants"; readonly participants: readonly VoiceParticipant[] }
-  | { readonly type: "speakers"; readonly identities: readonly string[] }
+  | {
+      readonly type: "speakers";
+      readonly identities: readonly string[];
+      /** Audio level 0–1 of each active speaker, by identity, when the transport knows it. */
+      readonly levels?: Readonly<Record<string, number>>;
+    }
   | { readonly type: "reconnecting" }
   | { readonly type: "reconnected" }
   | { readonly type: "disconnected"; readonly cause: DisconnectCause }

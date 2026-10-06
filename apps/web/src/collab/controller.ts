@@ -320,6 +320,15 @@ export class CollabController {
 
   /* ---------------- presence and collaboration ---------------- */
 
+  /**
+   * The part this member is working on, shown to teammates as their presence orb. Only
+   * a component id travels; null when nothing is selected.
+   */
+  setFocus(componentId: string | null): void {
+    if (this.state.session.self.focus === componentId) return;
+    this.session?.update({ focus: componentId });
+  }
+
   setActivity(activity: Activity): void {
     this.session?.update({ activity });
   }

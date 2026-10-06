@@ -113,7 +113,11 @@ class LiveKitTransport implements VoiceTransport {
       .on(RoomEvent.LocalTrackPublished, participants)
       .on(RoomEvent.LocalTrackUnpublished, participants)
       .on(RoomEvent.ActiveSpeakersChanged, (speakers) =>
-        this.emit({ type: "speakers", identities: speakers.map((s) => s.identity) }),
+        this.emit({
+          type: "speakers",
+          identities: speakers.map((s) => s.identity),
+          levels: Object.fromEntries(speakers.map((s) => [s.identity, s.audioLevel])),
+        }),
       )
       .on(RoomEvent.Reconnecting, () => this.emit({ type: "reconnecting" }))
       .on(RoomEvent.Reconnected, () => this.emit({ type: "reconnected" }))

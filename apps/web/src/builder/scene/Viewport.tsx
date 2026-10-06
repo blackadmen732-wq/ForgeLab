@@ -61,6 +61,7 @@ import { damageStage, stageDarkening } from "../../presentation/damage.js";
 import { damageState } from "../../presentation/damageState.js";
 import { FieldLines } from "./FieldLines.js";
 import { ScaleFigure } from "./ScaleFigure.js";
+import { PresenceOrbs } from "./PresenceOrbs.js";
 import { WalkControls } from "./WalkControls.js";
 import { aimBreach, breachedIds, breachPlanes } from "./fracture.js";
 import { aimCutPlane, cutPlaneFor } from "./cutPlanes.js";
@@ -1095,6 +1096,7 @@ export function Viewport() {
         <InternalsSection />
         <FieldLines />
         <ScaleFigure />
+        <PresenceOrbs />
         <LodDriver />
         <Sockets />
         <Gizmo />
