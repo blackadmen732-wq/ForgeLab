@@ -106,7 +106,8 @@ function Parts() {
     (id: string, event: ThreeEvent<MouseEvent>) => {
       if (store.getView().tool === "connect") return;
       const additive = event.shiftKey || event.ctrlKey || event.metaKey;
-      store.select([id], additive ? "toggle" : "replace");
+      // A grouped part brings its group; Alt picks the one part inside it.
+      store.pickPart(id, additive, event.altKey);
     },
     [store],
   );

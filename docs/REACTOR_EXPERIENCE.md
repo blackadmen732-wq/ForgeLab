@@ -99,6 +99,19 @@ value: the lumped model has one value per part, and the view does not invent a
 distribution inside it. Whenever internals are on screen the view says **Schematic internal
 representation**: a representative arrangement, not a manufacturer's design.
 
+## Assemblies: take a section apart, build one, reuse it
+
+Any selection can be **grouped** (Ctrl G): a click on one of its parts selects the whole
+group and it moves as one; **Alt-click** picks a single part inside. **Take apart**
+(Ctrl Shift G) ungroups without moving or unlinking anything. **Save as assembly** (Inspector
+or the parts drawer) keeps the selected parts and the links between them in this browser;
+**Assemblies** in the parts drawer places kits and saved pieces again, grouped, with their
+links, as one undo step. Duplicating a group makes a group. Kits are ordinary parts and
+connections (`reactor-components/src/kits.ts`): Blanket Module (Shield Block + First Wall
+Panel bolted and cooled in series), Primary Coolant Loop, Turbine–Generator Package,
+Protected Power Feed, Battery Rack. Groups live in the design file (optional `groups`);
+no solver reads them. Sockets that meet face to face are a flush joint: no pipe is drawn.
+
 ## Material Lab
 
 **M** (or More → Material Lab) opens the material library beside the 3D view: materials

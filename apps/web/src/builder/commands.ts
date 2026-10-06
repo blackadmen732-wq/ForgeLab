@@ -131,6 +131,25 @@ export const COMMANDS: readonly Command[] = [
     run: (c) => c.store.duplicateSelected(),
   },
   {
+    id: "group",
+    label: "Group selection (selects and moves as one)",
+    group: "Edit",
+    keys: `${MOD} G`,
+    match: (e) => mod(e) && !e.shiftKey && e.key.toLowerCase() === "g",
+    enabled: (v) => building(v) && v.selection.length > 1,
+    run: (c) => c.store.groupSelected(),
+  },
+  {
+    id: "take-apart",
+    label: "Take apart (ungroup)",
+    group: "Edit",
+    keys: `${MOD} Shift G`,
+    match: (e) => mod(e) && e.shiftKey && e.key.toLowerCase() === "g",
+    enabled: (v) =>
+      building(v) && v.groups.some((g) => g.componentIds.some((id) => v.selection.includes(id))),
+    run: (c) => c.store.takeApartSelected(),
+  },
+  {
     id: "pattern",
     label: "Pattern: radial array, linear array, mirror…",
     group: "Edit",

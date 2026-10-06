@@ -23,6 +23,7 @@ import {
 } from "@forgelab/sim-core";
 import { STANDARD_GRAVITY_MPS2, vec3 } from "@forgelab/shared";
 import {
+  Boxes,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -31,9 +32,13 @@ import {
   Focus,
   Pin,
   PinOff,
+  Save,
   Trash2,
+  Ungroup,
   Unlink,
 } from "lucide-react";
+import { assemblyLibrary } from "../assemblyLibrary.js";
+import { toast } from "../../lib/toast.js";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Euler, Quaternion } from "three";
 import { ConfidenceBadge } from "../../components/ConfidenceBadge.js";
@@ -1211,14 +1216,80 @@ function MultiPanel({ components }: { components: readonly SimulationComponent[]
   const total = components.reduce((sum, c) => sum + c.massKg, 0);
   const worst = Math.max(...components.map((c) => c.state.structural.utilization));
   const materials = new Set(components.map((c) => c.materialId));
+  const groups = useEditor((v) => v.groups);
+  const selected = new Set(ids);
+  const exact = groups.find(
+    (g) => g.componentIds.length === ids.length && g.componentIds.every((id) => selected.has(id)),
+  );
+  const touched = groups.some((g) => g.componentIds.some((id) => selected.has(id)));
+  const saveAssembly = () => {
+    const name = exact?.name ?? `${components.length} parts`;
+    const file = store.selectionAsAssembly(name);
+    if (file === null) return;
+    if (assemblyLibrary.add(name, file))
+      toast("success", `Saved “${name}”`, "Place it again from Assemblies in the parts drawer.");
+    else
+      toast("error", "Could not save the assembly", "This browser's storage is full or disabled.");
+  };
   return (
     <div className="insp-panel">
       <header className="insp-head">
         <div className="insp-head__text">
-          <strong>{components.length} parts selected</strong>
-          <span className="dim">Shift-click to add or remove</span>
+          {exact !== undefined ? (
+            <input
+              className="input insp-group-name"
+              aria-label="Group name"
+              defaultValue={exact.name}
+              key={exact.id + exact.name}
+              disabled={locked}
+              maxLength={80}
+              onBlur={(e) =>
+                e.target.value.trim() !== exact.name && store.renameGroup(exact.id, e.target.value)
+              }
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+            />
+          ) : (
+            <strong>{components.length} parts selected</strong>
+          )}
+          <span className="dim">
+            {exact !== undefined
+              ? `Group · ${components.length} parts · Alt-click picks one part`
+              : "Shift-click to add or remove"}
+          </span>
         </div>
       </header>
+      <div className="insp-actions insp-actions--wide">
+        {exact === undefined && (
+          <button
+            type="button"
+            className="btn btn--sm"
+            disabled={locked}
+            onClick={() => store.groupSelected()}
+            title="Ctrl G: select and move these parts as one"
+          >
+            <Boxes /> Group
+          </button>
+        )}
+        {touched && (
+          <button
+            type="button"
+            className="btn btn--sm"
+            disabled={locked}
+            onClick={store.takeApartSelected}
+            title="Ctrl Shift G: ungroup; every part stays where it is, with its links"
+          >
+            <Ungroup /> Take apart
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn btn--sm"
+          onClick={saveAssembly}
+          title="Save these parts and the links between them to place again"
+        >
+          <Save /> Save as assembly
+        </button>
+      </div>
       <Section title="Selection">
         <Row label="Total mass">{mass(total)}</Row>
         <LoadRows summary={loadSummary(components)} />

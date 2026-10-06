@@ -245,6 +245,59 @@ type Builder = (
 };
 
 const BUILDERS: Readonly<Record<string, Builder>> = {
+  "shield-block": ([hx, hy, hz], main, trim, accent) => {
+    // Forged block (front +Z faces the plasma): radial slots cut into the front, two
+    // diagonal relief grooves, a central-bolt boss, four stub-key pads and coolant stubs
+    // on the back. Schematic detail on the true envelope.
+    main.push(box(2 * hx, 2 * hy, 2 * hz * 0.94, 0, 0, -hz * 0.06));
+    const slots = Math.max(3, Math.round((2 * hx) / 0.25));
+    for (let i = 1; i < slots; i += 1) {
+      const x = -hx + (2 * hx * i) / slots;
+      if (Math.abs(x) < 0.12) continue;
+      trim.push(box(0.02, 2 * hy * 0.8, 0.012, x, 0, hz * 0.88));
+    }
+    for (const s of [-1, 1]) {
+      const g = box(0.05, Math.hypot(hx, hy) * 1.6, 0.02, 0, 0, -hz * 0.06);
+      g.rotateZ(s * Math.atan2(hx, hy));
+      g.translate(0, 0, -hz * 0.94 + 0.01);
+      trim.push(g);
+    }
+    accent.push(cyl(0.11, 0.06, "z", [0, 0, hz * 0.91]));
+    trim.push(ring(0.11, 0.015, "z", [0, 0, hz * 0.95]));
+    for (const [x, y] of [
+      [-0.6, 0.6],
+      [0.6, 0.6],
+      [-0.6, -0.6],
+      [0.6, -0.6],
+    ] as const)
+      accent.push(box(0.18, 0.1, 0.08, x * hx, y * hy, -hz - 0.03));
+    for (const x of [-hx / 2, hx / 2]) trim.push(cyl(0.04, 0.12, "y", [x, -hy - 0.04, -hz / 2]));
+    return { accentColor: "#7c8a99", replacesEnvelope: true };
+  },
+  "first-wall-panel": ([hx, hy, hz], main, trim, accent) => {
+    // Beryllium tiles (about 50 mm, small gaps) on a copper-alloy heat sink on a steel
+    // backing plate, with the central-bolt hole. Schematic detail on the true envelope.
+    const back = hz * 0.8;
+    const sink = hz * 0.6;
+    const tilesT = 2 * hz - back - sink;
+    main.push(box(2 * hx, 2 * hy, back, 0, 0, -hz + back / 2));
+    accent.push(box(2 * hx * 0.99, 2 * hy * 0.99, sink, 0, 0, -hz + back + sink / 2));
+    const tile = 0.05;
+    const nx = Math.max(2, Math.floor((2 * hx) / tile));
+    const ny = Math.max(2, Math.floor((2 * hy) / tile));
+    const wx = (2 * hx) / nx;
+    const wy = (2 * hy) / ny;
+    const z = hz - tilesT / 2;
+    for (let i = 0; i < nx; i += 1)
+      for (let j = 0; j < ny; j += 1) {
+        const x = -hx + wx * (i + 0.5);
+        const y = -hy + wy * (j + 0.5);
+        if (Math.hypot(x, y) < 0.09) continue;
+        main.push(box(wx * 0.9, wy * 0.9, tilesT, x, y, z));
+      }
+    trim.push(ring(0.06, 0.012, "z", [0, 0, hz]));
+    return { accentColor: "#b0683c", replacesEnvelope: true };
+  },
   cryostat: ([r, hy], main, trim) => {
     // Shell with stiffening rings every ~3 m, vertical ribs, lid and base flanges.
     main.push(cyl(r, 2 * hy, "y", [0, 0, 0], 96));

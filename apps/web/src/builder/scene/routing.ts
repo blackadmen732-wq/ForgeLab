@@ -65,7 +65,16 @@ const same = (a: V3, b: V3) =>
   Math.abs(a[0] - b[0]) < 1e-6 && Math.abs(a[1] - b[1]) < 1e-6 && Math.abs(a[2] - b[2]) < 1e-6;
 
 /** The polyline from port A to port B (both included), with no repeated points. */
+/** Ends closer than this are a flush joint (flange to flange): no pipe or cable is drawn. */
+export const FLUSH_JOINT_M = 0.05;
+
 export function routePath(a: RouteEnd, b: RouteEnd, style: RouteStyle): V3[] {
+  const gap = Math.hypot(
+    a.position[0] - b.position[0],
+    a.position[1] - b.position[1],
+    a.position[2] - b.position[2],
+  );
+  if (gap <= FLUSH_JOINT_M) return [a.position];
   if (style.straight) return [a.position, b.position];
   const outA = add(a.position, a.normal, style.standoffM + style.radiusM);
   const outB = add(b.position, b.normal, style.standoffM + style.radiusM);

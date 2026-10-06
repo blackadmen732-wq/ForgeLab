@@ -36,6 +36,9 @@ import {
   type SimulationSnapshot,
   SimulationWorld,
   checkPortCompatibility,
+  type ComponentGroup,
+  extractAssembly,
+  insertAssembly,
   preflight,
   currentTransform,
   deserializeWorld,
@@ -173,6 +176,8 @@ export interface EditorView {
   /** A 1.75 m person beside the selection (or the plant), for scale. Presentation only. */
   readonly showScale: boolean;
   readonly selection: readonly string[];
+  /** Parts grouped in the design (assemblies placed or grouped by the player). */
+  readonly groups: readonly ComponentGroup[];
   readonly hidden: ReadonlySet<string>;
   readonly snapEnabled: boolean;
   readonly gridM: number;
@@ -442,6 +447,7 @@ export class EditorStore {
       cameraMode: this.#cameraMode,
       showScale: this.#showScale,
       selection: this.#selection,
+      groups: this.#world.listGroups(),
       hidden: this.#hidden,
       snapEnabled: this.#snapEnabled,
       gridM: this.#gridM,
@@ -1003,12 +1009,125 @@ export class EditorStore {
           ids,
           linearCopies(placements, { step: vec3(dx, 0, 0), count: 2 }),
         );
+        // A duplicated group is a group again.
+        if (created.length === ids.length) {
+          const copyOf = new Map(ids.map((id, i) => [id, created[i]!]));
+          for (const group of world.listGroups())
+            if (group.componentIds.every((id) => copyOf.has(id)))
+              world.createGroup(
+                group.componentIds.map((id) => copyOf.get(id)!),
+                { name: group.name },
+              );
+        }
       },
     );
     if (created.length > 0) {
       this.#selection = created;
       this.#publish();
     }
+  };
+
+  /* ---------------------------------------------------------------------------------- *
+   * Groups and assemblies
+   * ---------------------------------------------------------------------------------- */
+
+  /** Click on a part: its whole group is selected, unless `single` (Alt) asks for one part. */
+  pickPart = (id: string, additive: boolean, single: boolean): void => {
+    const group = single ? undefined : this.#world.groupOf(id);
+    this.select(
+      group === undefined ? [id] : [...group.componentIds],
+      additive ? "toggle" : "replace",
+    );
+  };
+
+  /** Groups the selection so it selects and moves as one (Ctrl G). */
+  groupSelected = (name?: string): void => {
+    const ids = [...this.#selection];
+    if (ids.length < 2) {
+      toast("info", "Select two or more parts to group them.");
+      return;
+    }
+    this.#edit(`Group ${ids.length} parts`, (world) => {
+      world.createGroup(ids, name === undefined ? {} : { name });
+    });
+  };
+
+  /** Takes apart every group the selection touches; the parts stay where they are. */
+  takeApartSelected = (): void => {
+    const touched = this.#world
+      .listGroups()
+      .filter((g) => g.componentIds.some((id) => this.#selection.includes(id)));
+    if (touched.length === 0) {
+      toast("info", "Nothing to take apart", "The selection is not grouped.");
+      return;
+    }
+    this.#edit(
+      touched.length === 1
+        ? `Take apart ${touched[0]!.name}`
+        : `Take apart ${touched.length} groups`,
+      (world) => {
+        for (const g of touched) world.ungroup(g.id);
+      },
+    );
+  };
+
+  renameGroup = (groupId: string, name: string): void => {
+    if (name.trim() === "") return;
+    this.#edit(`Rename group to ${name.trim()}`, (world) => {
+      world.renameGroup(groupId, name);
+    });
+  };
+
+  /** Groups the selection touches (for the Inspector). */
+  groupsOfSelection(): readonly ComponentGroup[] {
+    return this.#world
+      .listGroups()
+      .filter((g) => g.componentIds.some((id) => this.#selection.includes(id)));
+  }
+
+  /** The selection as a reusable assembly file (its internal links only). */
+  selectionAsAssembly(name: string): AssemblyFileV2 | null {
+    if (this.#selection.length === 0) return null;
+    return extractAssembly(this.#world, this.#selection, name);
+  }
+
+  /**
+   * Puts an assembly down near the view centre (or at `at`), grouped and selected. One
+   * undo step. Returns false when the file is not a valid assembly.
+   */
+  placeAssembly = (file: unknown, name?: string, at?: Vec3): boolean => {
+    let parsed: AssemblyFileV2;
+    try {
+      parsed = parseAssemblyFile(file);
+    } catch (error) {
+      toast(
+        "error",
+        "Could not place the assembly",
+        error instanceof Error ? error.message : "That is not an assembly file.",
+      );
+      return false;
+    }
+    if (parsed.components.length === 0) return false;
+    // Footprint of the assembly around its own origin, to find a clear spot for it.
+    const xs = parsed.components.map((c) => c.transform.positionM.x);
+    const zs = parsed.components.map((c) => c.transform.positionM.z);
+    const size = vec3(
+      Math.max(...xs) - Math.min(...xs) + 2,
+      1,
+      Math.max(...zs) - Math.min(...zs) + 2,
+    );
+    let created: string[] = [];
+    const ok = this.#edit(`Place ${name ?? parsed.name}`, (world) => {
+      const spot = this.#spawnPosition(size, at);
+      created = insertAssembly(world, parsed, vec3(spot.x, 0, spot.z), {
+        name: name ?? parsed.name,
+      }).componentIds;
+    });
+    if (ok && created.length > 0) {
+      this.#selection = created;
+      this.#publish();
+    }
+    return ok;
   };
 
   /**

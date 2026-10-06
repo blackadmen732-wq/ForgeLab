@@ -58,3 +58,15 @@ describe("service routing", () => {
     expect(pathLength(round)).toBeLessThan(pathLength(path));
   });
 });
+
+describe("flush joints", () => {
+  it("draws nothing between sockets that meet face to face", () => {
+    const style = routeStyle("coolant");
+    const end = (z: number, nz: number) => ({
+      position: [1, 2, z] as [number, number, number],
+      normal: [0, 0, nz] as [number, number, number],
+    });
+    expect(routePath(end(0.225, 1), end(0.226, -1), style)).toHaveLength(1);
+    expect(routePath(end(0, 1), end(3, -1), style).length).toBeGreaterThan(2);
+  });
+});

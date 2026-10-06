@@ -346,6 +346,52 @@
   margin: 6px;
   color: var(--text-dim);
 }
+/* Assemblies: kits and saved pieces. */
+.drawer__group[aria-label="Assemblies"] .part {
+  cursor: pointer;
+}
+.drawer__group[aria-label="Assemblies"] .part > svg,
+.part__place > svg {
+  width: 18px;
+  height: 18px;
+  margin: 6px;
+  flex: none;
+  color: var(--accent, var(--text-dim));
+}
+.part--saved {
+  align-items: center;
+  padding: 0 4px 0 0;
+}
+.part__place {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  padding: 8px;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.drawer__save {
+  width: 100%;
+  margin-top: 6px;
+  justify-content: center;
+}
+.drawer__save svg {
+  width: 14px;
+  height: 14px;
+}
+.drawer__save-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.drawer__save-form .input {
+  flex: 1;
+  min-width: 0;
+}
 .part__icon {
   flex: none;
   width: 30px;
@@ -2990,4 +3036,9 @@
 }
 .crumbs__material {
   color: var(--accent, #6fd3d1);
+}
+.insp-group-name {
+  font-weight: 600;
+  height: 28px;
+  padding: 0 6px;
 }
