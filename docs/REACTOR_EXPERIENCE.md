@@ -35,7 +35,10 @@
    2 m per tile) and scuffed hazard striping along trenches and walls. Metal reflects a
    hall-shaped environment map (`environment/reflections.ts`: high-bay lamps, clerestory,
    wall lights) built once on the GPU; HIGH and ULTRA add a live blurred floor mirror
-   (`floorReflections` in the tier budget). None of it reaches the simulation.
+   (`floorReflections` in the tier budget). Machine casings take their metalness and
+   roughness from the material's own presentation data and share a 2 m worn-metal wear map
+   on box-projected UVs (casing, trim, coils); colour still comes from the appearance
+   driver. None of it reaches the simulation.
 2. **Shell** — drawer and inspector contextual and collapsed by default; telemetry behind
    an Engineering Overlay toggle; simulation fills the viewport with a compact HUD.
 3. **Finished components** — typed port specs with domain ratings in

@@ -1,4 +1,5 @@
 import {
+  type BufferGeometry,
   CanvasTexture,
   type ColorSpace,
   NoColorSpace,
@@ -21,6 +22,30 @@ export interface SurfaceMaps {
   readonly roughnessMap: Texture;
   /** Tangent-space normal map (linear). */
   readonly normalMap: Texture;
+}
+
+/**
+ * Replaces a geometry's UVs with box-projected coordinates in metres (u, v along the two
+ * axes across each vertex's dominant normal), so a surface texture keeps its real size
+ * on a 0.2 m bracket and a 40 m girder alike.
+ */
+export function boxProjectUVs(geometry: BufferGeometry): void {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const uv = geometry.getAttribute("uv");
+  if (uv === undefined || normal === undefined) return;
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const nx = Math.abs(normal.getX(i));
+    const ny = Math.abs(normal.getY(i));
+    const nz = Math.abs(normal.getZ(i));
+    if (ny >= nx && ny >= nz) uv.setXY(i, x, z);
+    else if (nx >= nz) uv.setXY(i, z, y);
+    else uv.setXY(i, x, y);
+  }
+  uv.needsUpdate = true;
 }
 
 function mulberry32(seed: number): () => number {
@@ -316,18 +341,18 @@ export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
   h.fillRect(0, 0, size, size);
 
   // Broad mottling in tone and finish.
-  for (let i = 0; i < 140; i += 1) {
+  for (let i = 0; i < 90; i += 1) {
     const x = random() * size;
     const y = random() * size;
-    const rad = 20 + random() * 90;
+    const rad = 50 + random() * 150;
     const dark = random() > 0.4;
     const k = random();
     const rougher = random() > 0.5 ? "255,255,255" : "0,0,0";
     const raised = random() > 0.5 ? "255,255,255" : "0,0,0";
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, dark ? "70,64,58" : "255,255,255", dark ? 0.12 * k : 0.1 * k);
-      blob(r, px, py, rad, rougher, 0.18 * k);
-      blob(h, px, py, rad, raised, 0.08 * k);
+      blob(a, px, py, rad, dark ? "70,64,58" : "255,255,255", dark ? 0.06 * k : 0.06 * k);
+      blob(r, px, py, rad, rougher, 0.12 * k);
+      blob(h, px, py, rad, raised, 0.05 * k);
     });
   }
   // Drip streaks running down from edges and fixings.
@@ -423,4 +448,18 @@ export function hazardStripeTexture(tileM = 1, seed = 61): Texture {
   const t = texture(canvas, SRGBColorSpace);
   t.userData = { tileM };
   return t;
+}
+
+let partMaps: SurfaceMaps | null = null;
+
+/**
+ * Worn-metal maps shared by every machine casing (2 m per tile, for box-projected UVs).
+ * Created on first use and kept for the page's lifetime.
+ */
+export function partWearMaps(): SurfaceMaps {
+  if (partMaps === null) {
+    partMaps = wornMetalMaps(2, 5303);
+    for (const t of Object.values(partMaps)) t.repeat.set(0.5, 0.5);
+  }
+  return partMaps;
 }

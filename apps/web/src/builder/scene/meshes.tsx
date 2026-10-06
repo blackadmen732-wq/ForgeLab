@@ -11,6 +11,7 @@ import {
   MeshBasicMaterial,
   MeshStandardMaterial,
   TorusGeometry,
+  Vector2,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import {
@@ -18,6 +19,8 @@ import {
   type SimulationComponent,
   geometryLocalHalfExtentsM,
 } from "@forgelab/sim-core";
+import { findMaterialRecord } from "@forgelab/materials";
+import { boxProjectUVs, partWearMaps } from "./environment/surfaces.js";
 import { arcTube, machineModel } from "./machines.js";
 
 /**
@@ -208,6 +211,7 @@ function CoilRibs({
   );
   const ring = useMemo(() => {
     const g = new TorusGeometry(geometry.minorRadiusM - thickness / 2, thickness / 2, 12, 48);
+    boxProjectUVs(g);
     return g;
   }, [geometry.minorRadiusM, thickness]);
   useLayoutEffect(() => () => ring.dispose(), [ring]);
@@ -244,6 +248,29 @@ function CoilRibs({
   );
 }
 
+/** Shared worn-metal maps, as material parameters. */
+function wear() {
+  const maps = partWearMaps();
+  return {
+    map: maps.map,
+    roughnessMap: maps.roughnessMap,
+    normalMap: maps.normalMap,
+    normalScale: new Vector2(0.5, 0.5),
+  };
+}
+
+/**
+ * Metalness and roughness from the material's presentation data. The wear map's roughness
+ * averages about one half, so the base is doubled to keep the material's mean finish.
+ */
+function surfaceFinish(materialId: string | null): { metalness: number; roughness: number } {
+  const p = materialId === null ? undefined : findMaterialRecord(materialId)?.presentation;
+  return {
+    metalness: p?.metalness ?? 0.35,
+    roughness: Math.min(1, 2 * (p?.roughness ?? 0.55)),
+  };
+}
+
 export interface ComponentMeshProps {
   readonly component: SimulationComponent;
   readonly selected: boolean;
@@ -263,8 +290,16 @@ export const ComponentMesh = memo(function ComponentMesh({
   const glow = useRef<Mesh>(null);
   const geometry = component.geometry;
   const role = component.role;
-  const body = useMemo(() => new MeshStandardMaterial({ metalness: 0.35, roughness: 0.55 }), []);
-  const shape = useMemo(() => bodyGeometry(geometry), [geometry]);
+  // The finish (how metallic, how rough) is the material's own presentation data; the
+  // shared wear maps add handling marks and streaks at real scale. Colour is set per frame
+  // by the appearance driver.
+  const finish = useMemo(() => surfaceFinish(component.materialId), [component.materialId]);
+  const body = useMemo(() => new MeshStandardMaterial({ ...wear(), ...finish }), [finish]);
+  const shape = useMemo(() => {
+    const g = bodyGeometry(geometry);
+    boxProjectUVs(g);
+    return g;
+  }, [geometry]);
   useLayoutEffect(() => () => shape.dispose(), [shape]);
   useLayoutEffect(() => () => body.dispose(), [body]);
 
@@ -273,17 +308,25 @@ export const ComponentMesh = memo(function ComponentMesh({
     role === "magnet-coil" &&
     geometry.kind === "torus" &&
     component.parameters["winding"] !== "loop";
-  const model = useMemo(
-    () => machineModel(component.type, geometry, component.connectionPoints),
-    [component.type, geometry, component.connectionPoints],
-  );
+  const model = useMemo(() => {
+    const m = machineModel(component.type, geometry, component.connectionPoints);
+    for (const g of [m?.main, m?.trim, m?.accent]) if (g) boxProjectUVs(g);
+    return m;
+  }, [component.type, geometry, component.connectionPoints]);
   const extras = useMemo(
     () => ({
-      trim: new MeshStandardMaterial({ color: "#2e343a", metalness: 0.6, roughness: 0.5 }),
+      // Trim is bare machined/forged steel; accents are painted.
+      trim: new MeshStandardMaterial({
+        ...wear(),
+        color: "#3a4047",
+        metalness: 0.75,
+        roughness: 0.42,
+      }),
       accent: new MeshStandardMaterial({
+        ...wear(),
         color: model?.accentColor ?? "#8a939e",
-        metalness: 0.35,
-        roughness: 0.5,
+        metalness: 0.3,
+        roughness: 0.48,
       }),
     }),
     [model],

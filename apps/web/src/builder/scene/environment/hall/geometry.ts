@@ -7,6 +7,7 @@ import {
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { boxProjectUVs } from "../surfaces.js";
 
 /**
  * The Main Reactor Hall, generated procedurally.
@@ -176,26 +177,6 @@ export const WORLD_UV_SURFACES: ReadonlySet<Surface> = new Set<Surface>([
   "propGrey",
   "propBlue",
 ]);
-
-/** Replaces a geometry's UVs with box-projected world coordinates (metres). */
-export function boxProjectUVs(geometry: BufferGeometry): void {
-  const position = geometry.getAttribute("position");
-  const normal = geometry.getAttribute("normal");
-  const uv = geometry.getAttribute("uv");
-  if (uv === undefined || normal === undefined) return;
-  for (let i = 0; i < position.count; i += 1) {
-    const x = position.getX(i);
-    const y = position.getY(i);
-    const z = position.getZ(i);
-    const nx = Math.abs(normal.getX(i));
-    const ny = Math.abs(normal.getY(i));
-    const nz = Math.abs(normal.getZ(i));
-    if (ny >= nx && ny >= nz) uv.setXY(i, x, z);
-    else if (nx >= nz) uv.setXY(i, z, y);
-    else uv.setXY(i, x, y);
-  }
-  uv.needsUpdate = true;
-}
 
 class Collector {
   #parts = new Map<string, BufferGeometry[]>();
