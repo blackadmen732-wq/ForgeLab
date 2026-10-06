@@ -52,6 +52,7 @@ export type Surface =
   | "door"
   | "accent"
   | "hazardDark"
+  | "hazard"
   | "markings"
   | "plates"
   | "duct"
@@ -153,6 +154,49 @@ function mulberry32(seed: number): () => number {
   };
 }
 
+/**
+ * Surfaces textured at world scale: their UVs are box-projected in metres (u, v along the
+ * two axes across each face's dominant normal), so scratches, plate seams and stripes
+ * keep their real size on a 0.2 m bracket and a 40 m girder alike.
+ */
+export const WORLD_UV_SURFACES: ReadonlySet<Surface> = new Set<Surface>([
+  "steel",
+  "steelDark",
+  "door",
+  "accent",
+  "hazardDark",
+  "hazard",
+  "markings",
+  "plates",
+  "duct",
+  "crane",
+  "rails",
+  "propRed",
+  "propGreen",
+  "propGrey",
+  "propBlue",
+]);
+
+/** Replaces a geometry's UVs with box-projected world coordinates (metres). */
+export function boxProjectUVs(geometry: BufferGeometry): void {
+  const position = geometry.getAttribute("position");
+  const normal = geometry.getAttribute("normal");
+  const uv = geometry.getAttribute("uv");
+  if (uv === undefined || normal === undefined) return;
+  for (let i = 0; i < position.count; i += 1) {
+    const x = position.getX(i);
+    const y = position.getY(i);
+    const z = position.getZ(i);
+    const nx = Math.abs(normal.getX(i));
+    const ny = Math.abs(normal.getY(i));
+    const nz = Math.abs(normal.getZ(i));
+    if (ny >= nx && ny >= nz) uv.setXY(i, x, z);
+    else if (nx >= nz) uv.setXY(i, z, y);
+    else uv.setXY(i, x, y);
+  }
+  uv.needsUpdate = true;
+}
+
 class Collector {
   #parts = new Map<string, BufferGeometry[]>();
   add(zone: Zone, surface: Surface, ...geometries: BufferGeometry[]): void {
@@ -172,6 +216,7 @@ class Collector {
       const merged = mergeGeometries(parts, false);
       for (const p of parts) p.dispose();
       if (merged === null) throw new Error(`hall geometry ${key} could not be merged`);
+      if (WORLD_UV_SURFACES.has(surface)) boxProjectUVs(merged);
       out.push({ zone, surface, geometry: merged });
     }
     return out;
@@ -865,7 +910,25 @@ function floor(c: Collector): void {
     c.add(zone, "steelDark", box(2 * X - 6, 0.01, 0.4, 0, 0.006, z));
     for (let x = -X + 3; x < X - 3; x += 0.5)
       c.add(zone, "steel", box(0.05, 0.012, 0.36, x, 0.009, z));
+    // Painted hazard band on the hall side of the trench.
+    c.add(zone, "hazard", box(2 * X - 6, 0.01, 0.35, 0, 0.007, z - Math.sign(z) * 0.55));
   }
+  // Service trenches across the hall either side of the build zone: a dark channel under a
+  // heavy bar grating, framed by hazard bands.
+  for (const x of [-(HALL.buildHalfX + 14), HALL.buildHalfX + 14]) {
+    const length = 2 * (Z - 6);
+    c.add(zone, "steelDark", box(1.2, 0.006, length, x, 0.004, 0));
+    c.add(zone, "steel", box(0.08, 0.016, length, x - 0.62, 0.008, 0));
+    c.add(zone, "steel", box(0.08, 0.016, length, x + 0.62, 0.008, 0));
+    for (let z = -length / 2 + 0.15; z < length / 2; z += 0.12)
+      c.add(zone, "steel", box(1.16, 0.014, 0.03, x, 0.009, z));
+    for (let z = -length / 2 + 1; z < length / 2; z += 1)
+      c.add(zone, "steelDark", box(1.18, 0.016, 0.06, x, 0.01, z));
+    for (const s of [-1, 1]) c.add(zone, "hazard", box(0.3, 0.01, length, x + s * 0.95, 0.007, 0));
+  }
+  // Hazard kerb lines at the foot of the end walls.
+  for (const x of [-X + 0.9, X - 0.9])
+    c.add(zone, "hazard", box(0.4, 0.01, 2 * Z - 4, x, 0.007, 0));
 }
 
 /** Sparse perimeter equipment along the lower walls. */

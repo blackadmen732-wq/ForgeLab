@@ -29,7 +29,13 @@
 
 1. **Hall** — `apps/web/src/builder/scene/environment/`: preset registry (Industrial Hall
    built; Clean Lab, Dark Facility, Outdoor Test Site, Empty Grid prepared), stored as a
-   per-user preference.
+   per-user preference. Surfaces (`environment/surfaces.ts`) are procedural and seeded:
+   a steel deck floor (3 × 1.5 m plates, ground seams, fixings, grime, rust and standing
+   water that drives gloss), worn metal on all steelwork (world-scale box-projected UVs,
+   2 m per tile) and scuffed hazard striping along trenches and walls. Metal reflects a
+   hall-shaped environment map (`environment/reflections.ts`: high-bay lamps, clerestory,
+   wall lights) built once on the GPU; HIGH and ULTRA add a live blurred floor mirror
+   (`floorReflections` in the tier budget). None of it reaches the simulation.
 2. **Shell** — drawer and inspector contextual and collapsed by default; telemetry behind
    an Engineering Overlay toggle; simulation fills the viewport with a compact HUD.
 3. **Finished components** — typed port specs with domain ratings in

@@ -167,6 +167,7 @@ describe("presentation settings", () => {
         "bloom",
         "debrisRigid",
         "debrisSimple",
+        "floorReflections",
         "haze",
         "lightPools",
         "marks",

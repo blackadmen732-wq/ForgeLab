@@ -1,3 +1,4 @@
+import { MeshReflectorMaterial } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -15,6 +16,7 @@ import {
   PlaneGeometry,
   type PointLight,
   Quaternion,
+  Vector2,
   Vector3,
 } from "three";
 import { PresentationContext } from "../../../../presentation/context.js";
@@ -27,6 +29,7 @@ import {
   useSettings,
 } from "../../../../presentation/settings.js";
 import type { EnvironmentPreset } from "../presets.js";
+import { hazardStripeTexture, steelDeckMaps, wornMetalMaps } from "../surfaces.js";
 import { concreteTexture, radialTexture, ribbedPanelTexture } from "../textures.js";
 import {
   HALL,
@@ -45,14 +48,30 @@ type Materials = Record<Surface, Material> & { floor: MeshStandardMaterial };
 
 function createMaterials(preset: EnvironmentPreset): Materials {
   const dark = preset.id === "dark-facility";
-  const floorMap = concreteTexture(12, false);
-  floorMap.repeat.set((2 * HALL.halfX) / 12, (2 * HALL.halfZ) / 12);
+  // Steel deck plate, tiled at 12 m across the floor.
+  const deck = steelDeckMaps(12);
+  for (const t of Object.values(deck)) t.repeat.set((2 * HALL.halfX) / 12, (2 * HALL.halfZ) / 12);
   const concreteMap = concreteTexture(12, false);
   concreteMap.repeat.set(4, 0.6);
   const panelMap = ribbedPanelTexture(4, 0.25);
   panelMap.repeat.set(35, 1);
+  // Worn-metal detail for every steel surface; world-scale UVs (metres), 2 m per tile.
+  const worn = wornMetalMaps(2);
+  for (const t of Object.values(worn)) t.repeat.set(0.5, 0.5);
+  const stripes = hazardStripeTexture(1);
   const std = (color: string, metalness: number, roughness: number, extra = {}) =>
     new MeshStandardMaterial({ color, metalness, roughness, ...extra });
+  /** Metal with wear: the maps modulate the base colour and finish. */
+  const metal = (color: string, metalness: number, roughness: number, extra = {}) =>
+    std(color, metalness, roughness * 1.6, {
+      map: worn.map,
+      roughnessMap: worn.roughnessMap,
+      normalMap: worn.normalMap,
+      normalScale: new Vector2(0.6, 0.6),
+      ...extra,
+    });
+  /** Painted steel: the paint is less metallic and wears through at the scratches. */
+  const paint = (color: string, roughness: number) => metal(color, 0.25, roughness);
   const glow = (color: string, intensity: number) =>
     new MeshStandardMaterial({
       color: "#101216",
@@ -62,17 +81,19 @@ function createMaterials(preset: EnvironmentPreset): Materials {
     });
   return {
     floor: new MeshStandardMaterial({
-      color: dark ? "#5c6168" : "#7d838b",
-      map: floorMap,
-      roughnessMap: floorMap,
+      color: dark ? "#6a6f75" : "#8a8f95",
+      map: deck.map,
+      roughnessMap: deck.roughnessMap,
+      normalMap: deck.normalMap,
+      normalScale: new Vector2(0.8, 0.8),
       roughness: 1,
-      metalness: 0,
+      metalness: 0.3,
     }),
-    steel: std("#56616d", 0.55, 0.5),
-    steelDark: std("#2b3137", 0.5, 0.6),
+    steel: metal("#5f6a75", 0.7, 0.42),
+    steelDark: metal("#2f353b", 0.6, 0.5),
     concrete: std(dark ? "#6f747a" : "#9aa0a6", 0, 0.92, { map: concreteMap }),
-    panel: std(dark ? "#5b636c" : "#7d8791", 0.3, 0.68, { map: panelMap }),
-    glass: std("#0c1319", 0.9, 0.06, { transparent: true, opacity: 0.42, depthWrite: false }),
+    panel: std(dark ? "#5b636c" : "#7d8791", 0.3, 0.6, { map: panelMap }),
+    glass: std("#0c1319", 0.9, 0.04, { transparent: true, opacity: 0.42, depthWrite: false }),
     interior: std("#40464d", 0, 0.9, {
       emissive: "#ffe7c4",
       emissiveIntensity: dark ? 0.05 : 0.08,
@@ -80,18 +101,24 @@ function createMaterials(preset: EnvironmentPreset): Materials {
     interiorLit: glow("#fff1da", 1.4),
     screen: glow("#72b6db", 0.9),
     clerestory: glow("#bcd4ea", dark ? 0.05 : 0.5),
-    door: std("#4d5660", 0.45, 0.55),
-    accent: std("#2f5d8f", 0.35, 0.55),
-    hazardDark: std("#141414", 0, 0.75),
-    markings: std("#c79d2b", 0, 0.72),
-    plates: std("#5d646b", 0.75, 0.42),
-    duct: std("#9aa3ab", 0.75, 0.35),
-    crane: std("#c3961f", 0.3, 0.5),
-    rails: std("#c99d20", 0.3, 0.55),
-    propRed: std("#98281f", 0.2, 0.55),
-    propGreen: std("#2b7a4c", 0.2, 0.6),
-    propGrey: std("#6a727b", 0.45, 0.55),
-    propBlue: std("#2e4d76", 0.35, 0.55),
+    door: metal("#55606b", 0.6, 0.45),
+    accent: paint("#2f5d8f", 0.5),
+    hazardDark: paint("#141414", 0.6),
+    hazard: std("#ffffff", 0.1, 0.62, {
+      map: stripes,
+      roughnessMap: worn.roughnessMap,
+      normalMap: worn.normalMap,
+      normalScale: new Vector2(0.3, 0.3),
+    }),
+    markings: paint("#d1a32a", 0.55),
+    plates: metal("#6a7178", 0.8, 0.32),
+    duct: metal("#a3acb4", 0.8, 0.3),
+    crane: paint("#d19f1c", 0.42),
+    rails: paint("#c99d20", 0.45),
+    propRed: paint("#98281f", 0.45),
+    propGreen: paint("#2b7a4c", 0.5),
+    propGrey: metal("#6a727b", 0.5, 0.48),
+    propBlue: paint("#2e4d76", 0.45),
     rubber: std("#1a1c1f", 0, 0.9),
     roof: std("#14181d", 0, 0.95),
     baylight: glow("#ffeed6", 1.0),
@@ -151,7 +178,8 @@ export const HALL_LIGHT_NAMES = Object.freeze({
  * ------------------------------------------------------------------------------------ */
 
 export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
-  const pools = tierBudget(useSettings()).lightPools;
+  const budget = tierBudget(useSettings());
+  const pools = budget.lightPools;
   const hall = useMemo(() => buildHallGeometry(), []);
   useLayoutEffect(() => () => hall.meshes.forEach((m) => m.geometry.dispose()), [hall]);
   const materials = useMemo(() => createMaterials(preset), [preset]);
@@ -160,6 +188,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
       for (const m of Object.values(materials)) {
         const s = m as MeshStandardMaterial;
         s.map?.dispose();
+        s.roughnessMap?.dispose();
+        s.normalMap?.dispose();
         m.dispose();
       }
     },
@@ -168,7 +198,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
   const shared = useMemo(() => {
     const radial = radialTexture();
     return {
-      floorGeometry: new PlaneGeometry(2 * HALL.halfX, 2 * HALL.halfZ).rotateX(-Math.PI / 2),
+      // Unrotated: the mirror reflector derives its plane from the mesh's own orientation.
+      floorGeometry: new PlaneGeometry(2 * HALL.halfX, 2 * HALL.halfZ),
       // Ground outside the walls, seen when a framed view puts the camera beyond them.
       apron: new PlaneGeometry(800, 800).rotateX(-Math.PI / 2).translate(0, -0.03, 0),
       lens: new CylinderGeometry(0.55, 0.55, 0.06, 18),
@@ -390,7 +421,35 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
 
   return (
     <group name="main-reactor-hall">
-      <mesh geometry={shared.floorGeometry} material={materials.floor} receiveShadow />
+      {budget.floorReflections > 0 ? (
+        <mesh geometry={shared.floorGeometry} rotation-x={-Math.PI / 2} receiveShadow>
+          {/* Wet steel deck: a live mirror, blurred where the plate is rough and sharp in
+              the standing water (the roughness map drives the blur). */}
+          <MeshReflectorMaterial
+            resolution={budget.floorReflections}
+            blur={[320, 120]}
+            mixBlur={1}
+            mixStrength={preset.id === "dark-facility" ? 6 : 4.5}
+            mixContrast={1.05}
+            mirror={0}
+            depthScale={0}
+            color={materials.floor.color}
+            map={materials.floor.map}
+            roughnessMap={materials.floor.roughnessMap}
+            normalMap={materials.floor.normalMap}
+            normalScale={materials.floor.normalScale}
+            roughness={1}
+            metalness={materials.floor.metalness}
+          />
+        </mesh>
+      ) : (
+        <mesh
+          geometry={shared.floorGeometry}
+          rotation-x={-Math.PI / 2}
+          material={materials.floor}
+          receiveShadow
+        />
+      )}
       <mesh geometry={shared.apron} material={materials.roof} />
       {byZone("floor")}
       {([...WALL_ZONES, "overhead"] as const).map((zone) => (

@@ -48,6 +48,8 @@ export interface TierBudget {
   readonly lightPools: boolean;
   /** Damage marks (scorch, soot, frost, cracks, tears) kept on surfaces for the run. */
   readonly marks: number;
+  /** Resolution of the hall floor's live mirror reflection; 0 = reflections from the environment map only. */
+  readonly floorReflections: number;
 }
 
 export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.freeze({
@@ -62,6 +64,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     props: false,
     lightPools: false,
     marks: 12,
+    floorReflections: 0,
   },
   MEDIUM: {
     pixelRatio: 1.25,
@@ -74,6 +77,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     props: true,
     lightPools: true,
     marks: 24,
+    floorReflections: 0,
   },
   HIGH: {
     pixelRatio: 1.75,
@@ -86,6 +90,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     props: true,
     lightPools: true,
     marks: 40,
+    floorReflections: 512,
   },
   ULTRA: {
     pixelRatio: 2,
@@ -98,6 +103,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     props: true,
     lightPools: true,
     marks: 64,
+    floorReflections: 1024,
   },
 });
 

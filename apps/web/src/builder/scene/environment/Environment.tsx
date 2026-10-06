@@ -8,6 +8,7 @@ import { EngineeringGrid } from "./hall/EngineeringGrid.js";
 import { HALL } from "./hall/geometry.js";
 import { HALL_LIGHT_NAMES, MainReactorHall } from "./hall/MainReactorHall.js";
 import { useEnvironment } from "./presets.js";
+import { hallReflections } from "./reflections.js";
 
 /**
  * The space around the plant: background, haze, lighting and surroundings for the chosen
@@ -33,16 +34,18 @@ export function Environment({
   useLayoutEffect(() => {
     get().scene.environmentIntensity = preset.light.reflections;
   }, [get, preset]);
-  // Image-based lighting generated on the GPU from a procedural room: gives metal surfaces
-  // something to reflect without downloading an HDR.
+  // Image-based lighting generated on the GPU: inside the hall, metal reflects the hall's
+  // own lamps and clerestory; elsewhere a neutral procedural room. No HDR download.
+  const dark = preset.id === "dark-facility";
   const reflections = useMemo(() => {
+    if (hall) return hallReflections(gl, dark);
     const pmrem = new PMREMGenerator(gl);
     const room = new RoomEnvironment();
     const texture = pmrem.fromScene(room, 0.04).texture;
     room.dispose();
     pmrem.dispose();
     return texture;
-  }, [gl]);
+  }, [gl, hall, dark]);
   useLayoutEffect(() => () => reflections.dispose(), [reflections]);
 
   useLayoutEffect(() => {
