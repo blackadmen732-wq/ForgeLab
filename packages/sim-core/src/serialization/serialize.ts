@@ -1,3 +1,4 @@
+import { type CascadePlantSpec, parseCascadePlantSpec } from "../cascade/spec.js";
 import { QUATERNION_IDENTITY, quaternion, transform, vec3, Vec3Math } from "@forgelab/shared";
 import type { PhysicalProperties, SimulationComponent } from "../component.js";
 import type { Connection, ConnectionPoint, ConnectionType } from "../connections.js";
@@ -59,6 +60,9 @@ export function serializeWorld(
       simulatedTimeSec: world.simulatedTimeSec,
       idCounter: world.idCounter,
     },
+    ...(world.cascadePlant === undefined
+      ? {}
+      : { cascade: JSON.parse(JSON.stringify(world.cascadePlant)) as CascadePlantSpec }),
     ...(meta === undefined ? {} : { meta }),
   };
 }
@@ -258,6 +262,8 @@ export function deserializeWorld(
     });
   }
 
+  if (file.cascade !== undefined) world.setCascadePlant(file.cascade);
+
   world.restoreRuntime({
     tick: file.runtime?.tick ?? 0,
     simulatedTimeSec: file.runtime?.simulatedTimeSec ?? 0,
@@ -336,6 +342,14 @@ function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
 
   const runtime = record["runtime"];
   const meta = record["meta"];
+  let cascade: CascadePlantSpec | undefined;
+  if (record["cascade"] !== undefined) {
+    try {
+      cascade = parseCascadePlantSpec(record["cascade"], componentIds);
+    } catch (error) {
+      throw new AssemblyFileError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -343,6 +357,7 @@ function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
     components,
     connections,
     simulationSettings: settings,
+    ...(cascade === undefined ? {} : { cascade }),
     ...(isRecord(runtime)
       ? {
           runtime: {

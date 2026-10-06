@@ -52,6 +52,12 @@ export type Radians = number;
 export type WattsPerMeterKelvin = number;
 /** Electrical resistivity. Derived SI unit: ohm metre. */
 export type OhmMeters = number;
+/** Specific heat capacity. Derived SI unit: joule per kilogram kelvin. */
+export type JoulesPerKilogramKelvin = number;
+/** Specific energy (latent heat, heat of combustion). Derived SI unit: joule per kilogram. */
+export type JoulesPerKilogram = number;
+/** Heat flux. Derived SI unit: watt per square metre. */
+export type WattsPerSquareMeter = number;
 /** Dimensionless ratio (utilization, efficiency, safety factor). */
 export type Ratio = number;
 
@@ -86,6 +92,12 @@ export const gigapascalsToPascals = (gpa: number): Pascals => gpa * 1e9;
 export const barToPascals = (bar: number): Pascals => bar * 1e5;
 export const kilowattsToWatts = (kw: number): Watts => kw * 1e3;
 export const megawattsToWatts = (mw: number): Watts => mw * 1e6;
+export const kilojoulesToJoules = (kj: number): Joules => kj * 1e3;
+export const megajoulesToJoules = (mj: number): Joules => mj * 1e6;
+export const kilowattHoursToJoules = (kwh: number): Joules => kwh * 3.6e6;
+export const kilowattsPerM2ToWattsPerM2 = (kw: number): WattsPerSquareMeter => kw * 1e3;
+export const hoursToSeconds = (h: number): Seconds => h * 3600;
+export const litersToCubicMeters = (l: number): CubicMeters => l * 1e-3;
 export const celsiusToKelvin = (c: number): Kelvin => c + ZERO_CELSIUS_IN_KELVIN;
 export const kelvinToCelsius = (k: Kelvin): number => k - ZERO_CELSIUS_IN_KELVIN;
 export const degreesToRadians = (deg: number): Radians => (deg * Math.PI) / 180;

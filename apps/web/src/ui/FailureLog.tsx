@@ -1,4 +1,5 @@
-import { useUiState } from "../state/useStore.js";
+import { useStore, useUiState } from "../state/useStore.js";
+import { CascadePanel } from "./CascadePanel.js";
 import { STATUS_COLORS } from "../scene/theme.js";
 import { formatRatio, formatSeconds } from "./format.js";
 
@@ -10,17 +11,45 @@ import { formatRatio, formatSeconds } from "./format.js";
  * text is produced by `sim-core`; this panel only lays it out.
  */
 export function FailureLog() {
+  const store = useStore();
   const ui = useUiState();
+  const eventCount = ui.cascade?.events.length ?? 0;
 
   return (
-    <section className="panel panel--bottom">
+    <section className={`panel panel--bottom${ui.bottomTab === "cascade" ? " panel--tall" : ""}`}>
       <div className="panel__row">
-        <h2 className="panel__title panel__title--inline">
-          Failures{ui.failures.length > 0 ? ` (${ui.failures.length})` : ""}
-        </h2>
+        <div className="tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={ui.bottomTab === "failures"}
+            className={`tab${ui.bottomTab === "failures" ? " tab--active" : ""}`}
+            onClick={() => store.setBottomTab("failures")}
+          >
+            Failures{ui.failures.length > 0 ? ` (${ui.failures.length})` : ""}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={ui.bottomTab === "cascade"}
+            className={`tab${ui.bottomTab === "cascade" ? " tab--active" : ""}`}
+            onClick={() => store.setBottomTab("cascade")}
+          >
+            Cascade{eventCount > 0 ? ` (${eventCount})` : ""}
+          </button>
+        </div>
         <span className="status">{ui.status}</span>
       </div>
 
+      {ui.bottomTab === "cascade" ? <CascadePanel /> : <FailureList />}
+    </section>
+  );
+}
+
+function FailureList() {
+  const ui = useUiState();
+  return (
+    <>
       {ui.diagnostics.map((diagnostic) => (
         <p key={diagnostic} className="diagnostic">
           {diagnostic}
@@ -55,6 +84,6 @@ export function FailureLog() {
           ))}
         </ul>
       )}
-    </section>
+    </>
   );
 }

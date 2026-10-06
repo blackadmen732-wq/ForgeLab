@@ -29,6 +29,13 @@ multiplayer. See [`docs/PHYSICS_ROADMAP.md`](docs/PHYSICS_ROADMAP.md) for what c
   equipment block — that you can place, move, rotate, duplicate, delete and snap together.
 - Assembly mass and centre of mass, with an optional marker in the workspace.
 - A versioned save format with local save/load and JSON export/import.
+- A **cascading multi-physics failure solver** (reduced models, labelled as such). One
+  failure changes the physical environment, and each nearby component's own physics
+  decides whether it fails in turn: heat, flame, hot gas, arcs, coolant jets, gas
+  accumulation, hot debris, magnet quench and plasma disruption. Every event records its
+  physical causes, the interface separates root cause from the most dramatic event, any
+  event can be replayed, and a hazard view shows what each part is receiving. See
+  [`docs/CASCADE.md`](docs/CASCADE.md).
 
 ## Getting started
 
@@ -68,6 +75,12 @@ Or swap the legs to **Copper** and watch a far smaller load do the same thing �
 works that out on its own.
 
 The **Overload demo** button in the Scenes panel loads that case directly.
+
+To watch a cascade, load **Cascade — unprotected** from Scenes, set speed to 30× and press
+Play. A single degraded joint on a switchgear bus is the only fault. Open the **Cascade**
+tab to follow it, click any event to replay to it, and switch the toolbar's **Hazard view**
+to see radiant heat, hot gas and gas clouds. Then load **Cascade — protected**: the same
+fault, a properly engineered plant, and the chain stops at the breaker.
 
 ## How it is put together
 

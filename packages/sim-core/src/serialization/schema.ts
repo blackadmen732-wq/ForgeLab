@@ -1,5 +1,6 @@
 import type { ConnectionType } from "../connections.js";
 import type { FailurePropagationMode } from "../settings.js";
+import type { CascadePlantSpec } from "../cascade/spec.js";
 
 /**
  * ForgeLab assembly file, schema version 1.
@@ -116,6 +117,12 @@ export interface AssemblyFileV1 {
   readonly connections: readonly SerializedConnection[];
   readonly simulationSettings: SerializedSimulationSettings;
   readonly runtime?: SerializedRuntime;
+  /**
+   * What each component physically is, for the cascade solver. Optional, added without a
+   * version bump. Only the design is stored: cascade temperatures and events are a record
+   * of a run, like the failure log, and a loaded file restarts the cascade from it.
+   */
+  readonly cascade?: CascadePlantSpec;
   /** Informational only; never read back by the engine. */
   readonly meta?: {
     readonly generator?: string;

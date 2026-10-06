@@ -15,3 +15,10 @@ export {
   findComponentDefinition,
   getComponentDefinition,
 } from "./builtin.js";
+
+export {
+  PROTECTED_DESIGN,
+  UNPROTECTED_DESIGN,
+  buildReferenceCascade,
+  type CascadeDesign,
+} from "./cascade-scenes.js";

@@ -71,6 +71,11 @@ export interface StructuralSolveInput {
   readonly tick: number;
   /** Components already reported as failed, used by the `detach` propagation mode. */
   readonly previouslyFailedComponentIds?: ReadonlySet<ComponentId>;
+  /**
+   * Effective yield strength at temperature, as a factor of room-temperature yield, for
+   * components the cascade solver has heated. Absent means full strength.
+   */
+  readonly hotStrength?: ReadonlyMap<ComponentId, { factor: number; temperatureK: number }>;
 }
 
 export interface StructuralSolveResult {
@@ -267,7 +272,9 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
 
     const material = getMaterial(component.materialId);
     const areaM2 = loadBearingAreaM2(component.geometry, component.state.physical.rotation);
-    const allowableStressPa = material.yieldStrengthPa / settings.designSafetyFactor;
+    const hot = input.hotStrength?.get(id);
+    const effectiveYieldPa = material.yieldStrengthPa * (hot?.factor ?? 1);
+    const allowableStressPa = effectiveYieldPa / settings.designSafetyFactor;
     // A component in free fall is not being loaded by anything: no contact, no stress.
     const appliedStressPa = mode === "free" ? 0 : safeRatio(total, areaM2);
     const utilization = safeRatio(appliedStressPa, allowableStressPa);
@@ -307,9 +314,10 @@ export function solveStructure(input: StructuralSolveInput): StructuralSolveResu
             areaM2,
             appliedStressPa,
             allowableStressPa,
-            yieldStrengthPa: material.yieldStrengthPa,
+            yieldStrengthPa: effectiveYieldPa,
             designSafetyFactor: settings.designSafetyFactor,
             supportedComponentIds: support.supportingComponentIds,
+            ...(hot === undefined ? {} : { hot }),
           }),
         }),
       );

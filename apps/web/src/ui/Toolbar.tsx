@@ -1,6 +1,18 @@
 import { STANDARD_GRAVITY_MPS2 } from "@forgelab/shared";
 import { SIMULATION_SPEEDS } from "@forgelab/sim-core";
+import type { HazardChannel } from "../state/store.js";
 import { useStore, useUiState } from "../state/useStore.js";
+
+const HAZARD_CHANNELS: readonly [HazardChannel, string][] = [
+  ["off", "Normal view"],
+  ["radiant", "Radiant heat"],
+  ["hot-gas", "Hot gas"],
+  ["fire", "Fire area"],
+  ["gas-cloud", "Gas cloud"],
+  ["pressure", "Pressure release"],
+  ["debris", "Hot debris"],
+  ["electrical", "Electrical faults"],
+];
 import { formatSeconds } from "./format.js";
 
 export function Toolbar() {
@@ -12,7 +24,9 @@ export function Toolbar() {
     <header className="toolbar">
       <div className="toolbar__group toolbar__group--brand">
         <span className="brand">ForgeLab</span>
-        <span className="brand__tag">Milestone 0 · Simulation Foundation</span>
+        <span className="brand__tag">
+          Milestone 0 · Simulation Foundation + cascade solver (reduced models)
+        </span>
       </div>
 
       <div className="toolbar__group">
@@ -48,6 +62,27 @@ export function Toolbar() {
         >
           t = {formatSeconds(ui.simulatedTimeSec)} · tick {ui.tick}
         </span>
+      </div>
+
+      <div className="toolbar__group">
+        <label
+          className="field"
+          title="Engineering overlay of what each component is receiving. Presentation only."
+        >
+          <span className="field__label">Hazard view</span>
+          <select
+            className="select"
+            value={ui.hazardView}
+            disabled={ui.cascade === undefined}
+            onChange={(event) => store.setHazardView(event.target.value as HazardChannel)}
+          >
+            {HAZARD_CHANNELS.map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
       <div className="toolbar__group">

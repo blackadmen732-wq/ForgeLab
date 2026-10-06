@@ -92,8 +92,9 @@ reported as `droppedTimeSec`, rather than the tab freezing while it tries to cat
 **Determinism.** No randomness, no wall clock, no hash-order iteration — every collection
 is sorted by id before it is walked, and ids come from a per-world counter. Identical
 inputs give identical outputs, bit for bit, within one JavaScript engine. Cross-engine
-bit-identity is not claimed, because `Math.sin`/`Math.cos` are not specified to the last
-bit; nothing in Phase 0 physics depends on them.
+bit-identity is not claimed, because `Math.sin`/`Math.cos`/`Math.exp` are not specified to
+the last bit. Phase 0 structural physics does not use them; the cascade solver does
+(Arrhenius self-heating, debris launch directions).
 
 ---
 
@@ -177,9 +178,10 @@ When neither normal is clearly vertical, the solver falls back to which socket s
 sockets at the same height with no vertical normal are a lateral tie and carry no vertical
 load in Phase 0.
 
-**Types.** Phase 0 implements `structural` and `mount`. The names `electrical`, `coolant`,
-`vacuum`, `fuel`, `control` and `shaft` are reserved in `CONNECTION_TYPES` so that files
-written today keep their meaning when those phases land. Nothing reads them yet.
+**Types.** Phase 0 implements `structural` and `mount` as load paths. The cascade solver
+reads `electrical` (its radial power network) and `coolant` (flange separation); every
+connection whose sockets are still together also conducts heat. `vacuum`, `fuel`, `control`
+and `shaft` remain reserved in `CONNECTION_TYPES`.
 
 **Ratings.** A structural socket in the built-in catalogue is rated at _the member's own
 section area perpendicular to the socket normal, times the material's yield strength_ —
@@ -376,7 +378,29 @@ Cloud storage, when it arrives, will store exactly this document and nothing mor
 
 ---
 
-## 10. Repository layout
+## 10. The cascade solver
+
+`packages/sim-core/src/cascade/` decides what a failure does to everything around it. A
+failed component emits physical hazards (heat, flame, hot gas, arcs, jets, pressure,
+debris, plasma heat). Those are propagated through a spatial broad phase and through the
+electrical and coolant networks. Every affected component updates its own physical state,
+and fails only if its own limit is crossed. Every event records the events that
+physically caused it, which makes the run a replayable causal graph with a root-cause
+diagnosis.
+
+It runs inside `SimulationWorld.step()` after structure and dynamics, one fixed step at a
+time, never recursively. It couples back into structure through a hot-strength factor per
+component, so a heated steel member is checked against its EN 1993-1-2 reduced yield by
+the ordinary structural solver. A plant is declared with `world.setCascadePlant(spec)`,
+which records what each component physically is (a battery module, a pipe, a magnet...).
+The spec is saved in the assembly file.
+
+Everything the cascade models, every number it uses, and everything it leaves out is in
+[`CASCADE.md`](CASCADE.md). All of it is reduced, and it is labelled so in the interface.
+
+---
+
+## 11. Repository layout
 
 ```
 forgelab/
@@ -391,6 +415,7 @@ forgelab/
   docs/
     ARCHITECTURE.md          This file.
     PHYSICS_ROADMAP.md       The order physics arrives in.
+    CASCADE.md               The cascading multi-physics failure solver.
     material-sources.md      Where every material number came from.
 ```
 
@@ -399,7 +424,7 @@ Dependencies point one way: `shared` → `materials` → `sim-core` → `reactor
 
 ---
 
-## 11. Adding a physics phase
+## 12. Adding a physics phase
 
 The seams are already in place. A new subsystem should:
 
@@ -418,7 +443,7 @@ the rule that no approximation goes in undocumented.
 
 ---
 
-## 12. What ForgeLab is not
+## 13. What ForgeLab is not
 
 ForgeLab is **not research-grade**, and no part of it should be described as such. It is an
 engineering sandbox built on documented approximations, using nominal handbook material

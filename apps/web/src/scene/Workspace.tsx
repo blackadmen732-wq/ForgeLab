@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { QuaternionMath } from "@forgelab/shared";
 import type { SimulationComponent } from "@forgelab/sim-core";
 import { store, useStore, useUiState } from "../state/useStore.js";
+import { CascadeEffects } from "./CascadeEffects.js";
 import { ComponentMesh } from "./ComponentMesh.js";
 import { CENTER_OF_MASS_COLOR, CONNECTION_COLOR } from "./theme.js";
 
@@ -82,6 +83,16 @@ function SimulationDriver() {
 
 function SceneContents() {
   const ui = useUiState();
+  const cascade = ui.cascade;
+  const nodes = useMemo(
+    () => new Map(cascade?.nodes.map((n) => [n.componentId, n]) ?? []),
+    [cascade],
+  );
+  const exposures = useMemo(
+    () => new Map(cascade?.exposures.map((e) => [e.componentId, e]) ?? []),
+    [cascade],
+  );
+  const lfl = cascade?.enclosures[0]?.lowerFlammabilityLimit ?? 0.075;
 
   return (
     <group>
@@ -91,8 +102,16 @@ function SceneContents() {
           component={component}
           selected={component.id === ui.selectedId}
           gizmoMode={ui.gizmoMode}
+          cascadeNode={nodes.get(component.id)}
+          exposure={exposures.get(component.id)}
+          hazardView={ui.hazardView}
+          lowerFlammabilityLimit={lfl}
         />
       ))}
+
+      {cascade !== undefined && (
+        <CascadeEffects cascade={cascade} components={ui.components} hazardView={ui.hazardView} />
+      )}
 
       <ConnectionLines components={ui.components} />
 

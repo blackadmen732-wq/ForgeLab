@@ -114,6 +114,70 @@ export type {
   DynamicsStepResult,
 } from "./dynamics/backend.js";
 
+export {
+  CascadeSolver,
+  type CascadeStepContext,
+  formatTemperature,
+  geometrySurfaceAreaM2,
+  plumeExcessK,
+} from "./cascade/solver.js";
+export { AttributionLedger, CatastropheGraph, labelOf } from "./cascade/graph.js";
+export { SpatialHash, distanceToAabb, segmentIntersectsAabb } from "./cascade/spatial-hash.js";
+export {
+  BATTERY_CHEMISTRIES,
+  COMBUSTIBLES,
+  GAS_FAMILIES,
+  INSULATION_LIMITS,
+  STEFAN_BOLTZMANN_W_M2K4,
+  WATER,
+  HELIUM,
+  copperCryogenicSpecificHeatJkgK,
+  waterSaturationPressurePa,
+  waterSaturationTemperatureK,
+  yieldStrengthFactorAt,
+  yieldReductionIsSourced,
+  type BatteryChemistry,
+  type CombustibleKind,
+  type GasFamily,
+} from "./cascade/data.js";
+export { parseCascadePlantSpec } from "./cascade/spec.js";
+export type {
+  BarrierSpec,
+  BatterySpec,
+  CascadeNodeSpec,
+  CascadePlantSpec,
+  CombustibleSpec,
+  CoolantLoopSpec,
+  CooledLoadSpec,
+  CryoplantSpec,
+  CryostatSpec,
+  ElectricalSpec,
+  EnclosureSpec,
+  InducedFaultSpec,
+  MagnetSpec,
+  PipeSpec,
+  PlasmaSpec,
+  PumpSpec,
+} from "./cascade/spec.js";
+export {
+  CASCADE_MODEL_CONFIDENCE,
+  type BatteryCellState,
+  type CascadeDiagnosis,
+  type CascadeEvent,
+  type CascadeEventKind,
+  type CascadeNodeState,
+  type CascadeSnapshot,
+  type ComponentExposure,
+  type DebrisParcelState,
+  type EnclosureState,
+  type HazardEmission,
+  type HazardFamily,
+  type HazardKind,
+  type ModelConfidence,
+  type ModelConfidenceEntry,
+  type PlasmaState,
+} from "./cascade/types.js";
+
 export { SimulationLoop, type SimulationLoopOptions } from "./clock.js";
 export { SimulationWorld, type SimulationSnapshot, type WorldOptions } from "./world.js";
 

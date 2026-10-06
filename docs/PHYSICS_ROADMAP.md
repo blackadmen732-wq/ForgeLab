@@ -38,6 +38,21 @@ mode real structures actually experience.
 
 ---
 
+## Cross-cutting — Cascade failure solver ✅ reduced models implemented
+
+Failures propagate by physical coupling: hazard emissions, spatial exposure, network
+effects and each component's own limits, recorded as a causal graph. See
+[`CASCADE.md`](CASCADE.md).
+
+To make cascades possible now, it carries **reduced** versions of pieces of Phases 1–6:
+lumped heat transfer and phase change, a radial electrical network with I²R heating and
+protection, coolant loops with pipe pressure, a helium-bath magnet quench, and a plasma
+disruption heat load, plus battery runaway, combustion and gas accumulation. Each phase
+below, when it lands, should replace the corresponding reduced model behind the same
+hazard and exposure interfaces, without changing how cascades are recorded.
+
+---
+
 ## Phase 1 — Electrical circuits and power
 
 Conductors, sources, loads and switches as a graph; nodal analysis for DC steady state.

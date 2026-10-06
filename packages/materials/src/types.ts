@@ -1,4 +1,6 @@
 import type {
+  JoulesPerKilogram,
+  JoulesPerKilogramKelvin,
   KgPerCubicMeter,
   Kelvin,
   OhmMeters,
@@ -27,6 +29,21 @@ export interface MaterialDefinition {
   readonly maxOperatingTemperatureK: Kelvin;
   readonly thermalConductivityWmK: WattsPerMeterKelvin;
   readonly electricalResistivityOhmM: OhmMeters;
+
+  /** Specific heat capacity near room temperature. Sets how fast a heated part warms. */
+  readonly specificHeatJkgK: JoulesPerKilogramKelvin;
+  /**
+   * Temperature at which melting begins (the solidus for alloys, the melting point for
+   * pure metals). Melting is solid -> liquid only; it never produces gas by itself.
+   */
+  readonly meltingPointK: Kelvin;
+  /** Latent heat of fusion: energy absorbed at the melting point to turn solid to liquid. */
+  readonly latentHeatOfFusionJkg: JoulesPerKilogram;
+  /**
+   * Surface emissivity used for radiant exchange (gray body, so also absorptivity).
+   * Strongly surface-dependent; the value is the fire-design default for the material.
+   */
+  readonly emissivity: number;
 
   /**
    * The specific alloy/grade the numbers above describe. Two different grades of

@@ -103,6 +103,8 @@ export function describeYieldFailure(params: {
   yieldStrengthPa: Pascals;
   designSafetyFactor: number;
   supportedComponentIds: readonly ComponentId[];
+  /** Present when the member has been heated and its yield strength reduced. */
+  hot?: { factor: number; temperatureK: number };
 }): string {
   const carriedFrom =
     params.supportedComponentIds.length > 0
@@ -115,13 +117,18 @@ export function describeYieldFailure(params: {
         `(${params.materialName} yield ${formatQuantity(params.yieldStrengthPa, "Pa")} ` +
         `divided by a design safety factor of ${params.designSafetyFactor})`;
 
+  const hotNote =
+    params.hot === undefined
+      ? ""
+      : ` Heated to ${params.hot.temperatureK.toFixed(0)} K, the member keeps only ` +
+        `${(params.hot.factor * 100).toFixed(0)}% of its room-temperature yield strength.`;
   return (
     `${params.componentType} "${params.componentId}" carries ` +
     `${formatQuantity(params.carriedLoadN, "N")}${carriedFrom} plus its own weight of ` +
     `${formatQuantity(params.ownWeightN, "N")}, giving ${formatQuantity(params.totalLoadN, "N")} ` +
     `through a load-bearing section of ${formatQuantity(params.areaM2, "m^2")}. ` +
     `That is a compressive stress of ${formatQuantity(params.appliedStressPa, "Pa")}, ` +
-    `which exceeds ${safetyNote}.`
+    `which exceeds ${safetyNote}.${hotNote}`
   );
 }
 

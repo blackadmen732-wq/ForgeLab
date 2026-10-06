@@ -134,6 +134,23 @@ export function Palette() {
         <button type="button" className="button" onClick={() => store.loadOverloadDemo()}>
           Overload demo
         </button>
+        <button
+          type="button"
+          className="button"
+          onClick={() => store.loadCascadeDemo("unprotected")}
+        >
+          Cascade — unprotected
+        </button>
+        <button
+          type="button"
+          className="button"
+          onClick={() => store.loadCascadeDemo("breaker-only")}
+        >
+          Cascade — fast breaker only
+        </button>
+        <button type="button" className="button" onClick={() => store.loadCascadeDemo("protected")}>
+          Cascade — protected
+        </button>
         <button type="button" className="button" onClick={() => store.clear()}>
           Clear workspace
         </button>

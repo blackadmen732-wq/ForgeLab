@@ -14,6 +14,7 @@ import {
   BuiltInDynamicsBackend,
   CONNECTION_SNAP_TOLERANCE_M,
   type AssemblyMassProperties,
+  type CascadeSnapshot,
   type Connection,
   type DynamicsBackend,
   type FailureEvent,
@@ -24,10 +25,37 @@ import {
   toJson,
   worldFromJson,
 } from "@forgelab/sim-core";
-import { COMPONENT_DEFINITIONS, getComponentDefinition } from "@forgelab/reactor-components";
+import {
+  COMPONENT_DEFINITIONS,
+  PROTECTED_DESIGN,
+  UNPROTECTED_DESIGN,
+  buildReferenceCascade,
+  getComponentDefinition,
+  type CascadeDesign,
+} from "@forgelab/reactor-components";
 import { buildStarterAssembly, buildOverloadDemo } from "./scenes.js";
 
 export type GizmoMode = "translate" | "rotate";
+
+/** Engineering overlay channels. Presentation only: the solver never reads this. */
+export type HazardChannel =
+  "off" | "radiant" | "hot-gas" | "fire" | "gas-cloud" | "pressure" | "debris" | "electrical";
+
+export type BottomTab = "failures" | "cascade";
+
+export type CascadeDemo = "unprotected" | "protected" | "breaker-only";
+
+const CASCADE_DEMOS: Record<CascadeDemo, { design: CascadeDesign; title: string }> = {
+  unprotected: { design: UNPROTECTED_DESIGN, title: "Cascade — unprotected plant" },
+  protected: { design: PROTECTED_DESIGN, title: "Cascade — protected plant" },
+  "breaker-only": {
+    design: { ...UNPROTECTED_DESIGN, fastArcProtection: true },
+    title: "Cascade — fast breaker only",
+  },
+};
+
+/** Real-time budget per frame for re-simulating to a replay target. */
+const REPLAY_BUDGET_MS = 25;
 
 /**
  * Everything the interface needs to draw itself, derived from a simulation snapshot.
@@ -57,6 +85,12 @@ export interface UiState {
   readonly diagnostics: readonly string[];
   readonly maxUtilization: number;
   readonly status: string;
+  readonly cascade: CascadeSnapshot | undefined;
+  readonly hazardView: HazardChannel;
+  readonly bottomTab: BottomTab;
+  readonly selectedEventId: string | null;
+  /** Progress of a jump to an earlier or later instant, re-simulated deterministically. */
+  readonly replay: { readonly targetTick: number; readonly progress: number } | null;
 }
 
 type Listener = () => void;
@@ -86,6 +120,10 @@ export class ForgeLabStore {
   #status = "Ready.";
   #lastPublishedTick = -1;
   #lastPublishAtMs = 0;
+  #hazardView: HazardChannel = "off";
+  #bottomTab: BottomTab = "failures";
+  #selectedEventId: string | null = null;
+  #replay: { targetTick: number; startTick: number; resumeSpeed: number } | null = null;
 
   constructor() {
     this.#world = new SimulationWorld({ name: "Starter Assembly" });
@@ -118,6 +156,10 @@ export class ForgeLabStore {
    * what the simulation computes.
    */
   advance(realDeltaSec: number): void {
+    if (this.#replay !== null) {
+      this.#advanceReplay();
+      return;
+    }
     const steps = this.#loop.advance(realDeltaSec);
     if (steps === 0) return;
     this.#publishThrottled();
@@ -136,6 +178,81 @@ export class ForgeLabStore {
   reset(): void {
     this.#loop.reset();
     this.#status = "Reset to the authored placement.";
+    this.#publish();
+  }
+
+  /* -------------------------------------------------------------------------------- *
+   * Cascade: hazard view and replay
+   * -------------------------------------------------------------------------------- */
+
+  setHazardView(channel: HazardChannel): void {
+    this.#hazardView = channel;
+    this.#publish();
+  }
+
+  setBottomTab(tab: BottomTab): void {
+    this.#bottomTab = tab;
+    this.#publish();
+  }
+
+  /**
+   * Jumps to the instant a cascade event happened.
+   *
+   * There is no recording to scrub through. The simulation is deterministic, so the
+   * world is reset and re-simulated to the event's tick: the replay *is* the simulation,
+   * bit for bit. Jumping forward simply runs ahead.
+   */
+  jumpToEvent(eventId: string): void {
+    const event = this.#world.getSnapshot().cascade?.events.find((e) => e.id === eventId);
+    if (event === undefined) return;
+    this.#selectedEventId = eventId;
+    this.#selectedId = event.componentId;
+    this.#startReplay(event.tick + 1);
+    this.#status = `Replaying to ${event.id} at t = ${event.timeSec.toFixed(1)} s...`;
+    this.#publish();
+  }
+
+  /** Restarts the run from the authored design and plays the cascade at 10x. */
+  watchCascade(): void {
+    this.#replay = null;
+    this.#loop.reset();
+    this.#selectedEventId = null;
+    this.#bottomTab = "cascade";
+    this.setSpeed(10);
+    this.#status = "Watching the cascade unfold from the start at 10x.";
+    this.#publish();
+  }
+
+  loadCascadeDemo(demo: CascadeDemo): void {
+    const { design, title } = CASCADE_DEMOS[demo];
+    this.#replaceWorld(new SimulationWorld({ name: title }), (world) => {
+      buildReferenceCascade(world, design);
+    });
+    this.#bottomTab = "cascade";
+    this.#selectedEventId = null;
+    this.#showCenterOfMass = false;
+    this.#status = `${title}: one induced fault, a degraded joint on the switchgear bus. Press Play (30x is useful).`;
+    this.#publish();
+  }
+
+  #startReplay(targetTick: number): void {
+    const resumeSpeed = 0;
+    if (targetTick < this.#world.tick) this.#loop.reset();
+    this.#loop.speed = 0;
+    this.#replay = { targetTick, startTick: this.#world.tick, resumeSpeed };
+  }
+
+  #advanceReplay(): void {
+    const replay = this.#replay!;
+    const started = performance.now();
+    while (this.#world.tick < replay.targetTick && performance.now() - started < REPLAY_BUDGET_MS) {
+      this.#loop.stepExact(Math.min(60, replay.targetTick - this.#world.tick));
+    }
+    if (this.#world.tick >= replay.targetTick) {
+      this.#replay = null;
+      this.#loop.speed = replay.resumeSpeed;
+      this.#status = `At t = ${this.#world.simulatedTimeSec.toFixed(1)} s. Paused on the selected event.`;
+    }
     this.#publish();
   }
 
@@ -376,6 +493,8 @@ export class ForgeLabStore {
 
   #adoptWorld(world: SimulationWorld): void {
     const speed = this.#loop.speed;
+    this.#replay = null;
+    this.#selectedEventId = null;
     this.#world = world;
     this.#loop = new SimulationLoop(world, { speed });
     this.#selectedId = null;
@@ -490,6 +609,22 @@ export class ForgeLabStore {
       diagnostics: snapshot.diagnostics,
       maxUtilization,
       status: this.#status,
+      cascade: snapshot.cascade,
+      hazardView: this.#hazardView,
+      bottomTab: this.#bottomTab,
+      selectedEventId: this.#selectedEventId,
+      replay:
+        this.#replay === null
+          ? null
+          : {
+              targetTick: this.#replay.targetTick,
+              progress:
+                (this.#world.tick - Math.min(this.#replay.startTick, this.#world.tick)) /
+                Math.max(
+                  this.#replay.targetTick - Math.min(this.#replay.startTick, this.#world.tick),
+                  1,
+                ),
+            },
     };
   }
 }

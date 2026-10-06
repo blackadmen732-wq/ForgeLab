@@ -45,6 +45,17 @@ describe("material catalogue", () => {
       // Metallic resistivity in ohm-metres is on the order of 1e-8 .. 1e-6.
       expect(material.electricalResistivityOhmM).toBeGreaterThan(1e-9);
       expect(material.electricalResistivityOhmM).toBeLessThan(1e-5);
+      // Metallic specific heats near 300 K: ~130 (W, Pb) .. ~1000 (Al alloys) J/(kg*K).
+      expect(material.specificHeatJkgK).toBeGreaterThan(100);
+      expect(material.specificHeatJkgK).toBeLessThan(1000);
+      // Melting starts above the service limit and below tungsten's 3695 K.
+      expect(material.meltingPointK).toBeGreaterThan(material.maxOperatingTemperatureK);
+      expect(material.meltingPointK).toBeLessThanOrEqual(3700);
+      // Latent heats of fusion for metals: tens to a few hundred kJ/kg.
+      expect(material.latentHeatOfFusionJkg).toBeGreaterThan(5e4);
+      expect(material.latentHeatOfFusionJkg).toBeLessThan(5e5);
+      expect(material.emissivity).toBeGreaterThan(0);
+      expect(material.emissivity).toBeLessThanOrEqual(1);
     }
   });
 

@@ -80,4 +80,4 @@ export function makeSettings(overrides: Partial<SimulationSettings> = {}): Simul
  * `fixedTimestepSec`, so the sequence of simulated states is identical at every speed;
  * only how fast you travel along it differs.
  */
-export const SIMULATION_SPEEDS: readonly number[] = Object.freeze([0, 1, 2, 5, 10]);
+export const SIMULATION_SPEEDS: readonly number[] = Object.freeze([0, 1, 2, 5, 10, 30]);

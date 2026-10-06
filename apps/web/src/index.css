@@ -392,3 +392,239 @@ body {
   color: var(--warn);
   font-size: 11px;
 }
+
+/* ----- bottom tabs ----- */
+
+.panel--tall {
+  flex-basis: 300px;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.tab {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.tab--active {
+  color: var(--text);
+  border-color: var(--panel-border);
+  background: #0f151d;
+}
+
+/* ----- cascade ----- */
+
+.cascade__summary {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cascade__diagnosis {
+  margin: 0;
+  padding: 6px 8px;
+  border-left: 3px solid var(--warn);
+  background: #0f151d;
+}
+
+.timeline {
+  position: relative;
+  height: 18px;
+  margin: 4px 6px 10px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.timeline__marker {
+  position: absolute;
+  top: 3px;
+  width: 9px;
+  height: 9px;
+  margin-left: -4px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  padding: 0;
+}
+
+.timeline__marker--selected {
+  outline: 2px solid var(--text);
+}
+
+.timeline__now {
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  width: 1px;
+  background: var(--accent);
+}
+
+.cascade__events {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.cascade__event {
+  padding: 5px 0;
+  border-top: 1px solid var(--panel-border);
+}
+
+.cascade__event--chain .cascade__kind {
+  color: var(--warn);
+}
+
+.cascade__event--selected {
+  background: #172230;
+}
+
+.cascade__jump {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cascade__depth {
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cascade__id,
+.cascade__time,
+.cascade__component,
+.cascade__energy {
+  color: var(--text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cascade__kind {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.cascade__description,
+.cascade__parents {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.cascade__parents {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.cascade__confidence {
+  margin-top: 10px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.cascade__confidence ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.confidence {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.confidence--supported {
+  color: var(--accent);
+}
+
+.confidence--approximate {
+  color: var(--warn);
+}
+
+.confidence--reduced {
+  color: var(--danger);
+}
+
+.cells {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0 10px;
+}
+
+.cells__cell {
+  flex: 1;
+  height: 14px;
+  border-radius: 2px;
+}
+
+/* ----- hazard legend ----- */
+
+.legend {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 240px;
+  padding: 8px 10px;
+  background: rgba(13, 17, 23, 0.88);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.legend__title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.legend__scale {
+  display: flex;
+  height: 8px;
+}
+
+.legend__scale span {
+  flex: 1;
+}
+
+.legend__ends {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-dim);
+}
+
+.legend__note {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+}

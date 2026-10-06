@@ -30,6 +30,9 @@ import {
   computeAssemblyMassProperties,
 } from "./systems/center-of-mass.js";
 import { solveStructure } from "./systems/structural.js";
+import { CascadeSolver } from "./cascade/solver.js";
+import type { CascadePlantSpec } from "./cascade/spec.js";
+import type { CascadeSnapshot } from "./cascade/types.js";
 
 export type { BuiltInDynamicsBackend };
 
@@ -51,6 +54,8 @@ export interface SimulationSnapshot {
   readonly failures: readonly FailureEvent[];
   /** Problems with the model rather than with the structure. */
   readonly diagnostics: readonly string[];
+  /** Cascade solver state, when the assembly declares a plant. */
+  readonly cascade?: CascadeSnapshot;
 }
 
 export interface WorldOptions {
@@ -81,6 +86,9 @@ export class SimulationWorld {
   #simulatedTimeSec: Seconds = 0;
   #idCounter = 0;
   #dirty = true;
+  #cascade: CascadeSolver | undefined;
+  /** Structural failures raised since the cascade last stepped. */
+  #pendingStructuralFailures: FailureEvent[] = [];
 
   constructor(options: WorldOptions = {}) {
     this.#name = options.name ?? "Untitled Assembly";
@@ -172,6 +180,14 @@ export class SimulationWorld {
     this.#failedComponentIds.delete(id);
     this.#dirty = true;
     this.#refreshComponentConnections();
+    const plant = this.#cascade?.spec;
+    if (plant !== undefined) {
+      this.setCascadePlant({
+        ...plant,
+        nodes: plant.nodes.filter((node) => node.componentId !== id),
+        faults: (plant.faults ?? []).filter((fault) => fault.componentId !== id),
+      });
+    }
   }
 
   /** Moves/rotates a component. This edits the design, so it also resets its live state. */
@@ -343,6 +359,7 @@ export class SimulationWorld {
       simulatedTimeSec: this.#simulatedTimeSec,
       tick: this.#tick,
       previouslyFailedComponentIds: this.#failedComponentIds,
+      ...(this.#cascade === undefined ? {} : { hotStrength: this.#cascade.yieldStrengthFactors() }),
     });
 
     for (const [id, state] of result.states) {
@@ -352,15 +369,7 @@ export class SimulationWorld {
       if (state.structural.failed) this.#failedComponentIds.add(id);
     }
 
-    for (const failure of result.failures) {
-      const key = failureKey(failure);
-      if (this.#raisedFailureKeys.has(key)) continue;
-      this.#raisedFailureKeys.add(key);
-      this.#failures.push(failure);
-    }
-    if (this.#failures.length > this.#settings.maxFailureLogEntries) {
-      this.#failures = this.#failures.slice(-this.#settings.maxFailureLogEntries);
-    }
+    this.#pendingStructuralFailures.push(...this.#logFailures(result.failures));
 
     this.#diagnostics = Object.freeze([...result.diagnostics]);
     this.#dirty = false;
@@ -389,9 +398,71 @@ export class SimulationWorld {
       this.#components.set(id, withPhysical(component, physical));
     }
 
+    if (this.#cascade !== undefined) {
+      this.#cascade.step({
+        components: this.listComponents(),
+        connections: this.listConnections(),
+        tick: this.#tick,
+        timeSec: this.#simulatedTimeSec,
+        dtSec: this.#settings.fixedTimestepSec,
+        gravityMps2: this.#settings.gravityMps2,
+        groundLevelM: this.#settings.groundLevelM,
+        newStructuralFailures: this.#pendingStructuralFailures,
+      });
+      this.#pendingStructuralFailures = [];
+      this.#logFailures(this.#cascade.drainFailures());
+      this.#dirty = true;
+    }
+
     this.#tick += 1;
     this.#simulatedTimeSec = this.#tick * this.#settings.fixedTimestepSec;
     if (updates.size > 0) this.#dirty = true;
+  }
+
+  /** Appends failures not already raised; returns the ones that were new. */
+  #logFailures(failures: readonly FailureEvent[]): FailureEvent[] {
+    const fresh: FailureEvent[] = [];
+    for (const failure of failures) {
+      const key = failureKey(failure);
+      if (this.#raisedFailureKeys.has(key)) continue;
+      this.#raisedFailureKeys.add(key);
+      this.#failures.push(failure);
+      fresh.push(failure);
+    }
+    if (this.#failures.length > this.#settings.maxFailureLogEntries) {
+      this.#failures = this.#failures.slice(-this.#settings.maxFailureLogEntries);
+    }
+    return fresh;
+  }
+
+  /* ---------------------------------------------------------------------------------- *
+   * Cascade
+   * ---------------------------------------------------------------------------------- */
+
+  /**
+   * Declares what each component physically is (battery, pipe, magnet...) so the cascade
+   * solver can model how failures propagate. Passing `undefined` removes the plant.
+   * The cascade restarts from the current design: replacing a plant is an edit.
+   */
+  setCascadePlant(spec: CascadePlantSpec | undefined): void {
+    if (spec !== undefined) {
+      for (const node of spec.nodes) {
+        if (!this.#components.has(node.componentId)) {
+          throw new Error(`Cascade plant refers to unknown component "${node.componentId}".`);
+        }
+      }
+    }
+    this.#cascade = spec === undefined ? undefined : new CascadeSolver(spec);
+    this.#dirty = true;
+  }
+
+  get cascadePlant(): CascadePlantSpec | undefined {
+    return this.#cascade?.spec;
+  }
+
+  /** The live cascade solver, for tests and tools. Read-only use only. */
+  get cascade(): CascadeSolver | undefined {
+    return this.#cascade;
   }
 
   /** Runs `count` fixed steps. Equivalent to calling `step()` that many times. */
@@ -414,7 +485,9 @@ export class SimulationWorld {
     this.#failures = [];
     this.#raisedFailureKeys.clear();
     this.#failedComponentIds.clear();
+    this.#pendingStructuralFailures = [];
     this.#diagnostics = Object.freeze([]);
+    if (this.#cascade !== undefined) this.#cascade = new CascadeSolver(this.#cascade.spec);
     this.#dirty = true;
     this.solve();
   }
@@ -431,7 +504,17 @@ export class SimulationWorld {
       assembly: computeAssemblyMassProperties(components),
       failures: Object.freeze([...this.#failures]),
       diagnostics: this.#diagnostics,
+      ...(this.#cascade === undefined
+        ? {}
+        : { cascade: this.#cascade.snapshot((id) => this.#describe(id)) }),
     });
+  }
+
+  #describe(id: ComponentId): string {
+    const component = this.#components.get(id);
+    return component === undefined || component.label === component.type
+      ? `"${id}"`
+      : `${component.label} ("${id}")`;
   }
 
   /**
