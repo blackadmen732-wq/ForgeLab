@@ -34,6 +34,7 @@ const CATEGORY_LABELS: Readonly<Record<MaterialCategory, string>> = {
   "insulator-ceramic": "Insulators & ceramics",
   nuclear: "Nuclear & blanket",
   civil: "Civil",
+  electrochemical: "Electrochemical cells",
 };
 const CATEGORY_ORDER = Object.keys(CATEGORY_LABELS) as MaterialCategory[];
 

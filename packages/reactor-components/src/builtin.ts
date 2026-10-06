@@ -1252,6 +1252,52 @@ export const INTERLOCK = define({
 });
 
 /** Catalogue in a fixed order. The component browser renders it as given. */
+
+/**
+ * Battery Module — one rack-mounted lithium-ion module, 0.8 × 0.25 × 0.6 m by default
+ * (≈ 160 kg of cells). Its mass and heat capacity come from its internals: about half the
+ * envelope is cells. Stack modules into racks; a part is one lumped temperature, so size
+ * a part like a real module, not a whole rack. Not
+ * yet on the electrical network (it stores energy but neither charges nor discharges);
+ * what it does is fail thermally — self-heating, runaway, a vent jet fire for NMC or
+ * unburned gas for LFP — from heat that reaches it. See docs/HAZARDS.md.
+ */
+function batteryModule(chemistry: "nmc" | "lfp", label: string) {
+  return define({
+    type: `battery-module-${chemistry}`,
+    name: `Battery Module (${label})`,
+    description: `Lithium-ion ${label} module. Heated past about T1 it self-heats; past T2 it runs away and vents gas. Rack several to see runaway spread from module to module.`,
+    category: "Electrical",
+    role: "structure",
+    material: MaterialIds.StructuralSteel,
+    dimensions: [
+      dim("widthM", "Width", 0.8, 0.2, 3),
+      dim("heightM", "Height", 0.25, 0.1, 1),
+      dim("depthM", "Depth", 0.6, 0.2, 2),
+    ],
+    shape: (d) => {
+      const w = d["widthM"]!;
+      const ht = d["heightM"]!;
+      const dp = d["depthM"]!;
+      return {
+        geometry: boxGeometry(vec3(w, ht, dp)),
+        sockets: [
+          base(ht),
+          structural("top", vec3(0, ht / 2, 0), UP),
+          mount("side-nx", vec3(-w / 2, 0, 0), NX),
+          mount("side-px", vec3(w / 2, 0, 0), PX),
+        ],
+      };
+    },
+    dimensionsOf: (g) =>
+      g.kind === "box" ? { widthM: g.sizeM.x, heightM: g.sizeM.y, depthM: g.sizeM.z } : {},
+    keyProperty: `${label} · Li-ion`,
+  });
+}
+
+export const BATTERY_MODULE_NMC = batteryModule("nmc", "NMC");
+export const BATTERY_MODULE_LFP = batteryModule("lfp", "LFP");
+
 export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.freeze([
   STRUCTURAL_BEAM,
   STRUCTURAL_PLATFORM,
@@ -1274,6 +1320,8 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   GRID_CONNECTION,
   BUS_BAR,
   BREAKER,
+  BATTERY_MODULE_NMC,
+  BATTERY_MODULE_LFP,
   BREEDING_BLANKET,
   COOLANT_PIPE,
   COOLANT_PUMP,

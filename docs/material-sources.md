@@ -179,40 +179,44 @@ yet derate stiffness or strength with temperature.
 
 ## Sources
 
-| Key                     | Source                                                                                                                                                                     |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `crc`                   | CRC Handbook of Chemistry and Physics (W. M. Haynes, ed.), sections on properties of the elements, electrical resistivity of pure metals and thermal conductivity.         |
-| `astm-a36`              | ASTM A36/A36M, Standard Specification for Carbon Structural Steel (minimum mechanical properties).                                                                         |
-| `astm-a572`             | ASTM A572/A572M, High-Strength Low-Alloy Columbium-Vanadium Structural Steel (Grade 50 minimums).                                                                          |
-| `astm-a240`             | ASTM A240/A240M, Chromium and Chromium-Nickel Stainless Steel Plate, Sheet, and Strip (minimum mechanical properties for 304L and 316L).                                   |
-| `astm-b265`             | ASTM B265, Titanium and Titanium Alloy Strip, Sheet, and Plate (Grade 5 minimums).                                                                                         |
-| `astm-b230`             | ASTM B230/B230M, Aluminum 1350-H19 Wire for Electrical Purposes (minimum conductivity 61.0 % IACS).                                                                        |
-| `astm-b170`             | ASTM B170, Oxygen-Free Electrolytic Copper — Refinery Shapes (C10100, minimum conductivity 101 % IACS).                                                                    |
-| `en1993-1-1`            | EN 1993-1-1 (Eurocode 3), Design of steel structures — General rules, §3.2.6.                                                                                              |
-| `en1993-1-2`            | EN 1993-1-2 (Eurocode 3), Structural fire design, Table 3.1: reduction factors for carbon steel at elevated temperature.                                                   |
-| `en1992`                | EN 1992-1-1 Table 3.1 (strength classes) and EN 1992-1-2 §3.3 (thermal properties of concrete); EN 1991-1-1 Annex A (densities).                                           |
-| `asm-datasheet`         | ASM International / producer datasheets for the named wrought grade (typical values; ASM Handbook Vol. 2 for aluminium alloys).                                            |
-| `supplier-datasheet`    | Producer datasheets for the named grade (typical values; supplier-to-supplier spread is stated in the note).                                                               |
-| `toyo-tanso-ig110`      | Toyo Tanso IG-110 isotropic graphite, typical properties datasheet.                                                                                                        |
-| `coorstek-ad995`        | CoorsTek AD-995 (99.5 % alumina), material properties datasheet.                                                                                                           |
-| `cvd-sic-datasheet`     | Producer datasheets for high-purity CVD β-SiC (Rohm and Haas / Dow 'CVD SILICON CARBIDE'; CoorsTek PureSiC).                                                               |
-| `dupont-kapton-hn`      | DuPont Kapton HN polyimide film, general specifications (25 µm film unless stated).                                                                                        |
-| `nist-cryo`             | NIST Cryogenic Material Properties database (curve fits for G-10CR and other cryogenic materials).                                                                         |
-| `iec-60502`             | IEC 60502-1/-2, Power cables with extruded insulation: maximum conductor temperatures for XLPE (90 °C normal, 250 °C short circuit).                                       |
-| `iec-60296`             | IEC 60296, Fluids for electrotechnical applications — mineral insulating oils (flash point and density limits).                                                            |
-| `polymer-handbook`      | Polymer handbooks (Brandrup, Immergut & Grulke, Polymer Handbook; SFPE Handbook of Fire Protection Engineering) for polyethylene density, heat of combustion and ignition. |
-| `materion-s65`          | Materion S-65 beryllium, specification minimums and typical physical properties.                                                                                           |
-| `bottura-2000`          | L. Bottura, 'A practical fit for the critical surface of NbTi', IEEE Trans. Appl. Supercond. 10 (2000) 1054; after M. S. Lubell, IEEE Trans. Magn. 19 (1983) 754.          |
-| `godeke-2006`           | A. Godeke, 'A review of the properties of Nb3Sn and their variation with A15 composition, morphology and strain state', Supercond. Sci. Technol. 19 (2006) R68.            |
-| `wu-1987`               | M. K. Wu et al., 'Superconductivity at 93 K in a new mixed-phase Y-Ba-Cu-O compound system at ambient pressure', Phys. Rev. Lett. 58 (1987) 908.                           |
-| `nagamatsu-2001`        | J. Nagamatsu et al., 'Superconductivity at 39 K in magnesium diboride', Nature 410 (2001) 63.                                                                              |
-| `rieth-2003`            | M. Rieth et al., 'EUROFER 97: tensile, Charpy, creep and structural tests', Forschungszentrum Karlsruhe report FZKA 6911 (2003).                                           |
-| `mas-de-les-valls-2008` | E. Mas de les Valls et al., 'Lead–lithium eutectic material database for nuclear fusion technology', J. Nucl. Mater. 376 (2008) 353.                                       |
-| `iapws`                 | IAPWS-95 / IAPWS-IF97 formulations for the thermodynamic properties of ordinary water substance.                                                                           |
-| `nist-webbook`          | NIST Chemistry WebBook, Thermophysical Properties of Fluid Systems (helium, normal deuterium).                                                                             |
-| `nubase-2020`           | F. G. Kondev et al., 'The NUBASE2020 evaluation of nuclear physics properties', Chin. Phys. C 45 (2021) 030001 (tritium half-life 12.32 y).                                |
-| `fusion-physics`        | Standard fusion-reaction energetics: D + T → ⁴He (3.52 MeV) + n (14.07 MeV), Q = 17.59 MeV; ⁶Li + n → T + ⁴He + 4.78 MeV.                                                  |
-| `derived`               | Derived by ForgeLab from other cited values; the derivation is stated in the value's note.                                                                                 |
+| Key                     | Source                                                                                                                                                                                                                  |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `crc`                   | CRC Handbook of Chemistry and Physics (W. M. Haynes, ed.), sections on properties of the elements, electrical resistivity of pure metals and thermal conductivity.                                                      |
+| `astm-a36`              | ASTM A36/A36M, Standard Specification for Carbon Structural Steel (minimum mechanical properties).                                                                                                                      |
+| `astm-a572`             | ASTM A572/A572M, High-Strength Low-Alloy Columbium-Vanadium Structural Steel (Grade 50 minimums).                                                                                                                       |
+| `astm-a240`             | ASTM A240/A240M, Chromium and Chromium-Nickel Stainless Steel Plate, Sheet, and Strip (minimum mechanical properties for 304L and 316L).                                                                                |
+| `astm-b265`             | ASTM B265, Titanium and Titanium Alloy Strip, Sheet, and Plate (Grade 5 minimums).                                                                                                                                      |
+| `astm-b230`             | ASTM B230/B230M, Aluminum 1350-H19 Wire for Electrical Purposes (minimum conductivity 61.0 % IACS).                                                                                                                     |
+| `astm-b170`             | ASTM B170, Oxygen-Free Electrolytic Copper — Refinery Shapes (C10100, minimum conductivity 101 % IACS).                                                                                                                 |
+| `en1993-1-1`            | EN 1993-1-1 (Eurocode 3), Design of steel structures — General rules, §3.2.6.                                                                                                                                           |
+| `en1993-1-2`            | EN 1993-1-2 (Eurocode 3), Structural fire design, Table 3.1: reduction factors for carbon steel at elevated temperature.                                                                                                |
+| `en1992`                | EN 1992-1-1 Table 3.1 (strength classes) and EN 1992-1-2 §3.3 (thermal properties of concrete); EN 1991-1-1 Annex A (densities).                                                                                        |
+| `asm-datasheet`         | ASM International / producer datasheets for the named wrought grade (typical values; ASM Handbook Vol. 2 for aluminium alloys).                                                                                         |
+| `supplier-datasheet`    | Producer datasheets for the named grade (typical values; supplier-to-supplier spread is stated in the note).                                                                                                            |
+| `toyo-tanso-ig110`      | Toyo Tanso IG-110 isotropic graphite, typical properties datasheet.                                                                                                                                                     |
+| `coorstek-ad995`        | CoorsTek AD-995 (99.5 % alumina), material properties datasheet.                                                                                                                                                        |
+| `cvd-sic-datasheet`     | Producer datasheets for high-purity CVD β-SiC (Rohm and Haas / Dow 'CVD SILICON CARBIDE'; CoorsTek PureSiC).                                                                                                            |
+| `dupont-kapton-hn`      | DuPont Kapton HN polyimide film, general specifications (25 µm film unless stated).                                                                                                                                     |
+| `nist-cryo`             | NIST Cryogenic Material Properties database (curve fits for G-10CR and other cryogenic materials).                                                                                                                      |
+| `iec-60502`             | IEC 60502-1/-2, Power cables with extruded insulation: maximum conductor temperatures for XLPE (90 °C normal, 250 °C short circuit).                                                                                    |
+| `iec-60296`             | IEC 60296, Fluids for electrotechnical applications — mineral insulating oils (flash point and density limits).                                                                                                         |
+| `polymer-handbook`      | Polymer handbooks (Brandrup, Immergut & Grulke, Polymer Handbook; SFPE Handbook of Fire Protection Engineering) for polyethylene density, heat of combustion and ignition.                                              |
+| `materion-s65`          | Materion S-65 beryllium, specification minimums and typical physical properties.                                                                                                                                        |
+| `bottura-2000`          | L. Bottura, 'A practical fit for the critical surface of NbTi', IEEE Trans. Appl. Supercond. 10 (2000) 1054; after M. S. Lubell, IEEE Trans. Magn. 19 (1983) 754.                                                       |
+| `godeke-2006`           | A. Godeke, 'A review of the properties of Nb3Sn and their variation with A15 composition, morphology and strain state', Supercond. Sci. Technol. 19 (2006) R68.                                                         |
+| `wu-1987`               | M. K. Wu et al., 'Superconductivity at 93 K in a new mixed-phase Y-Ba-Cu-O compound system at ambient pressure', Phys. Rev. Lett. 58 (1987) 908.                                                                        |
+| `nagamatsu-2001`        | J. Nagamatsu et al., 'Superconductivity at 39 K in magnesium diboride', Nature 410 (2001) 63.                                                                                                                           |
+| `rieth-2003`            | M. Rieth et al., 'EUROFER 97: tensile, Charpy, creep and structural tests', Forschungszentrum Karlsruhe report FZKA 6911 (2003).                                                                                        |
+| `mas-de-les-valls-2008` | E. Mas de les Valls et al., 'Lead–lithium eutectic material database for nuclear fusion technology', J. Nucl. Mater. 376 (2008) 353.                                                                                    |
+| `iapws`                 | IAPWS-95 / IAPWS-IF97 formulations for the thermodynamic properties of ordinary water substance.                                                                                                                        |
+| `nist-webbook`          | NIST Chemistry WebBook, Thermophysical Properties of Fluid Systems (helium, normal deuterium).                                                                                                                          |
+| `nubase-2020`           | F. G. Kondev et al., 'The NUBASE2020 evaluation of nuclear physics properties', Chin. Phys. C 45 (2021) 030001 (tritium half-life 12.32 y).                                                                             |
+| `fusion-physics`        | Standard fusion-reaction energetics: D + T → ⁴He (3.52 MeV) + n (14.07 MeV), Q = 17.59 MeV; ⁶Li + n → T + ⁴He + 4.78 MeV.                                                                                               |
+| `feng-2018`             | X. Feng et al., 'Thermal runaway mechanism of lithium ion battery for electric vehicles: A review', Energy Storage Materials 10 (2018) 246–267. T1/T2/T3 definitions and ranges by chemistry.                           |
+| `golubkov-2014`         | A. W. Golubkov et al., 'Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes', RSC Advances 4 (2014) 3633–3642. Maximum temperatures and vent gas amount and composition. |
+| `baird-2020`            | A. R. Baird et al., 'Explosion hazards from lithium-ion battery vent gas', Journal of Power Sources 446 (2020) 227257. Vent-gas flammability limits and combustion properties.                                          |
+| `li-ion-cell-typical`   | Typical large-format prismatic Li-ion cell density and specific heat (≈ 0.9–1.1 kJ/(kg·K)) as quoted across the battery thermal-modelling literature.                                                                   |
+| `derived`               | Derived by ForgeLab from other cited values; the derivation is stated in the value's note.                                                                                                                              |
 
 ## Library entries
 
@@ -703,6 +707,43 @@ Generated from the library; each row is one value with its source and confidence
 
 - Reference data only: concrete is strong in compression and weak in tension, which the structural solver does not distinguish.
 - Its hydrogen (in bound water) slows neutrons and its mass stops gamma rays: the standard biological shield.
+
+### Li-ion cell (NMC) — large-format prismatic, NMC / graphite, charged
+
+`li-ion-nmc-cell` · electrochemical · Energy storage that can heat itself into thermal runaway and vent burning gas.
+
+| Property                    | Value                                 | Source                | Confidence  | Note                                 |
+| --------------------------- | ------------------------------------- | --------------------- | ----------- | ------------------------------------ |
+| Density                     | 2600 kg/m³ (range 2300–2900)          | `li-ion-cell-typical` | approximate | Cell mass over its envelope volume.  |
+| Specific heat               | 1000 J/(kg·K) (range 900–1100)        | `li-ion-cell-typical` | approximate |                                      |
+| Max. service temperature    | 333.15 K (60 °C)                      | `li-ion-cell-typical` | typical     |                                      |
+| T1, self-heating onset      | 373.15 K (100 °C) (range 80–140 °C)   | `feng-2018`           | approximate | Self-heating faster than 0.02 K/min. |
+| T2, runaway trigger         | 473.15 K (200 °C) (range 150–250 °C)  | `feng-2018`           | approximate | Self-heating faster than 1 K/s.      |
+| T3, maximum                 | 1053.15 K (780 °C) (range 680–900 °C) | `golubkov-2014`       | approximate |                                      |
+| Reaction time               | 10 s (range 3–30)                     | `feng-2018`           | approximate |                                      |
+| Vent gas mass fraction      | 0.10 (range 0.05–0.2)                 | `golubkov-2014`       | approximate | Gas only.                            |
+| Vent gas heat of combustion | 12 MJ/kg (range 8–16)                 | `baird-2020`          | approximate | H₂, CO, CO₂, hydrocarbons.           |
+| Vent gas auto-ignition      | 773.15 K (500 °C) (range 450–600 °C)  | `baird-2020`          | approximate |                                      |
+| Vent gas LFL                | 0.075 vol (range 0.06–0.09)           | `baird-2020`          | approximate |                                      |
+| Vent gas molar mass         | 0.028 kg/mol                          | `golubkov-2014`       | approximate |                                      |
+
+### Li-ion cell (LFP) — large-format prismatic, LiFePO₄ / graphite, charged
+
+`li-ion-lfp-cell` · electrochemical · Safer chemistry: runs away cooler, but its unburned vent gas can collect.
+
+| Property                                                    | Value                                | Source                        | Confidence  | Note                                                  |
+| ----------------------------------------------------------- | ------------------------------------ | ----------------------------- | ----------- | ----------------------------------------------------- |
+| Density                                                     | 2400 kg/m³ (range 2100–2700)         | `li-ion-cell-typical`         | approximate |                                                       |
+| Specific heat                                               | 1000 J/(kg·K) (range 900–1100)       | `li-ion-cell-typical`         | approximate |                                                       |
+| Max. service temperature                                    | 333.15 K (60 °C)                     | `li-ion-cell-typical`         | typical     |                                                       |
+| T1, self-heating onset                                      | 393.15 K (120 °C) (range 90–160 °C)  | `feng-2018`                   | approximate |                                                       |
+| T2, runaway trigger                                         | 513.15 K (240 °C) (range 195–300 °C) | `feng-2018`                   | approximate |                                                       |
+| T3, maximum                                                 | 693.15 K (420 °C) (range 400–500 °C) | `golubkov-2014`               | approximate | Golubkov measured ≈ 404 °C.                           |
+| Reaction time                                               | 30 s (range 10–60)                   | `feng-2018`                   | approximate |                                                       |
+| Vent gas mass fraction                                      | 0.04 (range 0.02–0.08)               | `golubkov-2014`               | approximate |                                                       |
+| Vent gas heat of combustion, auto-ignition, LFL, molar mass | as NMC                               | `baird-2020`, `golubkov-2014` | approximate | LFP gas is richer in H₂; its LFL sits at the low end. |
+
+Representative values inside the reported ranges; no specific commercial cell is described.
 
 ## Fluids
 

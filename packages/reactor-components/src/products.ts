@@ -1060,6 +1060,146 @@ export const V01_PRODUCTS: Readonly<Record<string, ProductInfo>> = {
     visual: "grid-connection",
     animations: [],
   },
+  "battery-module-nmc": {
+    summary:
+      "Rack-mounted lithium-ion module (NMC). Stores energy — and can heat itself into thermal runaway.",
+    internals: [
+      {
+        id: "cells",
+        name: "Prismatic cells",
+        kind: "electronics",
+        substanceId: "li-ion-nmc-cell",
+        purpose:
+          "The stored energy. Above about T1 they heat themselves; past T2 they run away, release their energy as heat and vent flammable gas.",
+        // Cells fill roughly half a module envelope; cooling plates, spacers and air the rest.
+        volumeFraction: 0.5,
+      },
+      {
+        id: "enclosure",
+        name: "Module enclosure and racking",
+        kind: "structure",
+        substanceId: "structural-steel",
+        purpose:
+          "Steel housing and rails; it absorbs some runaway heat and shields its neighbours.",
+        volumeFraction: 0.04,
+      },
+      {
+        id: "busbars",
+        name: "Cell interconnects",
+        kind: "conductor",
+        substanceId: "copper",
+        purpose: "Join the cells in series and parallel.",
+        volumeFraction: 0.005,
+      },
+      {
+        id: "wiring",
+        name: "Module wiring",
+        kind: "insulation",
+        substanceId: "xlpe",
+        purpose: "Insulated sense and power wiring — a small fire load of its own.",
+        volumeFraction: 0.004,
+      },
+      {
+        id: "bms",
+        name: "Battery management electronics",
+        kind: "electronics",
+        substanceId: null,
+        materialNote: "Printed circuit boards (not catalogued)",
+        purpose: "Measures cell voltages and temperatures (not yet modelled as a protection).",
+      },
+    ],
+    internalsSetMass: true,
+    capabilities: ["thermal"],
+    ratings: () => [rating("Chemistry", "NMC")],
+    failureModes: [
+      {
+        id: "self-heating",
+        name: "Self-heating",
+        system: "thermal",
+        description: "Past T1 the cells' decomposition reactions add heat of their own.",
+      },
+      {
+        id: "runaway",
+        name: "Thermal runaway",
+        system: "thermal",
+        description:
+          "Past T2 the cells release their stored chemical and electrical energy as heat within seconds and vent flammable gas.",
+      },
+    ],
+    audio: "none",
+    visual: "block",
+    animations: [],
+  },
+  "battery-module-lfp": {
+    summary:
+      "Rack-mounted lithium-ion module (LFP). Stores energy — and can heat itself into thermal runaway.",
+    internals: [
+      {
+        id: "cells",
+        name: "Prismatic cells",
+        kind: "electronics",
+        substanceId: "li-ion-lfp-cell",
+        purpose:
+          "The stored energy. Above about T1 they heat themselves; past T2 they run away, release their energy as heat and vent flammable gas.",
+        // Cells fill roughly half a module envelope; cooling plates, spacers and air the rest.
+        volumeFraction: 0.5,
+      },
+      {
+        id: "enclosure",
+        name: "Module enclosure and racking",
+        kind: "structure",
+        substanceId: "structural-steel",
+        purpose:
+          "Steel housing and rails; it absorbs some runaway heat and shields its neighbours.",
+        volumeFraction: 0.04,
+      },
+      {
+        id: "busbars",
+        name: "Cell interconnects",
+        kind: "conductor",
+        substanceId: "copper",
+        purpose: "Join the cells in series and parallel.",
+        volumeFraction: 0.005,
+      },
+      {
+        id: "wiring",
+        name: "Module wiring",
+        kind: "insulation",
+        substanceId: "xlpe",
+        purpose: "Insulated sense and power wiring — a small fire load of its own.",
+        volumeFraction: 0.004,
+      },
+      {
+        id: "bms",
+        name: "Battery management electronics",
+        kind: "electronics",
+        substanceId: null,
+        materialNote: "Printed circuit boards (not catalogued)",
+        purpose: "Measures cell voltages and temperatures (not yet modelled as a protection).",
+      },
+    ],
+    internalsSetMass: true,
+    capabilities: ["thermal"],
+    ratings: () => [rating("Chemistry", "LFP")],
+    failureModes: [
+      {
+        id: "self-heating",
+        name: "Self-heating",
+        system: "thermal",
+        description: "Past T1 the cells' decomposition reactions add heat of their own.",
+      },
+      {
+        id: "runaway",
+        name: "Thermal runaway",
+        system: "thermal",
+        description:
+          "Past T2 the cells release their stored chemical and electrical energy as heat within seconds and vent flammable gas.",
+      },
+    ],
+    audio: "none",
+    visual: "block",
+    animations: [],
+  },
   "bus-bar": {
     summary: "Copper bus bar distributing DC power.",
     internals: [

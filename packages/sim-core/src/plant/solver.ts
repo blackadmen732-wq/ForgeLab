@@ -69,6 +69,10 @@ import {
   hazardBody,
   hazardPairs,
   radiantExchangeW,
+  type CellInventory,
+  cellInventory,
+  runawayEnergyJ,
+  selfHeatingW,
   ShadowIndex,
   unmodelledCombustibles,
 } from "./hazards.js";
@@ -171,6 +175,18 @@ interface ComponentRuntime {
   heatReleaseW: number;
   /** A conductor heated past its melting point: the circuit is open. */
   melted: boolean;
+  /** Battery cells: where they are on the road to runaway. */
+  runaway: "none" | "self-heating" | "runaway" | "spent";
+  /** Runaway heat still to be released, J. */
+  runawayEnergyJ: number;
+  /** Vent gas still to be released, kg. */
+  ventGasKg: number;
+  /** Vent gas burning at the vent over the last step, W. */
+  ventFireW: number;
+  /** Vent gas released unburned so far, kg. */
+  ventedUnburnedKg: number;
+  /** Cell self-heating over the last step, W. */
+  selfHeatingW: number;
 }
 
 interface VesselRuntime {
@@ -190,7 +206,7 @@ interface LoopRuntime {
 }
 
 /** Events on a neighbour that can send heat through space. */
-const SPATIAL_CAUSE_TYPES = ["fire", "over_temperature", "melted"];
+const SPATIAL_CAUSE_TYPES = ["fire", "over_temperature", "melted", "thermal_runaway", "vent_fire"];
 
 export interface PlantStepInput {
   readonly components: readonly SimulationComponent[];
@@ -249,6 +265,10 @@ interface Work {
   spatialSources: Map<string, Map<string, number>>;
   /** Parts that caught fire this step. */
   ignitions: string[];
+  /** Battery parts that passed T1, T2, or lit their vent gas this step. */
+  selfHeatingOnsets: string[];
+  runaways: string[];
+  ventIgnitions: string[];
 }
 
 /**
@@ -285,6 +305,7 @@ export class PlantSolver {
     this.#loops.clear();
     this.#tripped.clear();
     this.#raised.clear();
+    this.#ventLit.clear();
     this.#chains.clear();
     this.#readings.clear();
     this.#lastStates.clear();
@@ -330,6 +351,9 @@ export class PlantSolver {
       spatialHeatW: new Map(),
       spatialSources: new Map(),
       ignitions: [],
+      selfHeatingOnsets: [],
+      runaways: [],
+      ventIgnitions: [],
     };
 
     const sorted =
@@ -441,6 +465,12 @@ export class PlantSolver {
         burnedOut: false,
         heatReleaseW: 0,
         melted: false,
+        runaway: "none",
+        runawayEnergyJ: 0,
+        ventGasKg: 0,
+        ventFireW: 0,
+        ventedUnburnedKg: 0,
+        selfHeatingW: 0,
       });
     }
 
@@ -1695,8 +1725,17 @@ export class PlantSolver {
       });
     });
 
-    const { capacity, conduction, outerArea, superconducting, bodies, pairs, fuel, shadows } =
-      this.#thermalStatic(topology, components);
+    const {
+      capacity,
+      conduction,
+      outerArea,
+      superconducting,
+      bodies,
+      pairs,
+      fuel,
+      shadows,
+      cells,
+    } = this.#thermalStatic(topology, components);
 
     // Bodies whose temperature rides on a coolant loop: heat reaching them through space
     // goes into the loop's coolant.
@@ -1815,6 +1854,64 @@ export class PlantSolver {
             runtime.burning = false;
             runtime.burnedOut = true;
           }
+        }
+      }
+
+      // Battery cells: Arrhenius self-heating below T2; past it, runaway releases the
+      // adiabatic rise to T3 and vents gas over the reaction time. Vent gas that leaves
+      // hotter than its auto-ignition temperature, or meets a fire on the same part, burns
+      // as a jet fire and radiates like any other fire; otherwise it escapes unburned.
+      for (const [id, battery] of cells) {
+        const runtime = this.#components.get(id)!;
+        if (step === 0) {
+          runtime.ventFireW = 0;
+          runtime.selfHeatingW = 0;
+        }
+        if (runtime.runaway === "spent") continue;
+        const data = battery.runaway;
+        const t = runtime.temperatureK;
+        if (runtime.runaway !== "runaway") {
+          const w = selfHeatingW(battery, t);
+          add(id, w);
+          runtime.selfHeatingW += w * weight;
+          if (h > 0 && runtime.runaway === "none" && t >= data.selfHeatingOnsetK) {
+            runtime.runaway = "self-heating";
+            work.selfHeatingOnsets.push(id);
+          }
+          if (h > 0 && t >= data.triggerK) {
+            runtime.runaway = "runaway";
+            runtime.runawayEnergyJ = runawayEnergyJ(battery);
+            runtime.ventGasKg = battery.kg * data.ventGasMassFraction;
+            work.runaways.push(id);
+          }
+        }
+        if (runtime.runaway === "runaway" && h > 0) {
+          const energy = Math.min(
+            (runawayEnergyJ(battery) / data.reactionTimeS) * h,
+            runtime.runawayEnergyJ,
+          );
+          runtime.runawayEnergyJ -= energy;
+          add(id, energy / h);
+          const gas = Math.min(
+            ((battery.kg * data.ventGasMassFraction) / data.reactionTimeS) * h,
+            runtime.ventGasKg,
+          );
+          runtime.ventGasKg -= gas;
+          if (gas > 0) {
+            if (t >= data.ventGasAutoIgnitionK || fires.has(id)) {
+              const w = (gas / h) * data.ventGasHeatOfCombustionJPerKg;
+              fires.set(id, (fires.get(id) ?? 0) + w);
+              if (runtime.ventFireW === 0 && !work.ventIgnitions.includes(id)) {
+                if (!this.#ventLit.has(id)) work.ventIgnitions.push(id);
+                this.#ventLit.add(id);
+              }
+              runtime.ventFireW += w * weight;
+            } else {
+              runtime.ventedUnburnedKg += gas;
+            }
+          }
+          if (runtime.runawayEnergyJ <= 1e-6 && runtime.ventGasKg <= 1e-12)
+            runtime.runaway = "spent";
         }
       }
 
@@ -1993,6 +2090,9 @@ export class PlantSolver {
     return cycleHeat;
   }
 
+  /** Battery parts whose vent gas has been lit this run (raised once). */
+  readonly #ventLit = new Set<string>();
+
   #fieldCache: { topology: PlantTopology; couplings: Map<string, GeometricCoupling> } | undefined;
 
   /** Geometric field coefficients for coils the analytic models do not cover (cached). */
@@ -2013,6 +2113,7 @@ export class PlantSolver {
         pairs: readonly HazardPair[];
         shadows: ShadowIndex;
         fuel: Map<string, FuelInventory>;
+        cells: Map<string, CellInventory>;
         unburnable: Map<string, ReturnType<typeof unmodelledCombustibles>>;
       }
     | undefined;
@@ -2053,11 +2154,14 @@ export class PlantSolver {
     // Spatial hazards: equivalent bodies, coupled pairs and burnable inventories.
     const bodies = new Map<string, HazardBody>();
     const fuel = new Map<string, FuelInventory>();
+    const cells = new Map<string, CellInventory>();
     const unburnable = new Map<string, ReturnType<typeof unmodelledCombustibles>>();
     for (const component of components) {
       bodies.set(component.id, hazardBody(component));
       const inventory = fuelInventory(component);
       if (inventory !== null) fuel.set(component.id, inventory);
+      const battery = cellInventory(component);
+      if (battery !== null) cells.set(component.id, battery);
       const unmodelled = unmodelledCombustibles(component);
       if (unmodelled.length > 0) unburnable.set(component.id, unmodelled);
     }
@@ -2072,6 +2176,7 @@ export class PlantSolver {
       pairs,
       shadows: new ShadowIndex([...bodies.values()]),
       fuel,
+      cells,
       unburnable,
     };
     return this.#thermalCache;
@@ -2349,7 +2454,7 @@ export class PlantSolver {
   #thermalFailures(work: Work, components: readonly SimulationComponent[]): void {
     if (work.dt === 0) return;
     const { topology } = work;
-    const { fuel, unburnable } = this.#thermalStatic(topology, components);
+    const { fuel, unburnable, cells } = this.#thermalStatic(topology, components);
     for (const component of components) {
       const runtime = this.#components.get(component.id)!;
       for (const region of unburnable.get(component.id) ?? []) {
@@ -2363,6 +2468,8 @@ export class PlantSolver {
       const inventory = fuel.get(component.id);
       if (inventory !== undefined && work.ignitions.includes(component.id))
         this.#raiseFire(work, component, inventory);
+      const battery = cells.get(component.id);
+      if (battery !== undefined) this.#batteryFailures(work, component, battery);
       if (isSuperconductingCoil(component)) {
         const p = component.parameters;
         const peakFieldT = work.magnets.get(component.id)?.peakFieldT ?? 0;
@@ -2549,6 +2656,92 @@ export class PlantSolver {
     });
   }
 
+  /** Battery cells passing T1, T2, or lighting their vent gas this step. */
+  #batteryFailures(work: Work, component: SimulationComponent, battery: CellInventory): void {
+    const runtime = this.#components.get(component.id)!;
+    const id = component.id;
+    const data = battery.runaway;
+    const chemistry = getSubstance(battery.substanceId).name;
+    const spatial = this.#spatialSource(work, id);
+    const generated = work.heatW.get(id) ?? 0;
+    const heatedBy =
+      spatial !== null && spatial.watts > generated
+        ? ` It is being heated by ${formatQuantity(spatial.watts, "W")} arriving through space from "${spatial.id}"` +
+          (this.#components.get(spatial.id)?.burning === true ||
+          (this.#components.get(spatial.id)?.ventFireW ?? 0) > 0
+            ? ", which is on fire."
+            : ".")
+        : "";
+    const spatialKeys =
+      spatial !== null && spatial.watts > generated
+        ? this.#activeKeysFor([spatial.id], SPATIAL_CAUSE_TYPES)
+        : [];
+    if (work.selfHeatingOnsets.includes(id)) {
+      this.#raise(work, {
+        componentId: id,
+        system: "thermal",
+        failureType: "battery_self_heating",
+        unit: "K",
+        measuredValue: runtime.temperatureK,
+        limitValue: data.selfHeatingOnsetK,
+        summary: `"${id}" cells are self-heating`,
+        cause:
+          `The ${chemistry} cells in "${id}" reached ${formatQuantity(runtime.temperatureK, "K")}, past the ` +
+          `${formatQuantity(data.selfHeatingOnsetK, "K")} onset of self-heating (T1, 0.02 K/min in calorimetry): ` +
+          `their own decomposition reactions now add heat, faster the hotter they get.` +
+          heatedBy,
+        causeKeys: [...this.#activeKeysFor([id], ["over_temperature"]), ...spatialKeys],
+      });
+    }
+    if (work.runaways.includes(id)) {
+      const energy = runawayEnergyJ(battery);
+      this.#raise(work, {
+        componentId: id,
+        system: "thermal",
+        failureType: "thermal_runaway",
+        unit: "K",
+        measuredValue: runtime.temperatureK,
+        limitValue: data.triggerK,
+        summary: `"${id}" is in thermal runaway`,
+        cause:
+          `The cells in "${id}" passed ${formatQuantity(data.triggerK, "K")} (T2), where self-heating exceeds 1 K/s. ` +
+          `Runaway now releases about ${formatQuantity(energy, "J")} over roughly ${formatQuantity(data.reactionTimeS, "s")} ` +
+          `(the cells' rise to ${formatQuantity(data.maximumK, "K")}, T3) and vents ` +
+          `${formatQuantity(battery.kg * data.ventGasMassFraction, "kg")} of flammable gas. Cooling cannot stop it once it has started.` +
+          heatedBy,
+        causeKeys: [
+          ...this.#activeKeysFor([id], ["battery_self_heating", "over_temperature"]),
+          ...spatialKeys,
+        ],
+      });
+    }
+    if (work.ventIgnitions.includes(id)) {
+      const hot = runtime.temperatureK >= data.ventGasAutoIgnitionK;
+      this.#raise(work, {
+        componentId: id,
+        system: "thermal",
+        failureType: "vent_fire",
+        unit: "W",
+        measuredValue: runtime.ventFireW,
+        limitValue: 0,
+        summary: `"${id}" vent gas is burning`,
+        cause: hot
+          ? `Gas venting from the cells in "${id}" leaves at ${formatQuantity(runtime.temperatureK, "K")}, above its ` +
+            `${formatQuantity(data.ventGasAutoIgnitionK, "K")} auto-ignition temperature, and burns as a jet fire at the vent ` +
+            `(about ${formatQuantity(runtime.ventFireW, "W")}).`
+          : `Gas venting from the cells in "${id}" meets the fire already burning on the part and ignites ` +
+            `(about ${formatQuantity(runtime.ventFireW, "W")}).`,
+        causeKeys: this.#activeKeysFor([id], ["thermal_runaway", "fire"]),
+      });
+    }
+    if (runtime.ventedUnburnedKg > 0)
+      addWarning(
+        work,
+        id,
+        `${formatQuantity(runtime.ventedUnburnedKg, "kg")} of flammable vent gas has escaped unburned. It leaves the cells below its ${formatQuantity(data.ventGasAutoIgnitionK, "K")} auto-ignition temperature.`,
+      );
+  }
+
   /** The part that sent the most heat through space to `id` this step, if any. */
   #spatialSource(work: Work, id: string): { id: string; watts: number } | null {
     const sources = work.spatialSources.get(id);
@@ -2570,17 +2763,45 @@ export class PlantSolver {
   ): CombustionState | null {
     const cache = this.#thermalCache;
     const inventory = cache?.topology === work.topology ? cache.fuel.get(component.id) : undefined;
-    if (inventory === undefined) return null;
-    const heatReleaseW = runtime.burning || runtime.burnedOut ? runtime.heatReleaseW : 0;
+    const battery = cache?.topology === work.topology ? cache.cells.get(component.id) : undefined;
+    if (inventory === undefined) {
+      // A battery's vent gas burning at the vent is a fire like any other for presentation.
+      if (battery === undefined || !this.#ventLit.has(component.id)) return null;
+      const data = battery.runaway;
+      return Object.freeze({
+        fuelKg: battery.kg * data.ventGasMassFraction,
+        fuelRemainingKg: runtime.ventGasKg,
+        ignitionK: data.ventGasAutoIgnitionK,
+        burning: runtime.ventFireW > 0,
+        burnedOut: runtime.ventFireW === 0 && runtime.runaway === "spent",
+        heatReleaseW: runtime.ventFireW,
+        burningRateKgS: runtime.ventFireW / data.ventGasHeatOfCombustionJPerKg,
+        substanceIds: Object.freeze([battery.substanceId]),
+      });
+    }
+    // A battery part's burning vent gas adds to the fire on its own fuel.
+    const heatReleaseW =
+      (runtime.burning || runtime.burnedOut ? runtime.heatReleaseW : 0) + runtime.ventFireW;
     return Object.freeze({
       fuelKg: inventory.kg,
       fuelRemainingKg: runtime.fuelRemainingKg,
       ignitionK: inventory.ignitionK,
-      burning: runtime.burning,
+      burning: runtime.burning || runtime.ventFireW > 0,
       burnedOut: runtime.burnedOut,
       heatReleaseW,
-      burningRateKgS: heatReleaseW / inventory.heatOfCombustionJPerKg,
-      substanceIds: Object.freeze([...new Set(inventory.substanceIds)]),
+      burningRateKgS:
+        (heatReleaseW - runtime.ventFireW) / inventory.heatOfCombustionJPerKg +
+        (battery === undefined
+          ? 0
+          : runtime.ventFireW / battery.runaway.ventGasHeatOfCombustionJPerKg),
+      substanceIds: Object.freeze([
+        ...new Set([
+          ...inventory.substanceIds,
+          ...(battery !== undefined && this.#ventLit.has(component.id)
+            ? [battery.substanceId]
+            : []),
+        ]),
+      ]),
     });
   }
 
@@ -2598,6 +2819,17 @@ export class PlantSolver {
     if (runtime.disabled) warnings.unshift(runtime.disabledReason);
     if (runtime.quenched) warnings.unshift("Quenched: superconductivity lost.");
     const outputs = { ...(work.outputs.get(component.id) ?? {}) };
+    const battery = this.#thermalCache?.cells.get(component.id);
+    if (battery !== undefined) {
+      outputs["cellMassKg"] = battery.kg;
+      outputs["runawayStage"] = ["none", "self-heating", "runaway", "spent"].indexOf(
+        runtime.runaway,
+      );
+      outputs["selfHeatingW"] = runtime.selfHeatingW;
+      outputs["ventFireW"] = runtime.ventFireW;
+      outputs["ventedUnburnedKg"] = runtime.ventedUnburnedKg;
+      outputs["runawayEnergyRemainingJ"] = runtime.runawayEnergyJ;
+    }
     if (component.role === "coolant-pump" && loop !== undefined) {
       outputs["massFlowKgS"] = loop.massFlowKgS;
       outputs["pressureRisePa"] = loop.pressureRisePa;

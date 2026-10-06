@@ -23,6 +23,7 @@ export const MATERIAL_FAMILIES: readonly MaterialFamily[] = [
   "insulator-ceramic",
   "nuclear",
   "civil",
+  "electrochemical",
   "fluid",
   "other",
 ];
@@ -35,6 +36,7 @@ export const FAMILY_LOOK: Readonly<Record<MaterialFamily, { label: string; color
   "insulator-ceramic": { label: "Insulators & ceramics", color: "#5fc79a" },
   nuclear: { label: "Breeder & nuclear", color: "#b4e04a" },
   civil: { label: "Concrete & civil", color: "#b7a28c" },
+  electrochemical: { label: "Battery cells", color: "#e06c75" },
   fluid: { label: "Coolants & fluids", color: "#4aa3ff" },
   other: { label: "Other", color: "#6b7280" },
 };

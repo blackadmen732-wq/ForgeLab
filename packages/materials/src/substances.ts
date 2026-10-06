@@ -41,6 +41,8 @@ export interface SubstanceDefinition {
    * the material is not burned by the model (it is reported, not invented).
    */
   readonly combustion?: Combustion;
+  /** Cell runaway data, only for electrochemical cells with sourced values. */
+  readonly thermalRunaway?: RunawayData;
   readonly sourceSummary: string;
   readonly notes: readonly string[];
 }
@@ -52,7 +54,20 @@ export interface Combustion {
   readonly burningRateKgM2S: number;
 }
 
+export interface RunawayData {
+  readonly selfHeatingOnsetK: number;
+  readonly triggerK: number;
+  readonly maximumK: number;
+  readonly reactionTimeS: number;
+  readonly ventGasMassFraction: number;
+  readonly ventGasHeatOfCombustionJPerKg: number;
+  readonly ventGasAutoIgnitionK: number;
+  readonly ventGasLowerFlammabilityLimit: number;
+  readonly ventGasMolarMassKgMol: number;
+}
+
 function substanceOf(record: MaterialRecord): SubstanceDefinition {
+  const runaway = record.thermalRunaway;
   const sc = record.superconducting;
   const e = record.electrical;
   const fire = record.presentation.combustible;
@@ -91,6 +106,21 @@ function substanceOf(record: MaterialRecord): SubstanceDefinition {
           combustion: Object.freeze({
             heatOfCombustionJPerKg: fire.heatOfCombustion.value,
             burningRateKgM2S: fire.burningRate.value,
+          }),
+        }
+      : {}),
+    ...(runaway !== undefined
+      ? {
+          thermalRunaway: Object.freeze({
+            selfHeatingOnsetK: runaway.selfHeatingOnset.value,
+            triggerK: runaway.trigger.value,
+            maximumK: runaway.maximum.value,
+            reactionTimeS: runaway.reactionTime.value,
+            ventGasMassFraction: runaway.ventGasMassFraction.value,
+            ventGasHeatOfCombustionJPerKg: runaway.ventGas.heatOfCombustion.value,
+            ventGasAutoIgnitionK: runaway.ventGas.autoIgnition.value,
+            ventGasLowerFlammabilityLimit: runaway.ventGas.lowerFlammabilityLimit.value,
+            ventGasMolarMassKgMol: runaway.ventGas.molarMass.value,
           }),
         }
       : {}),

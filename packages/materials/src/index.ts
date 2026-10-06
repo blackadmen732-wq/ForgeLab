@@ -41,5 +41,6 @@ export {
   upperCriticalFieldT,
   type Combustion,
   type SubstanceDefinition,
+  type RunawayData,
   type SuperconductorProperties,
 } from "./substances.js";

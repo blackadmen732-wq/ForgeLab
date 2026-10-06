@@ -1,4 +1,4 @@
-import { getSubstance } from "@forgelab/materials";
+import { type RunawayData, getSubstance } from "@forgelab/materials";
 import { STEFAN_BOLTZMANN_W_M2_K4, type Vec3 } from "@forgelab/shared";
 import { type SimulationComponent, componentCenterOfMassM } from "../component.js";
 import { geometryOuterSurfaceM2, geometryVolumeM3 } from "../geometry.js";
@@ -384,4 +384,86 @@ function distance(a: Vec3, b: Vec3): number {
 
 function cellOf(p: Vec3, size: number): [number, number, number] {
   return [Math.floor(p.x / size), Math.floor(p.y / size), Math.floor(p.z / size)];
+}
+
+/* ------------------------------------------------------------------------------------ *
+ * Battery cells: self-heating and thermal runaway
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Self-heating rates that define T1 and T2 in accelerating-rate calorimetry (Feng et al.,
+ * 2018): 0.02 K/min at the onset of self-heating, 1 K/s at the runaway trigger.
+ */
+export const SELF_HEATING_ONSET_RATE_K_PER_S = 0.02 / 60;
+export const RUNAWAY_TRIGGER_RATE_K_PER_S = 1;
+
+/** What a part holds that can run away, and how (sourced cell data only). */
+export interface CellInventory {
+  readonly kg: number;
+  /** Heat capacity of the cells alone, J/K. */
+  readonly heatCapacityJK: number;
+  /** Chemistry of the heaviest cell region (one chemistry per part). */
+  readonly runaway: RunawayData;
+  readonly substanceId: string;
+  readonly regionNames: readonly string[];
+  /**
+   * Arrhenius self-heating dT/dt = A·exp(−B/T), with A and B calibrated so the rate is
+   * 0.02 K/min at T1 and 1 K/s at T2. Nothing else sets the rate.
+   */
+  readonly arrheniusA: number;
+  readonly arrheniusB: number;
+}
+
+/**
+ * The cells of a part: its regions whose substance has sourced runaway data. Null when it
+ * holds none.
+ *
+ * REDUCED MODEL (approximate). A part is one lumped temperature, so a module's cells heat
+ * and run away together; propagation happens between parts (modules), through joints and
+ * through space. Model a rack as several module parts to see module-to-module spread.
+ */
+export function cellInventory(component: SimulationComponent): CellInventory | null {
+  const volumeM3 = geometryVolumeM3(component.geometry);
+  let kg = 0;
+  let heatCapacityJK = 0;
+  let heaviest: { kg: number; id: string; data: RunawayData } | null = null;
+  const names: string[] = [];
+  for (const region of component.composition) {
+    const substance = getSubstance(region.substanceId);
+    const data = substance.thermalRunaway;
+    if (data === undefined) continue;
+    const m = region.volumeFraction * volumeM3 * substance.densityKgM3;
+    if (!(m > 0)) continue;
+    kg += m;
+    heatCapacityJK += m * (substance.specificHeatJkgK ?? 0);
+    names.push(region.name);
+    if (heaviest === null || m > heaviest.kg) heaviest = { kg: m, id: substance.id, data };
+  }
+  if (heaviest === null || kg <= 0 || heatCapacityJK <= 0) return null;
+  const { selfHeatingOnsetK: t1, triggerK: t2 } = heaviest.data;
+  const arrheniusB =
+    Math.log(RUNAWAY_TRIGGER_RATE_K_PER_S / SELF_HEATING_ONSET_RATE_K_PER_S) / (1 / t1 - 1 / t2);
+  const arrheniusA = SELF_HEATING_ONSET_RATE_K_PER_S * Math.exp(arrheniusB / t1);
+  return {
+    kg,
+    heatCapacityJK,
+    runaway: heaviest.data,
+    substanceId: heaviest.id,
+    regionNames: names,
+    arrheniusA,
+    arrheniusB,
+  };
+}
+
+/** Heat the cells generate by their own decomposition at temperature T, W. */
+export function selfHeatingW(cells: CellInventory, temperatureK: number): number {
+  return cells.heatCapacityJK * cells.arrheniusA * Math.exp(-cells.arrheniusB / temperatureK);
+}
+
+/**
+ * Energy runaway releases once triggered: the adiabatic rise of the cells from T2 to T3.
+ * T3 is measured on charged cells, so this already contains the electrochemical energy.
+ */
+export function runawayEnergyJ(cells: CellInventory): number {
+  return cells.heatCapacityJK * (cells.runaway.maximumK - cells.runaway.triggerK);
 }

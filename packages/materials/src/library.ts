@@ -1177,4 +1177,130 @@ export const MATERIAL_LIBRARY: readonly MaterialRecord[] = Object.freeze([
       "Reference data only: concrete is strong in compression and weak in tension, which the structural solver does not distinguish.",
     ],
   },
+
+  /* ---------------------------------------------------------------------------------- *
+   * Electrochemical cells
+   * ---------------------------------------------------------------------------------- */
+  {
+    id: "li-ion-nmc-cell",
+    name: "Li-ion cell (NMC)",
+    grade: "Large-format prismatic lithium-ion cell, NMC cathode / graphite anode, charged",
+    category: "electrochemical",
+    summary: "Energy storage that can heat itself into thermal runaway and vent burning gas.",
+    density: q(2600, "kg/m³", "li-ion-cell-typical", "approximate", {
+      range: [2300, 2900],
+      note: "Cell mass over its envelope volume; a module's racks and cooling plates are not included.",
+    }),
+    thermal: {
+      specificHeat: q(1000, "J/(kg·K)", "li-ion-cell-typical", "approximate", {
+        range: [900, 1100],
+      }),
+      maxService: q(C(60), "K", "li-ion-cell-typical", "typical", {
+        note: "Upper operating temperature commonly specified for Li-ion cells.",
+      }),
+    },
+    electrical: { insulator: false },
+    thermalRunaway: {
+      selfHeatingOnset: q(C(100), "K", "feng-2018", "approximate", {
+        range: [C(80), C(140)],
+        note: "T1: self-heating faster than 0.02 K/min (SEI decomposition).",
+      }),
+      trigger: q(C(200), "K", "feng-2018", "approximate", {
+        range: [C(150), C(250)],
+        note: "T2: self-heating faster than 1 K/s.",
+      }),
+      maximum: q(C(780), "K", "golubkov-2014", "approximate", {
+        range: [C(680), C(900)],
+        note: "T3, the peak cell temperature in runaway.",
+      }),
+      reactionTime: q(10, "s", "feng-2018", "approximate", {
+        range: [3, 30],
+        note: "Duration of the main exothermic reaction once T2 is passed.",
+      }),
+      ventGasMassFraction: q(0.1, "", "golubkov-2014", "approximate", {
+        range: [0.05, 0.2],
+        note: "Gas only; total mass loss including ejected solids is larger.",
+      }),
+      ventGas: {
+        heatOfCombustion: q(12e6, "J/kg", "baird-2020", "approximate", {
+          range: [8e6, 16e6],
+          note: "Mixture of H₂, CO, CO₂ and hydrocarbons; CO₂ carries no heat.",
+        }),
+        autoIgnition: q(C(500), "K", "baird-2020", "approximate", {
+          range: [C(450), C(600)],
+        }),
+        lowerFlammabilityLimit: q(0.075, "", "baird-2020", "approximate", {
+          range: [0.06, 0.09],
+          note: "Volume fraction in air.",
+        }),
+        molarMass: q(0.028, "kg/mol", "golubkov-2014", "approximate", {
+          note: "Mean of the measured vent-gas composition.",
+        }),
+      },
+    },
+    presentation: {
+      color: "#3b4250",
+      metalness: 0.3,
+      roughness: 0.6,
+      thermalResponse: "char",
+      combustible: false,
+    },
+    sourceSummary: "Feng 2018 (T1/T2), Golubkov 2014 (T3, gas), Baird 2020 (vent gas).",
+    notes: [
+      "Representative values inside the reported ranges; no specific commercial cell is described.",
+      "NMC runs away hotter than its vent gas's auto-ignition temperature, so it usually vents a jet fire.",
+    ],
+  },
+  {
+    id: "li-ion-lfp-cell",
+    name: "Li-ion cell (LFP)",
+    grade: "Large-format prismatic lithium-ion cell, LiFePO₄ cathode / graphite anode, charged",
+    category: "electrochemical",
+    summary: "Safer chemistry: runs away cooler, but its unburned vent gas can collect.",
+    density: q(2400, "kg/m³", "li-ion-cell-typical", "approximate", { range: [2100, 2700] }),
+    thermal: {
+      specificHeat: q(1000, "J/(kg·K)", "li-ion-cell-typical", "approximate", {
+        range: [900, 1100],
+      }),
+      maxService: q(C(60), "K", "li-ion-cell-typical", "typical"),
+    },
+    electrical: { insulator: false },
+    thermalRunaway: {
+      selfHeatingOnset: q(C(120), "K", "feng-2018", "approximate", { range: [C(90), C(160)] }),
+      trigger: q(C(240), "K", "feng-2018", "approximate", { range: [C(195), C(300)] }),
+      maximum: q(C(420), "K", "golubkov-2014", "approximate", {
+        range: [C(400), C(500)],
+        note: "Golubkov measured ≈ 404 °C for LFP.",
+      }),
+      reactionTime: q(30, "s", "feng-2018", "approximate", { range: [10, 60] }),
+      ventGasMassFraction: q(0.04, "", "golubkov-2014", "approximate", {
+        range: [0.02, 0.08],
+      }),
+      ventGas: {
+        heatOfCombustion: q(12e6, "J/kg", "baird-2020", "approximate", {
+          range: [8e6, 16e6],
+        }),
+        autoIgnition: q(C(500), "K", "baird-2020", "approximate", {
+          range: [C(450), C(600)],
+        }),
+        lowerFlammabilityLimit: q(0.075, "", "baird-2020", "approximate", {
+          range: [0.06, 0.09],
+          note: "LFP vent gas is richer in H₂; its LFL is near the low end.",
+        }),
+        molarMass: q(0.028, "kg/mol", "golubkov-2014", "approximate"),
+      },
+    },
+    presentation: {
+      color: "#41404a",
+      metalness: 0.3,
+      roughness: 0.6,
+      thermalResponse: "char",
+      combustible: false,
+    },
+    sourceSummary: "Feng 2018 (T1/T2), Golubkov 2014 (T3, gas), Baird 2020 (vent gas).",
+    notes: [
+      "Representative values inside the reported ranges; no specific commercial cell is described.",
+      "LFP peaks below its vent gas's auto-ignition temperature: unless something ignites it, the gas collects.",
+    ],
+  },
 ]);

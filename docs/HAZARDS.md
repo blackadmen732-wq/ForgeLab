@@ -44,6 +44,31 @@ with the plume. Materials that ignite but have no sourced burning data (graphite
 are reported above their ignition temperature — "no fire is modelled" — rather than
 burned with an invented number.
 
+**Battery cells.** A part runs away only if one of its regions is a cell material with
+sourced runaway data (today: `li-ion-nmc-cell`, `li-ion-lfp-cell`, from Feng et al. 2018,
+Golubkov et al. 2014 and Baird et al. 2020; confidence approximate). The catalogue has
+_Battery Module (NMC)_ and _(LFP)_: about half of each module's envelope is cells.
+
+- **Self-heating** is Arrhenius, `dT/dt = A·exp(−B/T)`, with A and B fixed by the two
+  calorimetry definitions alone: 0.02 K/min at T1 and 1 K/s at T2. The cells' heat
+  capacity times that rate is heat added to the part. Past T1 → `battery_self_heating`.
+- **Runaway** at T2 → `thermal_runaway`: the cells release the adiabatic rise to T3
+  (`m·cp·(T3 − T2)`, which already contains the electrical energy, because T3 is measured
+  on charged cells) over the reaction time, and vent their gas mass fraction. Cooling
+  cannot stop it once it has started.
+- **Vent gas** burns at the vent when it leaves hotter than its auto-ignition temperature
+  or meets a fire already burning on the part → `vent_fire`. It then radiates like any
+  other fire (and is shadowed like any other). Otherwise it escapes unburned and the part
+  reports how much. NMC runs away past its gas's auto-ignition temperature; LFP does not,
+  which is why the two chemistries fail differently.
+- Causality: a runaway caused by heat through space names the sender and links to its
+  `fire`, `over_temperature`, `thermal_runaway` or `vent_fire` events, so runaway can
+  propagate module to module through the graph.
+
+Tests: `packages/reactor-components/src/battery.test.ts` (oven tests in the spirit of
+battery abuse standards: NMC at 180 °C runs away and vents a jet fire; LFP runs away
+below its gas's auto-ignition; a module at its 60 °C service limit does not).
+
 **Conductors fail in stages.** Copper's 200 °C service limit is an annealing and insulation
 limit, not the end of the conductor. Past it a bus raises `over_temperature` and keeps
 carrying current (its resistance rising with ρ(T)); it opens the circuit only at its
@@ -95,7 +120,14 @@ cooling, because those are what the physics contains.
   parts (one equivalent sphere inside another) do not exchange.
 - **The burning part's own heating** by its flame is not added: the free-burning rate
   already contains that feedback.
-- **No suppression, smoke transport, oxygen depletion, gas accumulation, battery
-  chemistry, molten-metal contact or hot debris yet.** Those are next in the cascade
+- **A battery module is one lumped temperature,** so all its cells run away together and
+  its peak heat release is that of every cell at once; real modules propagate cell to cell
+  over minutes. Size a part like a real module and rack several. The module is not on the
+  electrical network yet (no charge, discharge or internal short from current).
+- **Fires only radiate.** There is no buoyant plume or flame contact, so a fire under a
+  part heats it no more than one beside it. A cable fire directly beneath a battery module
+  therefore cannot drive it into runaway in this model, though in reality it can.
+- **No suppression, smoke transport, oxygen depletion, gas accumulation, molten-metal
+  contact or hot debris yet.** Those are next in the cascade
   solver (`docs/PHYSICS_ROADMAP.md`).
 - This is a reduced engineering model for a game. It is **not** a fire-safety assessment.

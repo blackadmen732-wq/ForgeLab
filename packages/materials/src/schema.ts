@@ -171,7 +171,31 @@ export type MaterialCategory =
   | "superconductor"
   | "insulator-ceramic"
   | "nuclear"
-  | "civil";
+  | "civil"
+  | "electrochemical";
+
+/**
+ * Thermal runaway of an electrochemical cell, as characterised by accelerating-rate
+ * calorimetry (ARC). T1/T2/T3 follow Feng et al. (2018): T1 is where self-heating exceeds
+ * 0.02 K/min, T2 where it exceeds 1 K/s (runaway), T3 the maximum temperature reached.
+ * Measured on charged cells, so T3 already includes the electrochemical energy.
+ */
+export interface ThermalRunawayProperties {
+  readonly selfHeatingOnset: Quantity;
+  readonly trigger: Quantity;
+  readonly maximum: Quantity;
+  /** Duration of the main exothermic reaction once triggered. */
+  readonly reactionTime: Quantity;
+  /** Mass fraction of the cell vented as gas during runaway. */
+  readonly ventGasMassFraction: Quantity;
+  /** Vent gas properties: what decides whether it burns at the vent or accumulates. */
+  readonly ventGas: {
+    readonly heatOfCombustion: Quantity;
+    readonly autoIgnition: Quantity;
+    readonly lowerFlammabilityLimit: Quantity;
+    readonly molarMass: Quantity;
+  };
+}
 
 export interface MaterialRecord {
   readonly id: string;
@@ -188,6 +212,8 @@ export interface MaterialRecord {
   readonly superconducting?: SuperconductingProperties;
   readonly nuclear?: NuclearProperties;
   readonly plasmaFacing?: PlasmaFacingProperties;
+  /** Only for cell chemistries with sourced runaway data. */
+  readonly thermalRunaway?: ThermalRunawayProperties;
   readonly presentation: PresentationProperties;
   /** Caveats a user must see before trusting a number. */
   readonly notes: readonly string[];

@@ -200,6 +200,30 @@ const list: readonly SourceReference[] = [
     citation:
       "Derived by ForgeLab from other cited values; the derivation is stated in the value's note.",
   },
+  {
+    key: "feng-2018",
+    kind: "paper",
+    citation:
+      "X. Feng, M. Ouyang, X. Liu, L. Lu, Y. Xia, X. He, 'Thermal runaway mechanism of lithium ion battery for electric vehicles: A review', Energy Storage Materials 10 (2018) 246–267. Defines T1/T2/T3 from ARC tests and reports their ranges by chemistry.",
+  },
+  {
+    key: "golubkov-2014",
+    kind: "paper",
+    citation:
+      "A. W. Golubkov et al., 'Thermal-runaway experiments on consumer Li-ion batteries with metal-oxide and olivin-type cathodes', RSC Advances 4 (2014) 3633–3642. Maximum temperatures (LFP ≈ 404 °C, NMC ≈ 680 °C, LCO/NMC ≈ 850 °C) and vent gas amount and composition.",
+  },
+  {
+    key: "baird-2020",
+    kind: "paper",
+    citation:
+      "A. R. Baird, E. J. Archibald, K. C. Marr, O. A. Ezekoye, 'Explosion hazards from lithium-ion battery vent gas', Journal of Power Sources 446 (2020) 227257. Lower flammability limits and combustion properties of vent gas mixtures.",
+  },
+  {
+    key: "li-ion-cell-typical",
+    kind: "derived",
+    citation:
+      "Typical large-format prismatic Li-ion cell values (density from cell mass and envelope, specific heat from cell calorimetry, ≈ 0.9–1.1 kJ/(kg·K)) as quoted across the battery thermal-modelling literature.",
+  },
 ];
 
 export const SOURCES: ReadonlyMap<string, SourceReference> = new Map(list.map((s) => [s.key, s]));
