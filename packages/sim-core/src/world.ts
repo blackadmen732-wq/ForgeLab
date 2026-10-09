@@ -8,8 +8,12 @@ import {
   currentTransform,
   withComponent,
   withPhysical,
+  withPlantState,
   withSolverState,
 } from "./component.js";
+import type { ComponentParameters } from "./plant/roles.js";
+import { PlantSolver } from "./plant/solver.js";
+import { EMPTY_PLANT_METRICS, type PlantSummary } from "./plant/state.js";
 import {
   CONNECTION_SNAP_TOLERANCE_M,
   type ComponentId,
@@ -30,6 +34,7 @@ import {
   computeAssemblyMassProperties,
 } from "./systems/center-of-mass.js";
 import { solveStructure } from "./systems/structural.js";
+import { type ThermalDerating, thermalDerating } from "./materialsAt.js";
 
 export type { BuiltInDynamicsBackend };
 
@@ -51,7 +56,16 @@ export interface SimulationSnapshot {
   readonly failures: readonly FailureEvent[];
   /** Problems with the model rather than with the structure. */
   readonly diagnostics: readonly string[];
+  /** Plant-wide results: power balance, networks, loops and model confidence. */
+  readonly plant: PlantSummary;
 }
+
+const EMPTY_PLANT_SUMMARY: PlantSummary = Object.freeze({
+  metrics: EMPTY_PLANT_METRICS,
+  islands: Object.freeze([]),
+  loops: Object.freeze([]),
+  confidence: Object.freeze({ level: "supported", subsystems: Object.freeze([]) }),
+});
 
 export interface WorldOptions {
   readonly name?: string;
@@ -67,6 +81,13 @@ export interface WorldOptions {
  * no React in this file, no Three.js, and no DOM; the class runs unchanged in Node, in a
  * worker, or on a server.
  */
+/** Parts grouped in the design (see `SimulationWorld.createGroup`). */
+export interface ComponentGroup {
+  readonly id: string;
+  readonly name: string;
+  readonly componentIds: readonly ComponentId[];
+}
+
 export class SimulationWorld {
   #name: string;
   #settings: SimulationSettings;
@@ -81,6 +102,18 @@ export class SimulationWorld {
   #simulatedTimeSec: Seconds = 0;
   #idCounter = 0;
   #dirty = true;
+  #plant = new PlantSolver();
+  /**
+   * Bumped on every change that can alter a solver's inputs: design edits, settings, and
+   * bodies moving. Solvers whose inputs have not changed are not re-run; their previous
+   * result is exactly what they would compute again.
+   */
+  #revision = 0;
+  #structureSolvedAtRevision = -1;
+  #plantSummary: PlantSummary = EMPTY_PLANT_SUMMARY;
+  #plantDiagnostics: readonly string[] = [];
+  /** Design organisation only: never read by a solver. */
+  #groups = new Map<string, ComponentGroup>();
 
   constructor(options: WorldOptions = {}) {
     this.#name = options.name ?? "Untitled Assembly";
@@ -108,6 +141,16 @@ export class SimulationWorld {
     return this.#simulatedTimeSec;
   }
 
+  /** Increments whenever anything that feeds the solvers changes. */
+  get revision(): number {
+    return this.#revision;
+  }
+
+  #markDirty(): void {
+    this.#dirty = true;
+    this.#revision += 1;
+  }
+
   get dynamicsBackendId(): string {
     return this.#dynamics.id;
   }
@@ -118,7 +161,7 @@ export class SimulationWorld {
    */
   updateSettings(changes: Partial<SimulationSettings>): SimulationSettings {
     this.#settings = makeSettings({ ...this.#settings, ...changes });
-    this.#dirty = true;
+    this.#markDirty();
     return this.#settings;
   }
 
@@ -132,10 +175,17 @@ export class SimulationWorld {
    * Components
    * ---------------------------------------------------------------------------------- */
 
-  /** Deterministic id generator: no randomness anywhere in the engine. */
+  /**
+   * Deterministic id generator: no randomness anywhere in the engine. Skips ids already
+   * taken (an editor may name parts itself), so a generated id never collides.
+   */
   nextId(prefix: string): string {
-    this.#idCounter += 1;
-    return `${prefix}-${this.#idCounter}`;
+    let id: string;
+    do {
+      this.#idCounter += 1;
+      id = `${prefix}-${this.#idCounter}`;
+    } while (this.#components.has(id) || this.#connections.has(id));
+    return id;
   }
 
   addComponent(spec: ComponentSpec): SimulationComponent {
@@ -144,7 +194,7 @@ export class SimulationWorld {
     }
     const component = createComponent(spec);
     this.#components.set(component.id, component);
-    this.#dirty = true;
+    this.#markDirty();
     return component;
   }
 
@@ -170,7 +220,8 @@ export class SimulationWorld {
       }
     }
     this.#failedComponentIds.delete(id);
-    this.#dirty = true;
+    this.#dropFromGroups([id]);
+    this.#markDirty();
     this.#refreshComponentConnections();
   }
 
@@ -178,35 +229,80 @@ export class SimulationWorld {
   setTransform(id: ComponentId, transform: Transform): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { transform });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setMaterial(id: ComponentId, materialId: MaterialId): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { materialId });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setGeometry(id: ComponentId, geometry: ComponentGeometry): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { geometry });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
+  }
+
+  /**
+   * Replaces a component's geometry and sockets together (a resize). Connections whose
+   * socket no longer exists are removed; mass and socket ratings follow the new geometry.
+   */
+  reshapeComponent(
+    id: ComponentId,
+    geometry: ComponentGeometry,
+    connectionPoints: readonly ConnectionPoint[],
+  ): SimulationComponent {
+    const updated = withComponent(this.requireComponent(id), {
+      geometry,
+      connectionPoints: Object.freeze([...connectionPoints]),
+    });
+    this.#components.set(id, updated);
+    const socketIds = new Set(connectionPoints.map((point) => point.id));
+    for (const [connectionId, connection] of [...this.#connections]) {
+      const end =
+        connection.from.componentId === id
+          ? connection.from
+          : connection.to.componentId === id
+            ? connection.to
+            : undefined;
+      if (end !== undefined && !socketIds.has(end.connectionPointId)) {
+        this.#connections.delete(connectionId);
+      }
+    }
+    this.#refreshComponentConnections();
+    this.#markDirty();
+    return this.#components.get(id)!;
   }
 
   setAdditionalMass(id: ComponentId, additionalMassKg: number): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { additionalMassKg });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
   setAnchored(id: ComponentId, anchored: boolean): SimulationComponent {
     const updated = withComponent(this.requireComponent(id), { anchored });
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
+    return updated;
+  }
+
+  /** Replaces operating parameters (merged over the current ones, then validated). */
+  setParameters(
+    id: ComponentId,
+    parameters: Readonly<Record<string, unknown>>,
+  ): SimulationComponent {
+    const current = this.requireComponent(id);
+    const updated = withComponent(current, {
+      parameters: { ...current.parameters, ...parameters } as ComponentParameters,
+    });
+    this.#components.set(id, updated);
+    this.#markDirty();
     return updated;
   }
 
@@ -232,7 +328,72 @@ export class SimulationWorld {
       additionalMassKg: source.additionalMassKg,
       anchored: source.anchored,
       label: source.label,
+      role: source.role,
+      parameters: source.parameters,
     });
+  }
+
+  /* ---------------------------------------------------------------------------------- *
+   * Groups (assemblies placed in the design)
+   * ---------------------------------------------------------------------------------- */
+
+  /**
+   * Groups parts so they select and move together — a coolant loop, a magnet power module,
+   * a blanket module. Design organisation only: no solver reads groups, and a part keeps
+   * its own physics. A part belongs to at most one group; grouping it again moves it.
+   * Groups of fewer than two parts are not kept.
+   */
+  createGroup(
+    componentIds: readonly ComponentId[],
+    options: { id?: string; name?: string } = {},
+  ): ComponentGroup {
+    const ids = [...new Set(componentIds)].filter((id) => this.#components.has(id)).sort();
+    if (ids.length < 2) throw new Error("A group needs at least two parts.");
+    const id = options.id ?? this.nextId("group");
+    if (this.#groups.has(id)) throw new Error(`A group with id "${id}" already exists.`);
+    this.#dropFromGroups(ids);
+    const group: ComponentGroup = Object.freeze({
+      id,
+      name: options.name?.trim() || `Group ${this.#groups.size + 1}`,
+      componentIds: Object.freeze(ids),
+    });
+    this.#groups.set(id, group);
+    return group;
+  }
+
+  /** Takes a group apart: its parts stay where they are, ungrouped. */
+  ungroup(groupId: string): void {
+    this.#groups.delete(groupId);
+  }
+
+  renameGroup(groupId: string, name: string): ComponentGroup {
+    const group = this.#groups.get(groupId);
+    if (group === undefined) throw new Error(`Unknown group "${groupId}".`);
+    const next = Object.freeze({ ...group, name: name.trim() || group.name });
+    this.#groups.set(groupId, next);
+    return next;
+  }
+
+  listGroups(): readonly ComponentGroup[] {
+    return [...this.#groups.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  /** The group a part belongs to, if any. */
+  groupOf(componentId: ComponentId): ComponentGroup | undefined {
+    for (const group of this.#groups.values())
+      if (group.componentIds.includes(componentId)) return group;
+    return undefined;
+  }
+
+  #dropFromGroups(ids: readonly ComponentId[]): void {
+    const gone = new Set(ids);
+    for (const [groupId, group] of [...this.#groups]) {
+      if (!group.componentIds.some((id) => gone.has(id))) continue;
+      const kept = group.componentIds.filter((id) => !gone.has(id));
+      if (kept.length < 2) this.#groups.delete(groupId);
+      else
+        this.#groups.set(groupId, Object.freeze({ ...group, componentIds: Object.freeze(kept) }));
+    }
   }
 
   /* ---------------------------------------------------------------------------------- *
@@ -267,14 +428,14 @@ export class SimulationWorld {
     });
 
     this.#connections.set(id, connection);
-    this.#dirty = true;
+    this.#markDirty();
     this.#refreshComponentConnections();
     return connection;
   }
 
   disconnect(connectionId: ConnectionId): void {
     if (!this.#connections.delete(connectionId)) return;
-    this.#dirty = true;
+    this.#markDirty();
     this.#refreshComponentConnections();
   }
 
@@ -336,6 +497,45 @@ export class SimulationWorld {
    * are correct the instant a part is placed, before anybody presses play.
    */
   solve(): void {
+    this.#solveStructure();
+    // Nothing has happened yet at tick 0, so the plant starts from fresh initial conditions
+    // that reflect the current design (loop temperatures, vessel pressures...).
+    if (this.#tick === 0) this.#plant.reset();
+    this.#runPlant(0);
+    this.#dirty = false;
+  }
+
+  /**
+   * Strength and stiffness factors each part was last analysed with. Heat weakens some
+   * materials (carbon steel, EN 1993-1-2), so structure is re-solved whenever a part's
+   * factors have moved by more than half a percent since — not only when the design
+   * changes.
+   */
+  #deratingAtSolve = new Map<ComponentId, ThermalDerating>();
+
+  #deratingMoved(): boolean {
+    for (const component of this.#components.values()) {
+      const now = thermalDerating(component.materialId, component.state.plant.thermal.temperatureK);
+      const then = this.#deratingAtSolve.get(component.id);
+      const yieldThen = then?.yieldFactor ?? 1;
+      const modulusThen = then?.modulusFactor ?? 1;
+      if (
+        Math.abs(now.yieldFactor - yieldThen) > 0.005 ||
+        Math.abs(now.modulusFactor - modulusThen) > 0.005
+      )
+        return true;
+    }
+    return false;
+  }
+
+  #solveStructure(): void {
+    const failuresBefore = this.#failures.length;
+    this.#structureSolvedAtRevision = this.#revision;
+    this.#deratingAtSolve.clear();
+    for (const component of this.#components.values()) {
+      const d = thermalDerating(component.materialId, component.state.plant.thermal.temperatureK);
+      if (d.yieldFactor < 1 || d.modulusFactor < 1) this.#deratingAtSolve.set(component.id, d);
+    }
     const result = solveStructure({
       components: this.listComponents(),
       connections: this.listConnections(),
@@ -352,7 +552,39 @@ export class SimulationWorld {
       if (state.structural.failed) this.#failedComponentIds.add(id);
     }
 
-    for (const failure of result.failures) {
+    this.#recordFailures(result.failures);
+    // In `detach` mode a newly failed member changes what the next solve sees.
+    if (
+      this.#settings.failurePropagation === "detach" &&
+      this.#failures.length !== failuresBefore
+    ) {
+      this.#revision += 1;
+    }
+
+    this.#diagnostics = Object.freeze([...result.diagnostics]);
+  }
+
+  #runPlant(dtSec: number): void {
+    const result = this.#plant.step({
+      components: this.listComponents(),
+      connections: this.listConnections(),
+      settings: this.#settings,
+      dtSec,
+      tick: this.#tick,
+      timeSec: this.#simulatedTimeSec,
+      topologyRevision: this.#revision,
+    });
+    for (const [id, plant] of result.states) {
+      const component = this.#components.get(id);
+      if (component !== undefined) this.#components.set(id, withPlantState(component, plant));
+    }
+    this.#recordFailures(result.events);
+    this.#plantSummary = result.summary;
+    this.#plantDiagnostics = Object.freeze([...result.diagnostics]);
+  }
+
+  #recordFailures(events: readonly FailureEvent[]): void {
+    for (const failure of events) {
       const key = failureKey(failure);
       if (this.#raisedFailureKeys.has(key)) continue;
       this.#raisedFailureKeys.add(key);
@@ -361,9 +593,6 @@ export class SimulationWorld {
     if (this.#failures.length > this.#settings.maxFailureLogEntries) {
       this.#failures = this.#failures.slice(-this.#settings.maxFailureLogEntries);
     }
-
-    this.#diagnostics = Object.freeze([...result.diagnostics]);
-    this.#dirty = false;
   }
 
   /**
@@ -374,7 +603,7 @@ export class SimulationWorld {
    * time, and time only advances once both are done.
    */
   step(): void {
-    this.solve();
+    if (this.#structureSolvedAtRevision !== this.#revision) this.#solveStructure();
 
     const updates = this.#dynamics.step({
       components: this.listComponents(),
@@ -389,9 +618,15 @@ export class SimulationWorld {
       this.#components.set(id, withPhysical(component, physical));
     }
 
+    // Plant physics integrates over the step that is now ending, then time advances.
+    this.#runPlant(this.#settings.fixedTimestepSec);
+    // Parts that heat up lose strength: re-analyse them at their new temperature.
+    if (this.#deratingMoved()) this.#solveStructure();
+
     this.#tick += 1;
     this.#simulatedTimeSec = this.#tick * this.#settings.fixedTimestepSec;
-    if (updates.size > 0) this.#dirty = true;
+    this.#dirty = false;
+    if (updates.size > 0) this.#markDirty();
   }
 
   /** Runs `count` fixed steps. Equivalent to calling `step()` that many times. */
@@ -415,8 +650,20 @@ export class SimulationWorld {
     this.#raisedFailureKeys.clear();
     this.#failedComponentIds.clear();
     this.#diagnostics = Object.freeze([]);
-    this.#dirty = true;
+    this.#plant.reset();
+    this.#markDirty();
     this.solve();
+  }
+
+  /** Plant-wide results of the latest solve, without building a full snapshot. */
+  get plantSummary(): PlantSummary {
+    if (this.#dirty) this.solve();
+    return this.#plantSummary;
+  }
+
+  /** Number of failures raised so far this run (cheaper than a snapshot). */
+  get failureCount(): number {
+    return this.#failures.length;
   }
 
   getSnapshot(): SimulationSnapshot {
@@ -430,7 +677,8 @@ export class SimulationWorld {
       connections: this.listConnections(),
       assembly: computeAssemblyMassProperties(components),
       failures: Object.freeze([...this.#failures]),
-      diagnostics: this.#diagnostics,
+      diagnostics: Object.freeze([...this.#diagnostics, ...this.#plantDiagnostics]),
+      plant: this.#plantSummary,
     });
   }
 
@@ -443,7 +691,7 @@ export class SimulationWorld {
   restorePhysical(id: ComponentId, physical: PhysicalProperties): SimulationComponent {
     const updated = withPhysical(this.requireComponent(id), physical);
     this.#components.set(id, updated);
-    this.#dirty = true;
+    this.#markDirty();
     return updated;
   }
 
@@ -452,7 +700,7 @@ export class SimulationWorld {
     this.#tick = state.tick;
     this.#simulatedTimeSec = state.simulatedTimeSec;
     this.#idCounter = Math.max(this.#idCounter, state.idCounter);
-    this.#dirty = true;
+    this.#markDirty();
   }
 
   get idCounter(): number {

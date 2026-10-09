@@ -1,4 +1,5 @@
 import {
+  type Kelvin,
   type Meters,
   type MetersPerSecondSquared,
   type Ratio,
@@ -38,9 +39,32 @@ export interface SimulationSettings {
    */
   readonly designSafetyFactor: Ratio;
   readonly failurePropagation: FailurePropagationMode;
+  /**
+   * Effective length factor K for column buckling, P_cr = π²EI/(KL)².
+   * 1.0 is the pinned–pinned idealisation. ForgeLab joints carry no rotational stiffness
+   * information yet, so K is a global engineering assumption rather than per joint.
+   * Typical textbook values: 0.5 fixed–fixed, 0.7 fixed–pinned, 2.0 fixed–free.
+   */
+  readonly bucklingEffectiveLengthFactor: Ratio;
   /** Oldest failures are dropped past this count so a long run cannot grow without bound. */
   readonly maxFailureLogEntries: number;
+  /** Temperature of the surroundings, K. */
+  readonly ambientTemperatureK: Kelvin;
+  /**
+   * `hot-standby`: coolant loops that feed a turbine, and the components on them, start at
+   * the turbine's live-steam temperature — the pre-heated state real plants start from.
+   * `cold`: everything starts at ambient.
+   */
+  readonly initialThermalState: InitialThermalState;
+  /**
+   * `pumped-down`: vessels start at the base pressure their pumps can hold.
+   * `atmospheric`: vessels start at one standard atmosphere and must be pumped down.
+   */
+  readonly initialVacuumState: InitialVacuumState;
 }
+
+export type InitialThermalState = "hot-standby" | "cold";
+export type InitialVacuumState = "pumped-down" | "atmospheric";
 
 export const DEFAULT_FIXED_TIMESTEP_SEC: Seconds = 1 / 60;
 
@@ -50,11 +74,18 @@ export const DEFAULT_SIMULATION_SETTINGS: SimulationSettings = Object.freeze({
   groundLevelM: 0,
   designSafetyFactor: 1,
   failurePropagation: "report-only",
+  bucklingEffectiveLengthFactor: 1,
   maxFailureLogEntries: 500,
+  ambientTemperatureK: 293.15,
+  initialThermalState: "hot-standby",
+  initialVacuumState: "pumped-down",
 });
 
 export function makeSettings(overrides: Partial<SimulationSettings> = {}): SimulationSettings {
-  const merged: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, ...overrides };
+  const defined = Object.fromEntries(
+    Object.entries(overrides).filter(([, value]) => value !== undefined),
+  ) as Partial<SimulationSettings>;
+  const merged: SimulationSettings = { ...DEFAULT_SIMULATION_SETTINGS, ...defined };
   if (!(merged.fixedTimestepSec > 0)) {
     throw new RangeError(
       `fixedTimestepSec must be greater than zero, received ${String(merged.fixedTimestepSec)}`,
@@ -63,6 +94,11 @@ export function makeSettings(overrides: Partial<SimulationSettings> = {}): Simul
   if (!(merged.designSafetyFactor > 0)) {
     throw new RangeError(
       `designSafetyFactor must be greater than zero, received ${String(merged.designSafetyFactor)}`,
+    );
+  }
+  if (!(merged.bucklingEffectiveLengthFactor > 0)) {
+    throw new RangeError(
+      `bucklingEffectiveLengthFactor must be greater than zero, received ${String(merged.bucklingEffectiveLengthFactor)}`,
     );
   }
   if (merged.gravityMps2 < 0) {

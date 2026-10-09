@@ -1,7 +1,7 @@
 import type { Newtons, Pascals, Ratio, Seconds } from "@forgelab/shared";
 import type { ComponentId, ConnectionId } from "./connections.js";
 
-/** Simulation subsystems that can raise failures. Only `structural` exists in Phase 0. */
+/** Simulation subsystems that can raise failures. */
 export type SimulationSystemName =
   | "structural"
   | "electrical"
@@ -11,10 +11,13 @@ export type SimulationSystemName =
   | "vacuum"
   | "plasma"
   | "neutron"
+  | "fusion"
+  | "power"
   | "control";
 
 /** Specific structural failure modes Phase 0 can diagnose. */
-export type StructuralFailureType = "yield_exceeded" | "connection_overload";
+export type StructuralFailureType =
+  "yield_exceeded" | "connection_overload" | "buckling" | "bending_yield";
 
 export type FailureType = StructuralFailureType | (string & {});
 
@@ -50,6 +53,20 @@ export interface FailureEvent {
    * upward. This is the load path the player needs to lighten or brace.
    */
   readonly loadPathComponentIds: readonly ComponentId[];
+  /** One-line headline, e.g. `Pump "pump-2" lost flow`. Plant events always carry one. */
+  readonly summary?: string;
+  /** Failure keys of the upstream events this one was caused by. */
+  readonly causeKeys?: readonly string[];
+  /** The reconstructed chain from root cause to this event, root first. */
+  readonly causalChain?: readonly CausalLink[];
+}
+
+/** One step in a causal failure chain. */
+export interface CausalLink {
+  readonly componentId: ComponentId;
+  readonly system: string;
+  readonly failureType: string;
+  readonly summary: string;
 }
 
 /** Utilization bands. Numbers only: sim-core has no idea what colour "stressed" is. */
@@ -142,5 +159,61 @@ export function describeConnectionOverload(params: {
     `${formatQuantity(params.transferredLoadN, "N")} from "${params.supportedComponentId}" ` +
     `into "${params.supportingComponentId}", exceeding its rated capacity of ` +
     `${formatQuantity(params.capacityN, "N")}.${path}`
+  );
+}
+
+export function describeBucklingFailure(params: {
+  componentId: ComponentId;
+  componentType: string;
+  materialName: string;
+  axialLoadN: Newtons;
+  criticalLoadN: Newtons;
+  lengthM: number;
+  slendernessRatio: number;
+  transitionSlenderness: number;
+  regime: "euler" | "johnson";
+  effectiveLengthFactor: number;
+  youngsModulusPa: Pascals;
+}): string {
+  const formula =
+    params.regime === "euler"
+      ? `Euler's formula P_cr = pi^2 E I / (K L)^2`
+      : `the Johnson short-column parabola (K L / r = ${params.slendernessRatio.toFixed(1)} is below the Euler transition of ${params.transitionSlenderness.toFixed(1)})`;
+  return (
+    `${params.componentType} "${params.componentId}" is a ${params.lengthM.toFixed(2)} m ${params.materialName} column ` +
+    `with slenderness K L / r = ${params.slendernessRatio.toFixed(1)} (K = ${params.effectiveLengthFactor}). ` +
+    `It carries ${formatQuantity(params.axialLoadN, "N")} of axial compression, but by ${formula} ` +
+    `with E = ${formatQuantity(params.youngsModulusPa, "Pa")} it can only carry ` +
+    `${formatQuantity(params.criticalLoadN, "N")} before buckling sideways. ` +
+    `A stockier section, a shorter unbraced length or a stiffer material raises that limit.`
+  );
+}
+
+export function describeBendingFailure(params: {
+  componentId: ComponentId;
+  componentType: string;
+  materialName: string;
+  momentNm: number;
+  spanM: number;
+  idealisation: "simply-supported" | "cantilever";
+  sectionModulusM3: number;
+  bendingStressPa: Pascals;
+  allowableStressPa: Pascals;
+  loadedByComponentIds: readonly ComponentId[];
+}): string {
+  const loads =
+    params.loadedByComponentIds.length > 0
+      ? ` under its own weight plus ${params.loadedByComponentIds.join(", ")}`
+      : " under its own weight";
+  const span =
+    params.idealisation === "cantilever"
+      ? "as a cantilever from its single support"
+      : `across a ${params.spanM.toFixed(2)} m span between its outermost supports`;
+  return (
+    `${params.componentType} "${params.componentId}" bends ${span}${loads}. ` +
+    `The peak bending moment is ${formatQuantity(params.momentNm, "N*m")}, and over its section modulus of ` +
+    `${formatQuantity(params.sectionModulusM3, "m^3")} that is a bending stress of ` +
+    `${formatQuantity(params.bendingStressPa, "Pa")} at the extreme fibre, exceeding the ${params.materialName} ` +
+    `allowable of ${formatQuantity(params.allowableStressPa, "Pa")}. A deeper section, a shorter span or an extra support would help.`
   );
 }

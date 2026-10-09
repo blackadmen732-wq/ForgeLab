@@ -39,7 +39,13 @@ function sourceFiles(root: string): string[] {
  * disabled inline; this cannot.
  */
 describe("simulation / rendering separation", () => {
-  const simulationPackages = ["shared", "materials", "sim-core", "reactor-components"];
+  const simulationPackages = [
+    "shared",
+    "materials",
+    "sim-core",
+    "reactor-components",
+    "sim-runner",
+  ];
 
   it("never imports React, Three.js or a renderer in any simulation package", () => {
     const forbidden = /from\s+["'](react|react-dom|three|@react-three\/[^"']+)["']/;

@@ -26,7 +26,11 @@
       "@forgelab/materials": ["./packages/materials/src/index.ts"],
       "@forgelab/sim-core": ["./packages/sim-core/src/index.ts"],
       "@forgelab/reactor-components": ["./packages/reactor-components/src/index.ts"],
-      "@forgelab/test-utils": ["./packages/test-utils/src/index.ts"]
+      "@forgelab/test-utils": ["./packages/test-utils/src/index.ts"],
+      "@forgelab/sim-runner": ["./packages/sim-runner/src/index.ts"],
+      "@forgelab/protocol": ["./packages/protocol/src/index.ts"],
+      "@forgelab/multiplayer": ["./packages/multiplayer/src/index.ts"],
+      "@forgelab/voice": ["./packages/voice/src/index.ts"]
     }
   }
 }

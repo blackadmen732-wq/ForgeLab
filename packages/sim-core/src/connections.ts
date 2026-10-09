@@ -1,4 +1,5 @@
 import type { Meters, Newtons, Vec3 } from "@forgelab/shared";
+import type { PortSpec } from "./ports.js";
 
 export type ComponentId = string;
 export type ConnectionId = string;
@@ -7,21 +8,30 @@ export type ConnectionPointId = string;
 /**
  * Kinds of connection ForgeLab understands.
  *
- * Milestone 0 implements `structural` and `mount` only. The remaining names are reserved
- * so that save files written today keep their meaning when the corresponding physics
- * phase lands; nothing in Milestone 0 reads them, and `isLoadBearing` treats them as
- * non-structural.
+ * `structural` and `mount` carry mechanical load. The rest are plant networks read by the
+ * V0.1 plant solver (see docs/ARCHITECTURE.md §12):
+ *   electrical — DC power network
+ *   coolant    — primary coolant loop
+ *   steam      — heat exchanger secondary side to a turbine
+ *   shaft      — turbine to generator
+ *   vacuum     — vacuum pump to vessel
+ *   fuel       — fuel injector to vessel
+ *   port       — plasma heater to vessel
+ *   control    — sensor / controller / actuator signals
+ *   cryo       — cryogenic helium from a cryoplant to superconducting magnets
  */
 export const CONNECTION_TYPES = Object.freeze([
   "structural",
   "mount",
-  // Reserved for later phases. See docs/PHYSICS_ROADMAP.md.
   "electrical",
   "coolant",
   "vacuum",
   "fuel",
   "control",
   "shaft",
+  "steam",
+  "port",
+  "cryo",
 ] as const);
 
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
@@ -52,6 +62,8 @@ export interface ConnectionPoint {
   readonly localDirection: Vec3;
   readonly connectionType: ConnectionType;
   readonly maxLoadN?: Newtons;
+  /** The engineering interface: domain, direction and ratings (see ports.ts). */
+  readonly port?: PortSpec;
 }
 
 /** One end of an established link. */

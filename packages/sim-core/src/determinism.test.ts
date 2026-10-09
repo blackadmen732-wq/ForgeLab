@@ -218,3 +218,19 @@ describe("fixed timestep and frame-rate independence", () => {
     }).toThrowError(/non-negative/);
   });
 });
+
+describe("generated ids", () => {
+  it("never collide with ids an editor chose itself, and stay deterministic", () => {
+    const make = () => {
+      const world = makeWorld();
+      placeBlock(world, { id: "block-1", positionM: vec3(0, 0.5, 0) });
+      placeBlock(world, { id: "block-2", positionM: vec3(2, 0.5, 0) });
+      return [world.duplicateComponent("block-1").id, world.duplicateComponent("block-1").id];
+    };
+    const ids = make();
+    expect(new Set(ids).size).toBe(2);
+    expect(ids).not.toContain("block-1");
+    expect(ids).not.toContain("block-2");
+    expect(make()).toEqual(ids);
+  });
+});

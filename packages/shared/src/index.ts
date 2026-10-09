@@ -23,3 +23,12 @@ export * as QuaternionMath from "./quaternion.js";
 export { AXIS_X, AXIS_Y, AXIS_Z, DOWN, UP, VEC3_ONE, VEC3_ZERO, vec3 } from "./vec3.js";
 
 export { QUATERNION_IDENTITY, quaternion } from "./quaternion.js";
+
+export {
+  linearCopies,
+  mirrorCopies,
+  radialCopies,
+  type LinearPattern,
+  type MirrorPlane,
+  type RadialPattern,
+} from "./patterns.js";

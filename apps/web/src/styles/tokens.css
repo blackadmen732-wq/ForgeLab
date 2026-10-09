@@ -1,0 +1,86 @@
+/*
+ * ForgeLab design tokens.
+ *
+ * Direction: a control room drawn like an engineering sheet. Graphite surfaces, hairline
+ * rules, instrument typography. Colour is reserved for physical state — stress, heat,
+ * power, coolant, field and plasma each own a hue family — so chrome stays neutral and
+ * the primary action is simply the brightest thing on screen.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces */
+  --bg: #0b0e12;
+  --bg-raised: #0f1318;
+  --panel: #12161c;
+  --panel-2: #171c23;
+  --panel-3: #1d232b;
+  --line: #222932;
+  --line-strong: #2e3743;
+  --overlay: rgba(6, 8, 11, 0.72);
+
+  /* Text */
+  --text: #dbe1e8;
+  --text-strong: #f2f5f8;
+  --text-dim: #8b96a4;
+  --text-faint: #5d6774;
+
+  /* Action (neutral, bright) and selection */
+  --action: #e8edf2;
+  --action-text: #0b0e12;
+  --action-hover: #ffffff;
+  --select: #6fd3d1;
+  --select-soft: rgba(111, 211, 209, 0.14);
+  --focus: #9fe6e4;
+
+  /* Physical state — used by the viewport overlays and by readouts */
+  --ok: #7fbf8f;
+  --stress: #e2a53d;
+  --fail: #e5534b;
+  --fail-soft: rgba(229, 83, 75, 0.14);
+  --heat-cold: #3e7cc9;
+  --heat-warm: #e8e2d4;
+  --heat-hot: #f08a3c;
+  --power: #f1d06b;
+  --coolant: #4aa3e8;
+  --field: #a78bfa;
+  --plasma: #f472b6;
+  --steam: #cfd6de;
+  --control: #7fbf8f;
+
+  /* Confidence */
+  --conf-supported: #7fbf8f;
+  --conf-approximate: #e2a53d;
+  --conf-experimental: #c084fc;
+  --conf-unsupported: #94a3b8;
+
+  /* Type */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 20px;
+
+  /* Geometry */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 10px;
+  --topbar-h: 44px;
+  --rail-w: 48px;
+  --drawer-w: 300px;
+  --inspector-w: 332px;
+  --timeline-h: 212px;
+  --timeline-collapsed-h: 34px;
+
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.4);
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --dur: 160ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+  }
+}

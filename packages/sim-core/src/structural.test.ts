@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MaterialIds } from "@forgelab/materials";
 import { QuaternionMath, STANDARD_GRAVITY_MPS2, transform, vec3 } from "@forgelab/shared";
 import { makeWorld, place, placeBlock, stack } from "@forgelab/test-utils";
+import { DEFAULT_SIMULATION_SETTINGS, type SimulationComponent, solveStructure } from "./index.js";
 
 const g = STANDARD_GRAVITY_MPS2;
 
@@ -443,5 +444,68 @@ describe("built-in components under load", () => {
 
     expect(world.requireComponent("leg-bottom-nx-nz").state.structural.status).toBe("normal");
     expect(world.getSnapshot().failures).toHaveLength(0);
+  });
+});
+
+describe("strength at temperature (EN 1993-1-2)", () => {
+  const heated = (c: SimulationComponent, temperatureK: number): SimulationComponent => ({
+    ...c,
+    state: {
+      ...c.state,
+      plant: { ...c.state.plant, thermal: { ...c.state.plant.thermal, temperatureK } },
+    },
+  });
+
+  function column(widthM: number, materialId: string = MaterialIds.StructuralSteel) {
+    const world = makeWorld();
+    placeBlock(world, {
+      id: "column",
+      positionM: vec3(0, 1, 0),
+      sizeM: vec3(widthM, 2, widthM),
+      anchored: true,
+      materialId,
+    });
+    placeBlock(world, { id: "load", positionM: vec3(0, 2.5, 0), materialId });
+    stack(world, "column", "load", { id: "joint" });
+    world.solve();
+    return world;
+  }
+
+  const solveAt = (world: ReturnType<typeof makeWorld>, temperatureK: number) =>
+    solveStructure({
+      components: world.listComponents().map((c) => heated(c, temperatureK)),
+      connections: world.listConnections(),
+      settings: DEFAULT_SIMULATION_SETTINGS,
+      simulatedTimeSec: 0,
+      tick: 0,
+      previouslyFailedComponentIds: new Set(),
+    });
+
+  it("a carbon-steel column that stands at 20 °C fails at 700 °C, and says why", () => {
+    // The stockiest section that still carries the load comfortably at room temperature.
+    const width = [0.02, 0.025, 0.03, 0.035, 0.04, 0.05, 0.06].find((w) => {
+      const u = solveAt(column(w), 293.15).states.get("column")!.structural.utilization;
+      return u > 0.3 && u < 0.9;
+    })!;
+    expect(width).toBeDefined();
+    const world = column(width);
+    const cold = solveAt(world, 293.15);
+    expect(cold.states.get("column")!.structural.failed).toBe(false);
+    // EN 1993-1-2 at 700 °C: ky = 0.23, kE = 0.13.
+    const hot = solveAt(world, 973.15);
+    const state = hot.states.get("column")!.structural;
+    expect(state.failed).toBe(true);
+    const failure = hot.failures.find((f) => f.componentId === "column")!;
+    expect(failure.cause).toContain("EN 1993-1-2");
+    expect(failure.cause).toContain("700 °C");
+  });
+
+  it("does not derate below 100 °C, or materials with no sourced curve", () => {
+    const steel = column(0.03);
+    const u20 = solveAt(steel, 293.15).states.get("column")!.structural.utilization;
+    expect(solveAt(steel, 363.15).states.get("column")!.structural.utilization).toBe(u20);
+    const titanium = column(0.03, MaterialIds.Titanium);
+    const t20 = solveAt(titanium, 293.15).states.get("column")!.structural.utilization;
+    expect(solveAt(titanium, 973.15).states.get("column")!.structural.utilization).toBe(t20);
   });
 });

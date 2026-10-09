@@ -2,8 +2,14 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "baseUrl": ".",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "DOM"],
     "types": ["node"]
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/*.config.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/*.config.ts",
+    "supabase/tests/**/*.ts",
+    "api-src/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }

@@ -52,6 +52,26 @@ export type Radians = number;
 export type WattsPerMeterKelvin = number;
 /** Electrical resistivity. Derived SI unit: ohm metre. */
 export type OhmMeters = number;
+/** Specific heat capacity. Derived SI unit: joule per kilogram kelvin. */
+export type JoulesPerKilogramKelvin = number;
+/** Electric potential. Derived SI unit: volt. */
+export type Volts = number;
+/** Electric current. SI base unit: ampere. */
+export type Amperes = number;
+/** Electrical resistance. Derived SI unit: ohm. */
+export type Ohms = number;
+/** Magnetic flux density. Derived SI unit: tesla. */
+export type Tesla = number;
+/** Mass flow rate. Derived SI unit: kilogram per second. */
+export type KilogramsPerSecond = number;
+/** Volumetric flow rate (pumping speed). Derived SI unit: cubic metre per second. */
+export type CubicMetersPerSecond = number;
+/** Number density. Derived SI unit: per cubic metre. */
+export type PerCubicMeter = number;
+/** Gas throughput. Derived SI unit: pascal cubic metre per second (= watt). */
+export type PascalCubicMetersPerSecond = number;
+/** Heat transfer conductance. Derived SI unit: watt per kelvin. */
+export type WattsPerKelvin = number;
 /** Dimensionless ratio (utilization, efficiency, safety factor). */
 export type Ratio = number;
 
@@ -68,6 +88,24 @@ export type Branded<TBase, TTag extends string> = TBase & { readonly [brandTag]:
 
 /** Standard acceleration of gravity, CGPM (1901) defined exact value. m·s⁻². */
 export const STANDARD_GRAVITY_MPS2: MetersPerSecondSquared = 9.80665;
+
+/** Elementary charge, exact since the 2019 SI redefinition. C. */
+export const ELEMENTARY_CHARGE_C = 1.602176634e-19;
+
+/** Vacuum magnetic permeability, CODATA 2018 recommended value. N·A⁻². */
+export const VACUUM_PERMEABILITY_H_PER_M = 1.25663706212e-6;
+
+/** Boltzmann constant, exact since the 2019 SI redefinition. J·K⁻¹. */
+export const BOLTZMANN_J_PER_K = 1.380649e-23;
+
+/** Stefan–Boltzmann constant, CODATA 2018 (exact given the defined constants). W·m⁻²·K⁻⁴. */
+export const STEFAN_BOLTZMANN_W_M2_K4 = 5.670374419e-8;
+
+/** Standard atmosphere, exact by definition. Pa. */
+export const STANDARD_ATMOSPHERE_PA = 101325;
+
+/** Unified atomic mass unit, CODATA 2018. kg. */
+export const ATOMIC_MASS_UNIT_KG = 1.6605390666e-27;
 
 /** 0 °C expressed in kelvin (exact by definition of the Celsius scale). */
 export const ZERO_CELSIUS_IN_KELVIN: Kelvin = 273.15;
@@ -86,6 +124,17 @@ export const gigapascalsToPascals = (gpa: number): Pascals => gpa * 1e9;
 export const barToPascals = (bar: number): Pascals => bar * 1e5;
 export const kilowattsToWatts = (kw: number): Watts => kw * 1e3;
 export const megawattsToWatts = (mw: number): Watts => mw * 1e6;
+export const wattsToMegawatts = (w: Watts): number => w * 1e-6;
+/** Kiloelectronvolts to joules, via the exact elementary charge. */
+export const kiloElectronVoltsToJoules = (keV: number): Joules => keV * 1e3 * ELEMENTARY_CHARGE_C;
+export const joulesToKiloElectronVolts = (j: Joules): number => j / (1e3 * ELEMENTARY_CHARGE_C);
+export const megaElectronVoltsToJoules = (meV: number): Joules => meV * 1e6 * ELEMENTARY_CHARGE_C;
+export const megaamperesToAmperes = (ma: number): Amperes => ma * 1e6;
+export const amperesToMegaamperes = (a: Amperes): number => a * 1e-6;
+/** Cubic centimetres to cubic metres (reaction-rate tables publish cm³/s). */
+export const cubicCentimetersToCubicMeters = (cm3: number): CubicMeters => cm3 * 1e-6;
+export const squareMillimetersToSquareMeters = (mm2: number): SquareMeters => mm2 * 1e-6;
+export const litersToCubicMeters = (l: number): CubicMeters => l * 1e-3;
 export const celsiusToKelvin = (c: number): Kelvin => c + ZERO_CELSIUS_IN_KELVIN;
 export const kelvinToCelsius = (k: Kelvin): number => k - ZERO_CELSIUS_IN_KELVIN;
 export const degreesToRadians = (deg: number): Radians => (deg * Math.PI) / 180;

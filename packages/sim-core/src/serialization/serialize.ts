@@ -2,13 +2,23 @@ import { QUATERNION_IDENTITY, quaternion, transform, vec3, Vec3Math } from "@for
 import type { PhysicalProperties, SimulationComponent } from "../component.js";
 import type { Connection, ConnectionPoint, ConnectionType } from "../connections.js";
 import { CONNECTION_TYPES } from "../connections.js";
-import { boxGeometry, cylinderGeometry, type ComponentGeometry } from "../geometry.js";
+import { compositionError } from "../component.js";
+import { parsePortSpec, type PortSpec } from "../ports.js";
+import {
+  boxGeometry,
+  arcGeometry,
+  cylinderGeometry,
+  torusGeometry,
+  type ComponentGeometry,
+} from "../geometry.js";
+import { isPlantRole, resolveParameters } from "../plant/roles.js";
 import { makeSettings, type SimulationSettings } from "../settings.js";
 import { SimulationWorld, type WorldOptions } from "../world.js";
 import {
   CURRENT_SCHEMA_VERSION,
   type AssemblyFileV1,
   type SerializedComponent,
+  type SerializedMaterialRegion,
   type SerializedConnection,
   type SerializedConnectionPoint,
   type SerializedGeometry,
@@ -53,6 +63,15 @@ export function serializeWorld(
     name: world.name,
     components: world.listComponents().map(serializeComponent),
     connections: world.listConnections().map(serializeConnection),
+    ...(world.listGroups().length > 0
+      ? {
+          groups: world.listGroups().map((g) => ({
+            id: g.id,
+            name: g.name,
+            componentIds: [...g.componentIds],
+          })),
+        }
+      : {}),
     simulationSettings: serializeSettings(world.settings),
     runtime: {
       tick: world.tick,
@@ -82,6 +101,11 @@ export function serializeComponent(component: SimulationComponent): SerializedCo
     additionalMassKg: component.additionalMassKg,
     anchored: component.anchored,
     ...(movedFromAuthoredPlacement ? { physical: serializePhysical(physical) } : {}),
+    role: component.role,
+    parameters: { ...component.parameters },
+    ...(component.composition.length === 0
+      ? {}
+      : { composition: component.composition.map((r) => ({ ...r })) }),
   };
 }
 
@@ -121,6 +145,25 @@ function serializeGeometry(geometry: ComponentGeometry): SerializedGeometry {
       ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
     };
   }
+  if (geometry.kind === "arc") {
+    return {
+      kind: "arc",
+      bendRadiusM: geometry.bendRadiusM,
+      sweepRad: geometry.sweepRad,
+      radiusM: geometry.radiusM,
+      axis: geometry.axis,
+      ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
+    };
+  }
+  if (geometry.kind === "torus") {
+    return {
+      kind: "torus",
+      majorRadiusM: geometry.majorRadiusM,
+      minorRadiusM: geometry.minorRadiusM,
+      axis: geometry.axis,
+      ...(geometry.wallThicknessM === undefined ? {} : { wallThicknessM: geometry.wallThicknessM }),
+    };
+  }
   return {
     kind: "cylinder",
     radiusM: geometry.radiusM,
@@ -137,6 +180,7 @@ function serializeConnectionPoint(point: ConnectionPoint): SerializedConnectionP
     localDirection: serializeVec3(point.localDirection),
     connectionType: point.connectionType,
     ...(point.maxLoadN === undefined ? {} : { maxLoadN: point.maxLoadN }),
+    ...(point.port === undefined ? {} : { port: { ...point.port } }),
   };
 }
 
@@ -158,6 +202,10 @@ function serializeSettings(settings: SimulationSettings): SerializedSimulationSe
     designSafetyFactor: settings.designSafetyFactor,
     failurePropagation: settings.failurePropagation,
     maxFailureLogEntries: settings.maxFailureLogEntries,
+    bucklingEffectiveLengthFactor: settings.bucklingEffectiveLengthFactor,
+    ambientTemperatureK: settings.ambientTemperatureK,
+    initialThermalState: settings.initialThermalState,
+    initialVacuumState: settings.initialVacuumState,
   };
 }
 
@@ -196,9 +244,9 @@ export function parseAssemblyFile(input: unknown): AssemblyFileV1 {
     throw new AssemblyFileError(`Unsupported assembly schema version ${version}.`);
   }
 
-  // Version 1 is the earliest format, so there is nothing to migrate yet. When version 2
-  // lands, the chain of migrations runs here, oldest first.
-  return validateV1(record);
+  // Migrations run here, oldest first. Version 1 → 2: every component becomes a plain
+  // structural part with no plant parameters, which is exactly what it meant in version 1.
+  return validateFile(record, version);
 }
 
 export function fromJson(json: string): AssemblyFileV1 {
@@ -237,6 +285,9 @@ export function deserializeWorld(
       connectionPoints: component.connectionPoints.map(deserializeConnectionPoint),
       additionalMassKg: component.additionalMassKg,
       anchored: component.anchored,
+      role: component.role,
+      parameters: component.parameters,
+      ...(component.composition === undefined ? {} : { composition: component.composition }),
     });
 
     if (component.physical !== undefined) {
@@ -256,6 +307,11 @@ export function deserializeWorld(
       type: connection.type,
       ...(connection.maxLoadN === undefined ? {} : { maxLoadN: connection.maxLoadN }),
     });
+  }
+
+  for (const group of file.groups ?? []) {
+    const members = group.componentIds.filter((id) => world.getComponent(id) !== undefined);
+    if (members.length >= 2) world.createGroup(members, { id: group.id, name: group.name });
   }
 
   world.restoreRuntime({
@@ -278,6 +334,23 @@ function deserializeGeometry(geometry: SerializedGeometry): ComponentGeometry {
   if (geometry.kind === "box") {
     return boxGeometry(toVec3(geometry.sizeM), geometry.wallThicknessM);
   }
+  if (geometry.kind === "arc") {
+    return arcGeometry(
+      geometry.bendRadiusM,
+      geometry.sweepRad,
+      geometry.radiusM,
+      geometry.axis,
+      geometry.wallThicknessM,
+    );
+  }
+  if (geometry.kind === "torus") {
+    return torusGeometry(
+      geometry.majorRadiusM,
+      geometry.minorRadiusM,
+      geometry.axis,
+      geometry.wallThicknessM,
+    );
+  }
   return cylinderGeometry(
     geometry.radiusM,
     geometry.heightM,
@@ -293,6 +366,7 @@ function deserializeConnectionPoint(point: SerializedConnectionPoint): Connectio
     localDirection: toVec3(point.localDirection),
     connectionType: point.connectionType,
     ...(point.maxLoadN === undefined ? {} : { maxLoadN: point.maxLoadN }),
+    ...(point.port === undefined ? {} : { port: Object.freeze({ ...point.port }) }),
   });
 }
 
@@ -310,10 +384,10 @@ function quaternionEquals(
  * Validation
  * ------------------------------------------------------------------------------------ */
 
-function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
+function validateFile(record: Record<string, unknown>, version: number): AssemblyFileV1 {
   const name = typeof record["name"] === "string" ? record["name"] : "Untitled Assembly";
   const components = requireArray(record["components"], "components").map((value, index) =>
-    validateComponent(value, index),
+    validateComponent(value, index, version),
   );
   const connections = requireArray(record["connections"], "connections").map((value, index) =>
     validateConnection(value, index),
@@ -336,12 +410,30 @@ function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
 
   const runtime = record["runtime"];
   const meta = record["meta"];
+  // Groups are optional organisation: malformed entries are dropped, never fatal.
+  const groups = Array.isArray(record["groups"])
+    ? record["groups"].flatMap((g) =>
+        isRecord(g) &&
+        typeof g["id"] === "string" &&
+        Array.isArray(g["componentIds"]) &&
+        g["componentIds"].every((id) => typeof id === "string" && componentIds.has(id))
+          ? [
+              {
+                id: g["id"],
+                name: typeof g["name"] === "string" ? g["name"].slice(0, 80) : "Group",
+                componentIds: g["componentIds"] as string[],
+              },
+            ]
+          : [],
+      )
+    : [];
 
   return {
     schemaVersion: CURRENT_SCHEMA_VERSION,
     name,
     components,
     connections,
+    ...(groups.length > 0 ? { groups } : {}),
     simulationSettings: settings,
     ...(isRecord(runtime)
       ? {
@@ -363,7 +455,7 @@ function validateV1(record: Record<string, unknown>): AssemblyFileV1 {
   };
 }
 
-function validateComponent(value: unknown, index: number): SerializedComponent {
+function validateComponent(value: unknown, index: number, version: number): SerializedComponent {
   if (!isRecord(value)) {
     throw new AssemblyFileError(`components[${index}] is not an object.`);
   }
@@ -389,7 +481,24 @@ function validateComponent(value: unknown, index: number): SerializedComponent {
     ...(isRecord(value["physical"])
       ? { physical: validatePhysical(value["physical"], `components[${index}].physical`) }
       : {}),
+    ...validateRoleAndParameters(value, index, version),
+    ...validateComposition(value["composition"], `components[${index}].composition`),
   };
+}
+
+function validateRoleAndParameters(
+  value: Record<string, unknown>,
+  index: number,
+  version: number,
+): Pick<SerializedComponent, "role" | "parameters"> {
+  if (version < 2) return { role: "structure", parameters: {} };
+  const role = value["role"] ?? "structure";
+  if (!isPlantRole(role)) {
+    throw new AssemblyFileError(`components[${index}].role "${String(role)}" is not a known role.`);
+  }
+  const raw = isRecord(value["parameters"]) ? value["parameters"] : {};
+  // resolveParameters drops unknown keys, clamps ranges and defaults wrong types.
+  return { role, parameters: { ...resolveParameters(role, raw) } };
 }
 
 function validateGeometry(value: unknown, path: string): SerializedGeometry {
@@ -419,8 +528,39 @@ function validateGeometry(value: unknown, path: string): SerializedGeometry {
         : {}),
     };
   }
+  if (kind === "arc") {
+    const axis = value["axis"];
+    if (axis !== "x" && axis !== "y" && axis !== "z") {
+      throw new AssemblyFileError(`${path}.axis must be "x", "y" or "z".`);
+    }
+    return {
+      kind: "arc",
+      bendRadiusM: requireFinite(value["bendRadiusM"], `${path}.bendRadiusM`),
+      sweepRad: requireFinite(value["sweepRad"], `${path}.sweepRad`),
+      radiusM: requireFinite(value["radiusM"], `${path}.radiusM`),
+      axis,
+      ...(typeof value["wallThicknessM"] === "number"
+        ? { wallThicknessM: value["wallThicknessM"] }
+        : {}),
+    };
+  }
+  if (kind === "torus") {
+    const axis = value["axis"];
+    if (axis !== "x" && axis !== "y" && axis !== "z") {
+      throw new AssemblyFileError(`${path}.axis must be "x", "y" or "z".`);
+    }
+    return {
+      kind: "torus",
+      majorRadiusM: requireFinite(value["majorRadiusM"], `${path}.majorRadiusM`),
+      minorRadiusM: requireFinite(value["minorRadiusM"], `${path}.minorRadiusM`),
+      axis,
+      ...(typeof value["wallThicknessM"] === "number"
+        ? { wallThicknessM: value["wallThicknessM"] }
+        : {}),
+    };
+  }
   throw new AssemblyFileError(
-    `${path}.kind must be "box" or "cylinder", received ${String(kind)}.`,
+    `${path}.kind must be "box", "cylinder" or "torus", received ${String(kind)}.`,
   );
 }
 
@@ -460,7 +600,34 @@ function validateConnectionPoint(value: unknown, path: string): SerializedConnec
     localDirection: validateVec3(value["localDirection"], `${path}.localDirection`),
     connectionType: connectionType as ConnectionType,
     ...(typeof value["maxLoadN"] === "number" ? { maxLoadN: value["maxLoadN"] } : {}),
+    ...validatePort(value["port"], `${path}.port`),
   };
+}
+
+function validatePort(value: unknown, path: string): { port?: PortSpec } {
+  if (value === undefined) return {};
+  const port = parsePortSpec(value);
+  if (port === null) throw new AssemblyFileError(`${path} is not a valid port specification.`);
+  return { port };
+}
+
+function validateComposition(
+  value: unknown,
+  path: string,
+): { composition?: readonly SerializedMaterialRegion[] } {
+  if (value === undefined) return {};
+  const regions = requireArray(value, path).map((raw, i) => {
+    if (!isRecord(raw)) throw new AssemblyFileError(`${path}[${i}] is not an object.`);
+    return {
+      id: requireString(raw["id"], `${path}[${i}].id`),
+      name: typeof raw["name"] === "string" ? raw["name"].slice(0, 80) : "",
+      substanceId: requireString(raw["substanceId"], `${path}[${i}].substanceId`),
+      volumeFraction: requireFinite(raw["volumeFraction"], `${path}[${i}].volumeFraction`),
+    };
+  });
+  const problem = compositionError(regions);
+  if (problem !== null) throw new AssemblyFileError(`${path}: ${problem}`);
+  return { composition: regions };
 }
 
 function validateConnection(value: unknown, index: number): SerializedConnection {
@@ -505,6 +672,14 @@ function validateSettings(value: unknown): SerializedSimulationSettings {
       1,
       Math.floor(finiteOr(value["maxFailureLogEntries"], defaults.maxFailureLogEntries)),
     ),
+    bucklingEffectiveLengthFactor: positiveOr(
+      value["bucklingEffectiveLengthFactor"],
+      defaults.bucklingEffectiveLengthFactor,
+    ),
+    ambientTemperatureK: positiveOr(value["ambientTemperatureK"], defaults.ambientTemperatureK),
+    initialThermalState: value["initialThermalState"] === "cold" ? "cold" : "hot-standby",
+    initialVacuumState:
+      value["initialVacuumState"] === "atmospheric" ? "atmospheric" : "pumped-down",
   };
 }
 
@@ -554,3 +729,103 @@ const finiteOr = (value: unknown, fallback: number): number =>
 
 const positiveOr = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+
+/* ------------------------------------------------------------------------------------ *
+ * Assemblies: reusable pieces of a design
+ * ------------------------------------------------------------------------------------ */
+
+/**
+ * Cuts parts out of a design as a reusable assembly: those parts, exactly as authored, and
+ * the connections between them (connections to anything outside are left behind). The
+ * pieces are positioned relative to the centre of their footprint on the floor, so the
+ * assembly can be put down anywhere. The result is an ordinary assembly file.
+ */
+export function extractAssembly(
+  world: SimulationWorld,
+  componentIds: readonly string[],
+  name: string,
+): AssemblyFileV1 {
+  const ids = new Set(componentIds.filter((id) => world.getComponent(id) !== undefined));
+  if (ids.size === 0) throw new AssemblyFileError("An assembly needs at least one part.");
+  const parts = world.listComponents().filter((c) => ids.has(c.id));
+  const cx = parts.reduce((sum, c) => sum + c.transform.positionM.x, 0) / parts.length;
+  const cz = parts.reduce((sum, c) => sum + c.transform.positionM.z, 0) / parts.length;
+  const components = parts.map((c) => {
+    const { physical: _physical, ...authored } = serializeComponent(c);
+    const p = authored.transform.positionM;
+    return {
+      ...authored,
+      transform: { ...authored.transform, positionM: { x: p.x - cx, y: p.y, z: p.z - cz } },
+    };
+  });
+  const connections = world
+    .listConnections()
+    .filter((c) => ids.has(c.from.componentId) && ids.has(c.to.componentId))
+    .map(serializeConnection);
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    name,
+    components,
+    connections,
+    simulationSettings: serializeSettings(world.settings),
+  };
+}
+
+/**
+ * Puts an assembly down in a design with the centre of its footprint at `at` (its
+ * heights are offset by `at.y`): fresh ids, its internal connections re-made, and its parts
+ * grouped so they select and move together. Ungroup to take it apart.
+ */
+export function insertAssembly(
+  world: SimulationWorld,
+  input: unknown,
+  at: { x: number; y: number; z: number },
+  options: { name?: string } = {},
+): { componentIds: string[]; groupId: string | null } {
+  const file = parseAssemblyFile(input);
+  const idMap = new Map<string, string>();
+  for (const component of file.components) {
+    const id = world.nextId(component.type);
+    idMap.set(component.id, id);
+    const p = component.transform.positionM;
+    world.addComponent({
+      id,
+      type: component.type,
+      label: component.label,
+      materialId: component.materialId,
+      geometry: deserializeGeometry(component.geometry),
+      transform: transform(
+        vec3(p.x + at.x, p.y + at.y, p.z + at.z),
+        toQuaternion(component.transform.rotation),
+      ),
+      connectionPoints: component.connectionPoints.map(deserializeConnectionPoint),
+      additionalMassKg: component.additionalMassKg,
+      anchored: component.anchored,
+      role: component.role,
+      parameters: component.parameters,
+      ...(component.composition === undefined ? {} : { composition: component.composition }),
+    });
+  }
+  for (const connection of file.connections) {
+    world.connect(
+      {
+        componentId: idMap.get(connection.from.componentId)!,
+        connectionPointId: connection.from.connectionPointId,
+      },
+      {
+        componentId: idMap.get(connection.to.componentId)!,
+        connectionPointId: connection.to.connectionPointId,
+      },
+      {
+        type: connection.type,
+        ...(connection.maxLoadN === undefined ? {} : { maxLoadN: connection.maxLoadN }),
+      },
+    );
+  }
+  const componentIds = [...idMap.values()];
+  const groupId =
+    componentIds.length >= 2
+      ? world.createGroup(componentIds, { name: options.name ?? file.name }).id
+      : null;
+  return { componentIds, groupId };
+}

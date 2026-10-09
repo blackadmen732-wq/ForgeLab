@@ -1,116 +1,55 @@
-import { celsiusToKelvin, megapascalsToPascals } from "@forgelab/shared";
+import { MATERIAL_LIBRARY } from "./library.js";
+import type { MaterialRecord } from "./schema.js";
 import type { MaterialDefinition, MaterialId } from "./types.js";
 
 /**
- * ForgeLab's Milestone 0 material catalogue.
+ * The structural catalogue: library materials with every property the solvers need
+ * (density, yield, stiffness, heat capacity, conductivity, resistivity and a service
+ * limit). Only these can be assigned to a placed part. A library material that lacks any
+ * of them is reference data, and stays so until the missing value is sourced — nothing
+ * is filled in to make it placeable.
  *
- * READ `docs/material-sources.md` BEFORE CHANGING ANY NUMBER HERE.
+ * READ docs/material-sources.md BEFORE CHANGING ANY NUMBER (they live in library.ts).
  *
- * Every value is a nominal handbook or supplier-datasheet figure for the named grade.
- * None of them are tuned for gameplay. If a value is process-dependent or scale-limited,
- * that is recorded in `notes` rather than smoothed away.
- *
- * `maxOperatingTemperatureK` is defined consistently across the catalogue as the
- * *maximum continuous service temperature at which the grade retains its listed
- * room-temperature structural properties*. It is not a melting point and not a
- * creep-rupture limit. Milestone 0 does not simulate temperature at all; the field
- * exists so Phase 2 has somewhere honest to read from.
+ * `maxOperatingTemperatureK` is the *maximum continuous service temperature at which the
+ * grade retains its listed room-temperature structural properties*. It is not a melting
+ * point and not a creep-rupture limit.
  */
-
-const STRUCTURAL_STEEL: MaterialDefinition = {
-  id: "structural-steel",
-  name: "Structural Steel",
-  grade: "ASTM A36 hot-rolled carbon steel",
-  densityKgM3: 7850,
-  yieldStrengthPa: megapascalsToPascals(250),
-  maxOperatingTemperatureK: celsiusToKelvin(400),
-  thermalConductivityWmK: 45.0,
-  electricalResistivityOhmM: 1.6e-7,
-  sourceSummary: "ASTM A36/A36M specified minimum yield; handbook values for the rest.",
-  notes: [
-    "250 MPa is the ASTM A36 specified *minimum* yield strength for thicknesses up to 200 mm; real stock typically tests higher.",
-    "400 degC is the temperature up to which EN 1993-1-2 applies no reduction to effective yield strength; above it carbon steel loses strength rapidly.",
-    "Electrical resistivity for low-carbon steels spans roughly 1.4e-7 to 1.8e-7 ohm-m depending on carbon and alloy content.",
-  ],
-};
-
-const STAINLESS_STEEL: MaterialDefinition = {
-  id: "stainless-steel",
-  name: "Stainless Steel",
-  grade: "AISI 316L austenitic stainless, annealed",
-  densityKgM3: 8000,
-  yieldStrengthPa: megapascalsToPascals(170),
-  maxOperatingTemperatureK: celsiusToKelvin(870),
-  thermalConductivityWmK: 16.3,
-  electricalResistivityOhmM: 7.4e-7,
-  sourceSummary: "ASTM A240 specified minimum 0.2% proof stress; supplier datasheet physicals.",
-  notes: [
-    "170 MPa is the ASTM A240 minimum 0.2% proof stress for annealed 316L. Non-low-carbon 316 is specified at 205 MPa - do not substitute one for the other.",
-    "870 degC is the intermittent-service scaling limit in air; continuous service in air is usually quoted as 925 degC. The lower figure is used here because thermal cycling is the harsher case.",
-    "Pressure-retaining design codes allow far lower temperatures than the scaling limit because of creep. ForgeLab does not model creep.",
-    "Thermal conductivity is quoted at 100 degC; at 20 degC it is nearer 14.6 W/(m*K).",
-  ],
-};
-
-const TUNGSTEN: MaterialDefinition = {
-  id: "tungsten",
-  name: "Tungsten",
-  grade: "Pure sintered tungsten (>= 99.95%), stress-relieved",
-  densityKgM3: 19250,
-  yieldStrengthPa: megapascalsToPascals(550),
-  maxOperatingTemperatureK: celsiusToKelvin(1300),
-  thermalConductivityWmK: 173,
-  electricalResistivityOhmM: 5.6e-8,
-  sourceSummary: "CRC Handbook physicals; supplier datasheet mechanicals for sintered rod.",
-  notes: [
-    "Tungsten yield strength is extremely process-dependent: 550 MPa is a conservative figure for sintered stress-relieved stock, while heavily worked wire and rod are quoted from 750 MPa to well over 1500 MPa.",
-    "1300 degC is the approximate recrystallization onset for pure tungsten, above which it embrittles. It is NOT the melting point (3422 degC).",
-    "In air, oxidation limits tungsten to a few hundred degC. The figure above assumes vacuum or inert atmosphere, which ForgeLab does not model yet.",
-  ],
-};
-
-const COPPER: MaterialDefinition = {
-  id: "copper",
-  name: "Copper",
-  grade: "C11000 electrolytic tough pitch, annealed (O60)",
-  densityKgM3: 8960,
-  yieldStrengthPa: megapascalsToPascals(69),
-  maxOperatingTemperatureK: celsiusToKelvin(200),
-  thermalConductivityWmK: 401,
-  electricalResistivityOhmM: 1.678e-8,
-  sourceSummary:
-    "CRC Handbook physicals for pure Cu at 20 degC; datasheet mechanicals for C11000-O60.",
-  notes: [
-    "69 MPa is annealed temper. Cold-worked C11000 (H04) reaches roughly 310 MPa - temper matters more than grade for copper.",
-    "200 degC is a softening/annealing service limit for cold-worked copper, not a melting or oxidation limit.",
-    "1.678e-8 ohm-m corresponds to about 103% IACS; the IACS reference standard itself is 1.7241e-8 ohm-m.",
-  ],
-};
-
-const ALUMINUM: MaterialDefinition = {
-  id: "aluminum",
-  name: "Aluminum",
-  grade: "6061-T6 aluminium alloy",
-  densityKgM3: 2700,
-  yieldStrengthPa: megapascalsToPascals(276),
-  maxOperatingTemperatureK: celsiusToKelvin(200),
-  thermalConductivityWmK: 167,
-  electricalResistivityOhmM: 3.99e-8,
-  sourceSummary: "ASM/supplier datasheet values for 6061-T6.",
-  notes: [
-    "276 MPa (40 ksi) is the typical 6061-T6 0.2% proof stress. The T4 temper of the same alloy is around 145 MPa.",
-    "200 degC is an over-ageing limit: held above it, T6 temper degrades permanently and does not recover on cooling.",
-  ],
-};
+export function structuralDefinition(record: MaterialRecord): MaterialDefinition | null {
+  const m = record.mechanical;
+  const t = record.thermal;
+  const e = record.electrical;
+  // Brittle materials have no yield point: their tensile strength is the limit.
+  const strength = m?.yieldStrength ?? m?.tensileStrength;
+  if (
+    strength === undefined ||
+    m?.youngsModulus === undefined ||
+    t?.specificHeat === undefined ||
+    t.conductivity === undefined ||
+    t.maxService === undefined ||
+    e?.resistivity === undefined
+  )
+    return null;
+  return Object.freeze({
+    id: record.id,
+    name: record.name,
+    grade: record.grade,
+    densityKgM3: record.density.value,
+    yieldStrengthPa: strength.value,
+    youngsModulusPa: m.youngsModulus.value,
+    specificHeatJkgK: t.specificHeat.value,
+    maxOperatingTemperatureK: t.maxService.value,
+    thermalConductivityWmK: t.conductivity.value,
+    electricalResistivityOhmM: e.resistivity.value,
+    sourceSummary: record.sourceSummary,
+    notes: record.notes,
+  });
+}
 
 /** Catalogue in a fixed, deterministic order. Never rely on object key order elsewhere. */
-export const MATERIAL_CATALOG: readonly MaterialDefinition[] = Object.freeze([
-  STRUCTURAL_STEEL,
-  STAINLESS_STEEL,
-  TUNGSTEN,
-  COPPER,
-  ALUMINUM,
-]);
+export const MATERIAL_CATALOG: readonly MaterialDefinition[] = Object.freeze(
+  MATERIAL_LIBRARY.map(structuralDefinition).filter((m): m is MaterialDefinition => m !== null),
+);
 
 /**
  * Well-known material ids.
@@ -124,6 +63,13 @@ export const MaterialIds = Object.freeze({
   Tungsten: "tungsten",
   Copper: "copper",
   Aluminum: "aluminum",
+  Stainless304L: "stainless-304l",
+  HighStrengthSteel: "hsla-steel",
+  Aluminum7075: "aluminum-7075",
+  Titanium: "titanium-6al4v",
+  CopperOFHC: "copper-ofhc",
+  Molybdenum: "molybdenum",
+  Concrete: "concrete-c30",
 } as const);
 
 export type KnownMaterialId = (typeof MaterialIds)[keyof typeof MaterialIds];

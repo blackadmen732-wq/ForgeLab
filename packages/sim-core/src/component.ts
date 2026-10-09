@@ -1,4 +1,4 @@
-import { getMaterial, type MaterialId } from "@forgelab/materials";
+import { getMaterial, getSubstance, type MaterialId } from "@forgelab/materials";
 import {
   type Kilograms,
   type Newtons,
@@ -28,6 +28,22 @@ import {
   geometryVolumeM3,
 } from "./geometry.js";
 import type { StructuralStatus } from "./failure.js";
+import type { MemberRole } from "./systems/members.js";
+import { type ComponentParameters, type PlantRole, resolveParameters } from "./plant/roles.js";
+import { type ComponentPlantState, ZERO_PLANT_STATE } from "./plant/state.js";
+
+/**
+ * One internal region of a finished component: a substance filling a fraction of the
+ * component's envelope volume. A superconducting magnet module, for example, is mostly
+ * stainless-steel case with NbTi, copper and G-10 inside; the rest is void or coolant.
+ */
+export interface MaterialRegion {
+  readonly id: string;
+  readonly name: string;
+  readonly substanceId: MaterialId;
+  /** Fraction of the envelope volume, 0–1. The fractions of a component sum to ≤ 1. */
+  readonly volumeFraction: number;
+}
 
 /**
  * The live kinematic state of a component.
@@ -81,12 +97,38 @@ export interface SupportState {
 
 export interface StructuralState {
   readonly loadBearingAreaM2: SquareMeters;
+  /** Axial (direct compressive) stress through the load-bearing section. */
   readonly appliedStressPa: Pascals;
   readonly allowableStressPa: Pascals;
+  /**
+   * Governing utilization: the largest of the axial, bending and buckling utilizations.
+   * Each mode is also reported separately below so a player can see which one governs.
+   */
   readonly utilization: Ratio;
   readonly status: StructuralStatus;
   readonly failed: boolean;
+
+  /** How the solver idealised this member (Structural 0.1). */
+  readonly memberRole: MemberRole;
+  /** Which mode produced `utilization`. */
+  readonly governingMode: StructuralMode;
+  /** appliedStressPa / allowableStressPa. */
+  readonly axialUtilization: Ratio;
+  /** Peak bending moment for a beam, N·m. 0 for columns and blocks. */
+  readonly bendingMomentNm: number;
+  /** Peak bending stress M / S at the extreme fibre, Pa. */
+  readonly bendingStressPa: Pascals;
+  readonly bendingUtilization: Ratio;
+  /** Critical buckling load for a column (Euler or Johnson), N. 0 when not a column. */
+  readonly criticalBucklingLoadN: Newtons;
+  /** Effective slenderness K·L/r of a column. 0 when not a column. */
+  readonly slendernessRatio: number;
+  /** Axial load / critical buckling load. */
+  readonly bucklingUtilization: Ratio;
 }
+
+/** The structural failure modes Structural 0.1 checks. */
+export type StructuralMode = "axial" | "bending" | "buckling";
 
 /**
  * Everything a solver has determined about a component this tick.
@@ -99,6 +141,8 @@ export interface ComponentState {
   readonly physical: PhysicalProperties;
   readonly support: SupportState;
   readonly structural: StructuralState;
+  /** Written only by the plant solver (electrical, thermal, coolant, magnetics, plasma...). */
+  readonly plant: ComponentPlantState;
 }
 
 /**
@@ -133,6 +177,15 @@ export interface SimulationComponent {
   readonly anchored: boolean;
   /** Free-text label shown in the workspace. Never read by physics. */
   readonly label: string;
+  /** Which plant physics applies to this component. `structure` means none. */
+  readonly role: PlantRole;
+  /** Operating parameters for the role, in SI, validated and complete. */
+  readonly parameters: ComponentParameters;
+  /**
+   * Internal material regions. Empty for a solid part made of `materialId`. When present,
+   * mass comes from the regions; `materialId` stays the load-bearing (casing) material.
+   */
+  readonly composition: readonly MaterialRegion[];
 }
 
 /**
@@ -145,10 +198,54 @@ export function resolveMassKg(
   geometry: ComponentGeometry,
   materialId: MaterialId,
   additionalMassKg: Kilograms = 0,
+  composition: readonly MaterialRegion[] = [],
 ): Kilograms {
-  const material = getMaterial(materialId);
   const volumeM3 = geometryVolumeM3(geometry);
-  return volumeM3 * material.densityKgM3 + assertNonNegative(additionalMassKg, "additionalMassKg");
+  const extra = assertNonNegative(additionalMassKg, "additionalMassKg");
+  if (composition.length === 0) return volumeM3 * getMaterial(materialId).densityKgM3 + extra;
+  let mass = 0;
+  for (const region of composition)
+    mass += region.volumeFraction * volumeM3 * getSubstance(region.substanceId).densityKgM3;
+  return mass + extra;
+}
+
+/**
+ * Checks a composition: known substances, fractions in [0, 1] summing to at most 1.
+ * Returns an error message, or null when valid.
+ */
+export function compositionError(composition: readonly MaterialRegion[]): string | null {
+  let total = 0;
+  for (const region of composition) {
+    if (!(region.volumeFraction >= 0 && region.volumeFraction <= 1))
+      return `Region "${region.id}" has a volume fraction outside 0–1.`;
+    try {
+      getSubstance(region.substanceId);
+    } catch {
+      return `Region "${region.id}" uses unknown substance "${region.substanceId}".`;
+    }
+    total += region.volumeFraction;
+  }
+  return total > 1 + 1e-9 ? `Regions fill ${(total * 100).toFixed(1)} % of the envelope.` : null;
+}
+
+/**
+ * Heat capacity m·c of a component, J/K. For a composed component it sums the regions whose
+ * specific heat is sourced; regions without one (e.g. NbTi) contribute no heat capacity,
+ * which makes the component heat up faster — the conservative direction. Additional mass
+ * takes the casing material's specific heat.
+ */
+export function componentHeatCapacityJK(component: SimulationComponent): number {
+  const casing = getMaterial(component.materialId);
+  if (component.composition.length === 0) return component.massKg * casing.specificHeatJkgK;
+  const volumeM3 = geometryVolumeM3(component.geometry);
+  let capacity = component.additionalMassKg * casing.specificHeatJkgK;
+  for (const region of component.composition) {
+    const substance = getSubstance(region.substanceId);
+    if (substance.specificHeatJkgK === undefined) continue;
+    capacity +=
+      region.volumeFraction * volumeM3 * substance.densityKgM3 * substance.specificHeatJkgK;
+  }
+  return capacity;
 }
 
 export function initialPhysicalProperties(
@@ -181,6 +278,15 @@ export const ZERO_STRUCTURAL_STATE: StructuralState = Object.freeze({
   utilization: 0,
   status: "normal",
   failed: false,
+  memberRole: "block",
+  governingMode: "axial",
+  axialUtilization: 0,
+  bendingMomentNm: 0,
+  bendingStressPa: 0,
+  bendingUtilization: 0,
+  criticalBucklingLoadN: 0,
+  slendernessRatio: 0,
+  bucklingUtilization: 0,
 });
 
 /** The live world-space placement of a component (not its authored transform). */
@@ -206,14 +312,25 @@ export interface ComponentSpec {
   readonly additionalMassKg?: Kilograms;
   readonly anchored?: boolean;
   readonly label?: string;
+  readonly role?: PlantRole;
+  /** Partial parameters; missing ones take the role's defaults. */
+  readonly parameters?: Readonly<Record<string, unknown>>;
   /** Restores a saved kinematic state instead of starting from the authored transform. */
   readonly physical?: PhysicalProperties;
+  /** Internal material regions of a finished component. */
+  readonly composition?: readonly MaterialRegion[];
 }
 
 export function createComponent(spec: ComponentSpec): SimulationComponent {
   const transform = spec.transform ?? makeTransform(VEC3_ZERO, QUATERNION_IDENTITY);
   const additionalMassKg = spec.additionalMassKg ?? 0;
-  const massKg = resolveMassKg(spec.geometry, spec.materialId, additionalMassKg);
+  const composition = Object.freeze(
+    [...(spec.composition ?? [])].map((r) => Object.freeze({ ...r })),
+  );
+  const problem = compositionError(composition);
+  if (problem !== null) throw new Error(`Component "${spec.id}": ${problem}`);
+  const massKg = resolveMassKg(spec.geometry, spec.materialId, additionalMassKg, composition);
+  const role = spec.role ?? "structure";
 
   return Object.freeze({
     id: spec.id,
@@ -227,10 +344,14 @@ export function createComponent(spec: ComponentSpec): SimulationComponent {
     additionalMassKg,
     anchored: spec.anchored ?? false,
     label: spec.label ?? spec.type,
+    role,
+    parameters: resolveParameters(role, spec.parameters ?? {}),
+    composition,
     state: Object.freeze({
       physical: spec.physical ?? initialPhysicalProperties(massKg, transform),
       support: ZERO_SUPPORT_STATE,
       structural: ZERO_STRUCTURAL_STATE,
+      plant: ZERO_PLANT_STATE,
     }),
   });
 }
@@ -250,6 +371,7 @@ export function withComponent(
       | "connections"
       | "state"
       | "connectionPoints"
+      | "parameters"
     >
   >,
 ): SimulationComponent {
@@ -262,7 +384,7 @@ export function withComponent(
     changes.materialId !== undefined ||
     changes.additionalMassKg !== undefined;
   const massKg = massChanged
-    ? resolveMassKg(geometry, materialId, additionalMassKg)
+    ? resolveMassKg(geometry, materialId, additionalMassKg, component.composition)
     : component.massKg;
 
   const transform = changes.transform ?? component.transform;
@@ -285,6 +407,10 @@ export function withComponent(
     label: changes.label ?? component.label,
     connections: changes.connections ?? component.connections,
     connectionPoints: changes.connectionPoints ?? component.connectionPoints,
+    parameters:
+      changes.parameters === undefined
+        ? component.parameters
+        : resolveParameters(component.role, changes.parameters),
     state: Object.freeze({ ...state, physical }),
   });
 }
@@ -307,6 +433,16 @@ export function withSolverState(
 ): SimulationComponent {
   return Object.freeze({
     ...component,
-    state: Object.freeze({ physical: component.state.physical, support, structural }),
+    state: Object.freeze({ ...component.state, support, structural }),
+  });
+}
+
+export function withPlantState(
+  component: SimulationComponent,
+  plant: ComponentPlantState,
+): SimulationComponent {
+  return Object.freeze({
+    ...component,
+    state: Object.freeze({ ...component.state, plant }),
   });
 }

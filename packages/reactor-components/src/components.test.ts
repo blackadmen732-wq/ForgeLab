@@ -8,8 +8,15 @@ import {
   transform,
   vec3,
 } from "@forgelab/shared";
-import { SimulationWorld, createComponent, geometryVolumeM3 } from "@forgelab/sim-core";
 import {
+  PLANT_ROLES,
+  SimulationWorld,
+  createComponent,
+  geometryVolumeM3,
+  resolveParameters,
+} from "@forgelab/sim-core";
+import {
+  COMPONENT_CATEGORIES,
   COMPONENT_DEFINITIONS,
   EQUIPMENT_BLOCK,
   REACTOR_CHAMBER,
@@ -20,13 +27,39 @@ import {
 } from "./index.js";
 
 describe("built-in component catalogue", () => {
-  it("ships exactly the four Milestone 0 components", () => {
-    expect(COMPONENT_DEFINITIONS.map((d) => d.type)).toEqual([
+  it("keeps the four Milestone 0 components first and ships the V0.1 plant library", () => {
+    expect(COMPONENT_DEFINITIONS.slice(0, 4).map((d) => d.type)).toEqual([
       "structural-beam",
       "structural-platform",
       "reactor-chamber",
       "equipment-block",
     ]);
+    const roles = new Set(COMPONENT_DEFINITIONS.map((d) => d.role));
+    // Everything a complete simplified plant needs is representable.
+    for (const role of PLANT_ROLES) expect(roles.has(role)).toBe(true);
+    expect(new Set(COMPONENT_DEFINITIONS.map((d) => d.type)).size).toBe(
+      COMPONENT_DEFINITIONS.length,
+    );
+  });
+
+  it("gives every part a known category, valid presets and consistent dimensions", () => {
+    for (const definition of COMPONENT_DEFINITIONS) {
+      expect(COMPONENT_CATEGORIES).toContain(definition.category);
+      const resolved = resolveParameters(definition.role, definition.presetParameters);
+      for (const [key, value] of Object.entries(definition.presetParameters)) {
+        // A preset that the role does not know, or that would be clamped, is a bug.
+        expect(resolved[key]).toEqual(value);
+      }
+      const spec = definition.createSpec({ id: "x" });
+      const reshaped = definition.reshape(
+        Object.fromEntries(definition.dimensions.map((d) => [d.key, d.defaultM])),
+        definition.defaultMaterialId,
+      );
+      expect(reshaped.geometry).toEqual(spec.geometry);
+      expect(definition.dimensionsOf(spec.geometry)).toEqual(
+        Object.fromEntries(definition.dimensions.map((d) => [d.key, d.defaultM])),
+      );
+    }
   });
 
   it("looks a definition up by type and refuses an unknown one", () => {
@@ -140,7 +173,7 @@ describe("built-in component catalogue", () => {
       world.addComponent(
         definition.createSpec({
           id: definition.type,
-          transform: transform(vec3(index * 12, 0.5, 0)),
+          transform: transform(vec3(index * 30, definition.nominalSizeM.y / 2, 0)),
         }),
       );
     }
@@ -148,7 +181,7 @@ describe("built-in component catalogue", () => {
 
     const snapshot = world.getSnapshot();
     expect(snapshot.diagnostics).toEqual([]);
-    expect(snapshot.components).toHaveLength(4);
+    expect(snapshot.components).toHaveLength(COMPONENT_DEFINITIONS.length);
     expect(snapshot.assembly.totalMassKg).toBeGreaterThan(0);
     for (const component of snapshot.components) {
       expect(component.massKg).toBeGreaterThan(0);

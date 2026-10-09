@@ -16,11 +16,20 @@ export default defineConfig({
       "@forgelab/sim-core": pkg("sim-core"),
       "@forgelab/reactor-components": pkg("reactor-components"),
       "@forgelab/test-utils": pkg("test-utils"),
+      "@forgelab/sim-runner": pkg("sim-runner"),
+      "@forgelab/protocol": pkg("protocol"),
+      "@forgelab/multiplayer": pkg("multiplayer"),
+      "@forgelab/voice": pkg("voice"),
     },
   },
   test: {
     environment: "node",
-    include: ["packages/*/src/**/*.test.ts"],
+    include: [
+      "packages/*/src/**/*.test.ts",
+      "supabase/tests/**/*.test.ts",
+      "api-src/**/*.test.ts",
+      "apps/web/src/**/*.test.ts",
+    ],
     reporters: ["default"],
   },
 });

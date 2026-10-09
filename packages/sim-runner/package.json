@@ -1,0 +1,23 @@
+{
+  "name": "@forgelab/sim-runner",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Headless ForgeLab runs: leaderboard verification scenarios and the web-worker session protocol.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run --root ../.. --project default"
+  },
+  "dependencies": {
+    "@forgelab/materials": "workspace:*",
+    "@forgelab/shared": "workspace:*",
+    "@forgelab/sim-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@forgelab/reactor-components": "workspace:*"
+  }
+}

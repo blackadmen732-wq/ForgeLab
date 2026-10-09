@@ -238,12 +238,15 @@ Bands, stored as numbers and classified as an enum, never as a colour:
 
 These are real limitations, stated plainly. None of them are hidden in code.
 
-- **No bending, shear, torsion or buckling.** Every member is treated as a short column in
-  pure compression. A wide slab spanning two distant supports reads far stronger than it
-  is, and a slender column reads _much_ stronger than it is — real slender compression
-  members fail by buckling (Euler, `P_cr = π²EI/(KL)²`) long before they reach yield.
-  This is the single largest gap in Phase 0 and the first thing Phase 0.1 should close;
-  it needs Young's modulus added to the material model.
+- **Structural 0.1 member idealisation.** Each part is classified as a _column_ (slender,
+  axis near vertical, aspect ratio ≥ 3 — the ACI pedestal rule), a _beam_ (slender, axis
+  near horizontal) or a _block_. Columns check axial stress and buckling (Euler
+  `P_cr = π²EI/(KL)²`, switching to Johnson's parabola in the inelastic range) with one
+  global effective-length factor K (default 1, pinned–pinned) because joints carry no
+  rotational-stiffness data. Beams check bending as simply supported between their two
+  outermost supports (or as a cantilever), `σ = M/S`. The three utilizations are reported
+  separately and the largest governs. Shear, torsion, lateral-torsional buckling and
+  combined axial–bending interaction are not modelled.
 - **No elastic compatibility.** A statically indeterminate frame is resolved by the
   geometric lever rule above rather than by relative member stiffness.
 - **No horizontal equilibrium, overturning check or dynamic amplification.** The centre of
@@ -381,21 +384,45 @@ Cloud storage, when it arrives, will store exactly this document and nothing mor
 ```
 forgelab/
   apps/
-    web/                     React + R3F workspace. Draws snapshots, issues commands.
+    web/                     Vite + React + R3F SPA: site pages and the builder.
+                             Draws snapshots and worker frames, issues commands.
   packages/
     shared/                  SI units, conversions, Vec3/Quaternion/Transform, snapping.
     materials/               Material database. One place, cited values.
-    sim-core/                THE AUTHORITY. Components, solvers, clock, save format.
-    reactor-components/      The four built-in components.
+    sim-core/                THE AUTHORITY. Components, solvers, clock, save format,
+                             plant physics (src/plant).
+    sim-runner/              Headless runs: the worker session protocol and the
+                             leaderboard verification scenario. Shared by browser and server.
+    reactor-components/      The parametric part catalogue and reference designs.
     test-utils/              World builders, fingerprinting for determinism tests.
+    protocol/                Collaboration vocabulary: roles and permissions, ids and
+                             topics, presence/event/message schemas, signed envelopes.
+    multiplayer/             A member's live project session: verified presence roster,
+                             signed collaboration events, pluggable realtime transport.
+    voice/                   Channel voice client state machine + LiveKit adapter.
+  api-src/                   Server functions: /api/verify, /api/comms/ticket,
+                             /api/voice/token, /api/comms/remove-member.
+  supabase/
+    migrations/              Version-controlled schema, RLS, grants, storage.
+    tests/                   RLS tests on PGlite (real Postgres in WASM).
+    config.toml              Local stack (supabase start).
+  scripts/                   Vercel Build Output generator, local output server.
+  e2e/                       Browser acceptance and two-browser collaboration tests.
   docs/
     ARCHITECTURE.md          This file.
-    PHYSICS_ROADMAP.md       The order physics arrives in.
+    PHYSICS_ROADMAP.md       What exists and what comes next.
+    DEPLOYMENT.md            Supabase + Vercel + LiveKit setup, environment, local end-to-end.
+    COMMUNICATIONS.md        Channels, voice, chat, presence and shared saves.
+    PERFORMANCE.md           Budgets, measurements, known O(N²) paths.
+    LAUNCH_REPORT.md         V0.1 launch candidate report.
     material-sources.md      Where every material number came from.
 ```
 
-Dependencies point one way: `shared` → `materials` → `sim-core` → `reactor-components` →
-`web`. Nothing in `packages/` depends on `apps/`.
+Dependencies point one way: `shared` → `materials` → `sim-core` → `sim-runner` /
+`reactor-components` → `web` and `api-src`. Nothing in `packages/` depends on `apps/`.
+The communication packages form a separate branch: `protocol` → `multiplayer`, and
+`voice` on its own; the simulation packages never import them, and they never import
+the simulation (`packages/protocol/src/boundaries.test.ts`).
 
 ---
 
@@ -418,7 +445,90 @@ the rule that no approximation goes in undocumented.
 
 ---
 
-## 12. What ForgeLab is not
+## 12. Plant physics (V0.1)
+
+`packages/sim-core/src/plant/` adds the reduced physics a fusion power plant needs. Every
+component has a `role` (`vacuum-vessel`, `magnet-coil`, `coolant-pump`, `turbine`, …) and
+validated SI `parameters`; `ROLE_PARAMETERS` in `roles.ts` is the single definition of
+what each role accepts, its range, and how an interface should display it. The
+`PlantSolver` runs once per tick after the structural solve, in this order:
+
+| Subsystem   | Model                                                                                                                                                                                                                                                             |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Electrical  | DC nodal analysis per connected island (Gaussian elimination); sources, loads, `R = ρL/A` conductors; proportional curtailment when supply is short.                                                                                                              |
+| Thermal     | Lumped capacitance per part: generated heat, conduction along links, convection (h = 10 W/m²K) and radiation (ε = 0.3) to ambient; cryoplant load for superconductors.                                                                                            |
+| Hazards     | Heat through space between parts that share no port: grey-body radiant exchange between equivalent spheres, and fires (sourced ignition, burning rate and heat of combustion) radiating χr = 0.35 of their heat release as a point source. See `docs/HAZARDS.md`. |
+| Coolant     | Closed loops found from `coolant` links; Darcy–Weisbach with Swamee–Jain friction, parabolic pump curves, operating point by bisection, ε-NTU exchangers. Hot-standby start by default.                                                                           |
+| Vacuum      | Pressure balance `V·dp/dt = Q_gas − S·p` with pump speed and gas loads (fuelling, exhaust).                                                                                                                                                                       |
+| Magnetics   | Ideal toroidal winding `B = μ₀NI/2πR`; on-axis finite solenoid; Princeton-D tension for TF coils, thin-shell hoop stress for solenoids; quench above critical temperature (fixed, or NbTi Tc(B) at peak field).                                                   |
+| Plasma (0D) | Breakdown conditions, current ramp, IPB98(y,2) confinement (tokamaks) or Bohm (linear devices), ohmic, auxiliary and alpha heating, bremsstrahlung, density feedback; Greenwald, Troyon, q95 and β limits; density-limited controlled shutdown.                   |
+| Fusion      | Bosch–Hale D-T reactivity; 20 % alpha / 80 % neutron split.                                                                                                                                                                                                       |
+| Neutronics  | Exponential attenuation (λ = 0.12 m) through wall, blanket and coils — not transport.                                                                                                                                                                             |
+| Conversion  | Steam cycle as a fraction of Carnot between loop and condenser temperatures; generator efficiency.                                                                                                                                                                |
+| Power       | **Net electric = gross generation − house load** (every load plus resistive losses).                                                                                                                                                                              |
+
+Failures carry `causeKeys` and a reconstructed `causalChain`, root first, so "pump off →
+loss of flow → wall over-temperature → disruption" is one readable story. A conductor past
+its service limit keeps conducting (the limit is an annealing and insulation limit); it
+opens only when it reaches its sourced melting point (`melted`), so "undersized bus →
+over-temperature → insulation fire → melted → supply shortfall → disruption" emerges
+from the physics rather than a script. Tunable modelling
+constants (substeps, implicit hose and cable sizes, thresholds) are named and documented in
+`constants.ts`.
+
+**Model confidence.** Each snapshot carries `plant.confidence`: _supported_ (inside every
+model's documented envelope), _approximate_ (a scaling law extrapolated, neutronics
+estimated, a sagging network) or _experimental_ (configurations the models were not built
+for: linear plasma devices with heating or fuel, mixed coolants, coils around nothing).
+Experimental designs are never ranked. A burning tokamak is at best _approximate_.
+
+## 13. The web application
+
+`apps/web` is a Vite single-page app (react-router). Only the landing page ships in the
+main bundle; every page and the builder are split, and the Supabase client is imported
+lazily and only when the deployment configures it.
+
+The builder's `EditorStore` (`src/builder/store/editor.ts`) owns an authoring
+`SimulationWorld`. Every edit is applied to it through one undoable path, then
+`world.solve()` runs, so loads, stresses and the plant's start-up state shown while
+building are the engine's answers. Undo/redo stores serialised design files. Snapping
+(grid, angle, sockets via a spatial hash) and automatic load-bearing connection happen in
+the store before the world sees a placement; Alt overrides them.
+
+Simulate mode serialises the design into a Web Worker running `SimulationSession`
+(`sim-runner`). The worker paces fixed steps at 1–10× or flat out and posts compact
+frames (transferable typed arrays: transforms and per-part scalars, plus the plant summary,
+new failures and history). The scene reads them imperatively each frame; React only
+re-renders panels. Nothing on the main thread computes physics in Simulate mode.
+
+Rendering is procedural: each part's body is drawn from its physics geometry with the
+engine's dimensions; presentation detail (TF coils as discrete coils, a plasma glow)
+stays inside that envelope. Overlays map one engine output each to one hue family.
+
+## 14. Cloud, verification and security
+
+Supabase provides Auth, Postgres and Storage. The schema (`supabase/migrations`) keeps
+relational metadata in columns and the design document as JSONB in `project_versions`.
+Row-level security is on for every table and privileges are granted **per column**:
+browsers can never write owner ids, counters, version numbers, lineage, or the `verified`
+flag, and cannot write leaderboard entries at all. Versions are numbered by a trigger;
+autosave history is bounded; forks are one atomic `SECURITY DEFINER` function.
+
+Leaderboards accept only server recomputation. `POST /api/verify` receives a project and
+version id — never a score — authenticates the caller's JWT, rate-limits, loads the saved
+design with the service role, requires ownership and a public project, recomputes the
+canonical design hash, runs the fixed 600 s standard scenario with the same deterministic
+engine, and writes the run and eligible entries. The secret key exists only in the
+function's environment; the build fails if one appears in a `VITE_` variable or in the
+browser bundle, and the browser refuses to use one.
+
+Static responses carry a strict CSP (`script-src 'self'`), HSTS, `nosniff`,
+`frame-ancestors 'none'`, a restrictive Permissions-Policy and COOP. See
+`docs/DEPLOYMENT.md`.
+
+---
+
+## 15. What ForgeLab is not
 
 ForgeLab is **not research-grade**, and no part of it should be described as such. It is an
 engineering sandbox built on documented approximations, using nominal handbook material
