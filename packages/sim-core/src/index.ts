@@ -302,6 +302,14 @@ export {
 } from "./plant/chamber.js";
 export { buildTopology, type PlantTopology, type VesselLayout } from "./plant/topology.js";
 export {
+  connectionWarnings,
+  openPorts,
+  suggestConnections,
+  type ConnectionWarning,
+  type OpenPort,
+  type PortSuggestion,
+} from "./plant/portSuggestions.js";
+export {
   preflight,
   type PreflightCode,
   type PreflightItem,
