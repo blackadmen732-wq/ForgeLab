@@ -17,9 +17,11 @@ reactor designs**, and nothing in it should be described as research-grade.
 
 ## What it does
 
-- **Open 3D builder.** Empty workspace by default; 21 parametric parts (vessels, TF coils,
-  solenoids, blankets, heaters, fuelling, pumps, pipes, heat exchangers, turbines,
-  generators, grid, bus bars, breakers, sensors, interlocks, structure). Move/rotate
+- **Open 3D builder.** Empty workspace by default; 35 parametric parts (vessels, cryostat,
+  TF/PF coils, solenoids, blankets and blanket modules, heaters, fuelling, pumps, pipes,
+  heat exchangers, turbines, generators, grid, bus bars, breakers, batteries, sensors,
+  interlocks, structure, concrete walls and slabs), 5 kits and 6 blueprints, built on 27
+  sourced solid materials and 7 fluids. Move/rotate
   gizmos, grid/angle/socket snapping (Alt overrides), multi-select and box select,
   duplicate, hide/isolate, cutaway and x-ray, perspective/orthographic, standard views,
   undo/redo, command palette (Ctrl K) and a shortcut overlay (?).
