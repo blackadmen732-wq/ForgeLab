@@ -1,4 +1,6 @@
-import { Clapperboard, Hammer, Play, Trophy, X } from "lucide-react";
+import { Clapperboard, Hammer, Play, Share2, Trophy, X } from "lucide-react";
+import { createReplay } from "@forgelab/sim-runner";
+import { toast } from "../../lib/toast.js";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { formatQuantity } from "@forgelab/sim-core";
 import { fmtW } from "../../presentation/activation.js";
@@ -117,6 +119,34 @@ export function RunReportPanel() {
     );
   const { report, before, improved } = snapshot;
   const isNew = (k: BestKey) => improved.includes(k);
+  const shareReplay = () => {
+    const sim = store.getSim();
+    const replay = createReplay({
+      title: name,
+      design: store.exportFile(),
+      failures: sim.failures,
+      durationSec: sim.timeSec,
+      createdAtIso: new Date().toISOString(),
+    });
+    const slug =
+      name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-|-$/g, "") || "run";
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(replay)], { type: "application/json" }),
+    );
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${slug}.forgelab-replay.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast(
+      "success",
+      "Replay saved",
+      "Send the file to anyone: Open it in ForgeLab to re-run this exact failure, or fork the design to fix it.",
+    );
+  };
   const fix = () => {
     if (root === null) return;
     store.stopSimulation();
@@ -232,6 +262,16 @@ export function RunReportPanel() {
         >
           <Play /> Run again
         </button>
+        {root !== null && (
+          <button
+            type="button"
+            className="btn"
+            title="Save this failure as a replay file. Anyone who opens it re-simulates the same run and sees the same failure."
+            onClick={shareReplay}
+          >
+            <Share2 /> Share replay
+          </button>
+        )}
       </footer>
     </section>
   );

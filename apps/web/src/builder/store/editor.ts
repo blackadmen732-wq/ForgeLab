@@ -53,6 +53,9 @@ import {
   type SessionFrame,
   type SessionSpeed,
   designHash,
+  type ReplayFileV1,
+  rootFailure,
+  sameRootFailure,
 } from "@forgelab/sim-runner";
 import { toast } from "../../lib/toast.js";
 import { analytics } from "../../lib/analytics.js";
@@ -319,6 +322,8 @@ export class EditorStore {
   #showPalette = false;
   #dialog: EditorDialog | null = null;
   #blueprintId: string | null = null;
+  /** A replay being re-run: its root failure is checked against the live run. */
+  #replayCheck: ReplayFileV1 | null = null;
 
   #revision = 0;
   #designRevision = 0;
@@ -1573,7 +1578,63 @@ export class EditorStore {
     this.#publish();
   };
 
+  /**
+   * Opens a replay: loads its design (a normal, editable design — a fork point) and
+   * re-simulates it; the first failure is compared with the replay's root failure.
+   */
+  openReplay = (replay: ReplayFileV1): void => {
+    this.loadFile(replay.design, { name: replay.title });
+    if (replay.engineVersion !== SIMULATION_ENGINE_VERSION)
+      toast(
+        "warning",
+        "Recorded with another engine version",
+        `This replay was made with ForgeLab engine ${replay.engineVersion}; this build is ${SIMULATION_ENGINE_VERSION}. Physics updates can change the outcome.`,
+      );
+    this.#replayCheck = replay;
+    this.startSimulation("max");
+  };
+
+  #checkReplay(
+    timeSec: number,
+    before: readonly FailureEvent[],
+    added: readonly FailureEvent[],
+  ): void {
+    const replay = this.#replayCheck;
+    if (replay === null) return;
+    const root = rootFailure(replay);
+    const dt = this.#world.settings.fixedTimestepSec;
+    const first = before[0] ?? added[0];
+    if (root === null) {
+      if (first !== undefined) {
+        this.#replayCheck = null;
+        toast("warning", "Did not reproduce", "This run failed; the recorded run did not.");
+      }
+      return;
+    }
+    if (first !== undefined) {
+      this.#replayCheck = null;
+      this.setSpeed(1);
+      if (sameRootFailure(root, first, dt))
+        toast(
+          "success",
+          "Reproduced exactly",
+          `${root.summary || root.failureType} at ${root.timestampSec.toFixed(2)} s, re-simulated on this machine.`,
+        );
+      else
+        toast(
+          "warning",
+          "Did not reproduce",
+          `Expected ${root.failureType} on ${root.componentId} at ${root.timestampSec.toFixed(2)} s; got ${first.failureType} on ${first.componentId} at ${first.timestampSec.toFixed(2)} s.`,
+        );
+    } else if (timeSec > root.timestampSec + 2) {
+      this.#replayCheck = null;
+      this.setSpeed(1);
+      toast("warning", "Did not reproduce", "The recorded failure did not happen in this run.");
+    }
+  }
+
   stopSimulation = (): void => {
+    this.#replayCheck = null;
     if (this.#mode !== "simulate") return;
     this.#replayFrame = null;
     this.#client?.speed(0);
@@ -1648,6 +1709,7 @@ export class EditorStore {
           : event.newFailures.length > 0
             ? [...this.#sim.failures, ...event.newFailures]
             : this.#sim.failures;
+        this.#checkReplay(event.timeSec, reset ? [] : this.#sim.failures, event.newFailures);
         if (event.newFailures.length > 0 && this.#sim.failures.length === 0)
           analytics.track("run_failed", {
             failureType: event.newFailures[0]!.failureType,

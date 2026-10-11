@@ -35,3 +35,17 @@ export {
   type VerificationResult,
   type WindowAverages,
 } from "./verification.js";
+export {
+  REPLAY_FILE_KIND,
+  REPLAY_FILE_VERSION,
+  REPLAY_MAX_DURATION_SEC,
+  ReplayError,
+  createReplay,
+  parseReplay,
+  reproduceReplay,
+  rootFailure,
+  sameRootFailure,
+  type ReplayFailure,
+  type ReplayFileV1,
+  type ReproductionResult,
+} from "./replay.js";

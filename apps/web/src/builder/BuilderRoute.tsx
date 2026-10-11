@@ -3,7 +3,7 @@ import type { OrbEntry } from "../collab/orbs.js";
 import { useTeammatesEditing } from "../collab/useSoftLocks.js";
 import "./builder.css";
 import { SIMULATION_ENGINE_VERSION, parseAssemblyFile, serializeWorld } from "@forgelab/sim-core";
-import { designHash } from "@forgelab/sim-runner";
+import { REPLAY_FILE_KIND, designHash, parseReplay } from "@forgelab/sim-runner";
 import { ROLE_PERMISSIONS, type ProjectRole } from "@forgelab/protocol";
 import { MonitorX, Smartphone } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
@@ -966,6 +966,20 @@ export function BuilderRoute() {
                 confirmLabel: "Replace",
               });
               if (!ok) return;
+            }
+            const isReplay =
+              typeof parsed === "object" &&
+              parsed !== null &&
+              (parsed as { kind?: unknown }).kind === REPLAY_FILE_KIND;
+            if (isReplay) {
+              // A shared failure: re-simulated here, never trusted as recorded.
+              const replay = parseReplay(parsed);
+              store.cloud.bind(null);
+              if (projectId !== undefined) void navigate("/app", { replace: true });
+              store.openReplay(replay);
+              store.requestFrame(null);
+              toast("info", `Replaying “${replay.title}”`, "Re-simulating the run to its failure…");
+              return;
             }
             store.loadFile(parsed);
             store.cloud.bind(null);

@@ -1,5 +1,7 @@
-import { Clapperboard, Hammer, Pause, Play, RotateCcw, ScanSearch, X } from "lucide-react";
-import { useContext, useEffect, useMemo, useRef } from "react";
+import { type ClipRecorder, clipRecordingSupported, recordCanvas } from "../../lib/clip.js";
+import { toast } from "../../lib/toast.js";
+import { Clapperboard, Hammer, Pause, Play, RotateCcw, ScanSearch, X, Video } from "lucide-react";
+import { useContext, useState, useEffect, useMemo, useRef } from "react";
 import type { FailureEvent } from "@forgelab/sim-core";
 import { CINEMA_RATES, useCinema, type CinemaCamera } from "../../presentation/cinema.js";
 import { CinemaContext } from "../../presentation/context.js";
@@ -170,6 +172,7 @@ export function FailureCinemaPanel() {
           ))}
         </div>
         <span className="cinema__spacer" />
+        <ClipButton />
         <button type="button" className="btn btn--sm" onClick={() => store.resetSimulation()}>
           <RotateCcw /> Reset run
         </button>
@@ -205,5 +208,46 @@ export function FailureCinemaPanel() {
         ))}
       </div>
     </section>
+  );
+}
+
+/**
+ * Record a clip of the replay (WebM, made and saved on this machine). Starts the replay
+ * from the beginning if it had finished, and stops at 30 s or on a second click.
+ */
+function ClipButton() {
+  const [recorder, setRecorder] = useState<ClipRecorder | null>(null);
+  if (!clipRecordingSupported()) return null;
+  const toggle = async () => {
+    if (recorder !== null) {
+      setRecorder(null);
+      const clip = await recorder.stop();
+      if (clip === null) {
+        toast("error", "No clip recorded", "This browser did not produce any video.");
+        return;
+      }
+      const url = URL.createObjectURL(clip);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "forgelab-failure.webm";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      toast("success", "Clip saved", "A WebM video of the replay, ready to share.");
+      return;
+    }
+    const canvas = document.querySelector<HTMLCanvasElement>(".viewport canvas, canvas");
+    if (canvas === null) return;
+    setRecorder(recordCanvas(canvas, 30));
+  };
+  return (
+    <button
+      type="button"
+      className={`btn btn--sm${recorder !== null ? " btn--danger" : ""}`}
+      aria-pressed={recorder !== null}
+      onClick={() => void toggle()}
+      title="Record the 3D view as a video clip (saved on this machine, up to 30 s)"
+    >
+      <Video /> {recorder !== null ? "Stop & save clip" : "Record clip"}
+    </button>
   );
 }
