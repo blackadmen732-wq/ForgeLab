@@ -313,7 +313,7 @@ implemented yet.
 
 ## Quality tiers
 
-`LOW / MEDIUM / HIGH / ULTRA` change particle budgets, debris tier-A counts, shadow map
+`LOW / MEDIUM / HIGH / ULTRA` change ambient occlusion (three.js GTAO, HIGH and ULTRA), particle budgets, debris tier-A counts, shadow map
 size, post-processing and pixel ratio. They never change the simulation step, solver
 fidelity or any published number. `reduceMotion` (and the OS setting) disables shake and
 kick; `cameraEffectsIntensity` scales them; `reducedEffects` removes flashes and strobes.

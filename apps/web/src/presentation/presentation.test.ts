@@ -164,6 +164,7 @@ describe("presentation settings", () => {
   it("tiers change drawing budgets only", () => {
     for (const budget of Object.values(TIER_BUDGETS))
       expect(Object.keys(budget).sort()).toEqual([
+        "ambientOcclusion",
         "bloom",
         "debrisRigid",
         "debrisSimple",

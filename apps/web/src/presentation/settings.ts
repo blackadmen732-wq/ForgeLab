@@ -50,6 +50,8 @@ export interface TierBudget {
   readonly marks: number;
   /** Resolution of the hall floor's live mirror reflection; 0 = reflections from the environment map only. */
   readonly floorReflections: number;
+  /** Screen-space ambient occlusion (contact shadows where surfaces meet). */
+  readonly ambientOcclusion: boolean;
 }
 
 export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.freeze({
@@ -65,6 +67,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     lightPools: false,
     marks: 12,
     floorReflections: 0,
+    ambientOcclusion: false,
   },
   MEDIUM: {
     pixelRatio: 1.25,
@@ -78,6 +81,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     lightPools: true,
     marks: 24,
     floorReflections: 0,
+    ambientOcclusion: false,
   },
   HIGH: {
     pixelRatio: 1.75,
@@ -91,6 +95,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     lightPools: true,
     marks: 40,
     floorReflections: 512,
+    ambientOcclusion: true,
   },
   ULTRA: {
     pixelRatio: 2,
@@ -104,6 +109,7 @@ export const TIER_BUDGETS: Readonly<Record<QualityTier, TierBudget>> = Object.fr
     lightPools: true,
     marks: 64,
     floorReflections: 1024,
+    ambientOcclusion: true,
   },
 });
 
