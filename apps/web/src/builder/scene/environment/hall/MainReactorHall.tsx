@@ -1,6 +1,6 @@
 import { MeshReflectorMaterial } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   AdditiveBlending,
   BoxGeometry,
@@ -15,10 +15,16 @@ import {
   MeshStandardMaterial,
   PlaneGeometry,
   type PointLight,
+  NoColorSpace,
   Quaternion,
+  RepeatWrapping,
+  SRGBColorSpace,
+  type Texture,
+  TextureLoader,
   Vector2,
   Vector3,
 } from "three";
+import { useAssetManifest } from "../../../../lib/assets.js";
 import { PresentationContext } from "../../../../presentation/context.js";
 import type { FacilityState } from "../../../../presentation/facility.js";
 import { lightingTargets } from "../../../../presentation/lighting.js";
@@ -46,11 +52,29 @@ import {
 
 type Materials = Record<Surface, Material> & { floor: MeshStandardMaterial };
 
-function createMaterials(preset: EnvironmentPreset): Materials {
+/** Photographed floor maps from the asset bucket, with the metres one tile covers. */
+interface FloorPhoto {
+  readonly map: Texture;
+  readonly normalMap: Texture | null;
+  readonly roughnessMap: Texture | null;
+  readonly tileM: number;
+}
+
+function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): Materials {
   const dark = preset.id === "dark-facility";
-  // Steel deck plate, tiled at 12 m across the floor.
-  const deck = steelDeckMaps(12);
-  for (const t of Object.values(deck)) t.repeat.set((2 * HALL.halfX) / 12, (2 * HALL.halfZ) / 12);
+  // Steel deck plate: photographed plate from the asset bucket when there is one (tiled at
+  // its real size), else the procedural deck tiled at 12 m.
+  const deck =
+    photo === null
+      ? steelDeckMaps(12)
+      : {
+          map: photo.map.clone(),
+          normalMap: (photo.normalMap ?? photo.map).clone(),
+          roughnessMap: (photo.roughnessMap ?? photo.map).clone(),
+        };
+  const tile = photo?.tileM ?? 12;
+  for (const t of Object.values(deck))
+    t.repeat.set((2 * HALL.halfX) / tile, (2 * HALL.halfZ) / tile);
   const concreteMap = concreteTexture(12, false);
   concreteMap.repeat.set(4, 0.6);
   const panelMap = ribbedPanelTexture(4, 0.25);
@@ -81,10 +105,11 @@ function createMaterials(preset: EnvironmentPreset): Materials {
     });
   return {
     floor: new MeshStandardMaterial({
-      color: dark ? "#6a6f75" : "#8a8f95",
+      // A photograph carries its own colour; the procedural deck is tinted steel.
+      color: photo !== null ? (dark ? "#9a9a9a" : "#ffffff") : dark ? "#6a6f75" : "#8a8f95",
       map: deck.map,
       roughnessMap: deck.roughnessMap,
-      normalMap: deck.normalMap,
+      normalMap: photo !== null && photo.normalMap === null ? null : deck.normalMap,
       normalScale: new Vector2(0.8, 0.8),
       roughness: 1,
       metalness: 0.3,
@@ -182,7 +207,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
   const pools = budget.lightPools;
   const hall = useMemo(() => buildHallGeometry(), []);
   useLayoutEffect(() => () => hall.meshes.forEach((m) => m.geometry.dispose()), [hall]);
-  const materials = useMemo(() => createMaterials(preset), [preset]);
+  const floorPhoto = useFloorPhoto();
+  const materials = useMemo(() => createMaterials(preset, floorPhoto), [preset, floorPhoto]);
   useLayoutEffect(
     () => () => {
       for (const m of Object.values(materials)) {
@@ -497,4 +523,52 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
       <pointLight ref={shockRef} intensity={0} distance={60} decay={1.8} color="#ffe2c0" />
     </group>
   );
+}
+
+/** Loads the floor texture set named "floor" in the asset manifest, if any. */
+function useFloorPhoto(): FloorPhoto | null {
+  const manifest = useAssetManifest();
+  const asset = manifest?.textures["floor"];
+  const [photo, setPhoto] = useState<{ key: string; value: FloorPhoto } | null>(null);
+  const key = asset === undefined ? null : JSON.stringify(asset.maps);
+  useEffect(() => {
+    if (asset === undefined || key === null) return;
+    let cancelled = false;
+    const loader = new TextureLoader().setCrossOrigin("anonymous");
+    const load = (url: string | undefined, srgb: boolean) =>
+      url === undefined
+        ? Promise.resolve(null)
+        : loader.loadAsync(url).then((t) => {
+            t.wrapS = RepeatWrapping;
+            t.wrapT = RepeatWrapping;
+            t.anisotropy = 8;
+            t.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+            return t;
+          });
+    Promise.all([
+      load(asset.maps.map, true),
+      load(asset.maps.normalMap, false),
+      load(asset.maps.roughnessMap, false),
+    ])
+      .then(([map, normalMap, roughnessMap]) => {
+        if (map === null) return;
+        const value = { map, normalMap, roughnessMap, tileM: asset.tileM };
+        if (cancelled) [map, normalMap, roughnessMap].forEach((t) => t?.dispose());
+        else setPhoto({ key, value });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [asset, key]);
+  useEffect(
+    () => () => {
+      if (photo === null) return;
+      photo.value.map.dispose();
+      photo.value.normalMap?.dispose();
+      photo.value.roughnessMap?.dispose();
+    },
+    [photo],
+  );
+  return photo !== null && photo.key === key ? photo.value : null;
 }

@@ -8,3 +8,4 @@ coverage/
 
 # Vercel build output
 .vercel/
+assets-dist/

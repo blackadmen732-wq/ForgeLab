@@ -1,7 +1,9 @@
 import { Grid } from "@react-three/drei";
 import { useThree } from "@react-three/fiber";
-import { useLayoutEffect, useMemo, useRef } from "react";
-import { type DirectionalLight, type HemisphereLight, PMREMGenerator } from "three";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type DirectionalLight, type HemisphereLight, PMREMGenerator, type Texture } from "three";
+import { HDRLoader } from "three/examples/jsm/loaders/HDRLoader.js";
+import { useAssetManifest } from "../../../lib/assets.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { tierBudget, useSettings } from "../../../presentation/settings.js";
 import { EngineeringGrid } from "./hall/EngineeringGrid.js";
@@ -47,6 +49,34 @@ export function Environment({
     return texture;
   }, [gl, hall, dark]);
   useLayoutEffect(() => () => reflections.dispose(), [reflections]);
+  // A photographed power-plant interior from the asset bucket, when one is configured:
+  // metal then reflects a real hall. Until it loads (or without a bucket), the procedural
+  // map above is used.
+  const manifest = useAssetManifest();
+  const hdriUrl = hall ? (manifest?.hdri["hall-hdri"]?.url ?? null) : null;
+  const [photo, setPhoto] = useState<{ url: string; texture: Texture } | null>(null);
+  useEffect(() => {
+    if (hdriUrl === null) return;
+    let cancelled = false;
+    new HDRLoader().load(
+      hdriUrl,
+      (equirect) => {
+        const pmrem = new PMREMGenerator(gl);
+        const texture = pmrem.fromEquirectangular(equirect).texture;
+        pmrem.dispose();
+        equirect.dispose();
+        if (cancelled) texture.dispose();
+        else setPhoto({ url: hdriUrl, texture });
+      },
+      undefined,
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [gl, hdriUrl]);
+  useEffect(() => () => photo?.texture.dispose(), [photo]);
+  const environment = photo !== null && photo.url === hdriUrl ? photo.texture : reflections;
 
   useLayoutEffect(() => {
     const light = key.current;
@@ -77,7 +107,7 @@ export function Environment({
   return (
     <>
       <color attach="background" args={[preset.background]} />
-      <primitive attach="environment" object={reflections} />
+      <primitive attach="environment" object={environment} />
       <fog attach="fog" args={[preset.fog.color, fogNear, fogFar]} />
       <hemisphereLight
         ref={hemisphere}
