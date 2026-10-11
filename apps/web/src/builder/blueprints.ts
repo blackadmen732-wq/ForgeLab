@@ -4,6 +4,7 @@ import {
   buildOverloadDemo,
   buildReferencePlant,
   buildStarterAssembly,
+  buildTokamakBuilding,
   getComponentDefinition,
 } from "@forgelab/reactor-components";
 import { SimulationWorld } from "@forgelab/sim-core";
@@ -61,6 +62,18 @@ export const BLUEPRINTS: readonly Blueprint[] = [
       "The reference machine at real size in its hall: core on steel gravity supports, six poloidal-field coils and a central solenoid, a 29 m cryostat, and the plant around it with a platform and stairs. Walk it at eye height (G), peel it (L) or cut it open.",
     size: "34 parts",
     build: () => world("ITER-class Plant", buildIterClassPlant),
+  },
+  {
+    id: "iter-class-building",
+    name: "ITER-class plant in its building",
+    description:
+      "The true-scale plant flanked by concrete wings of rooms on three storeys, open on the near side like a cutaway. Every slab, column and wall is a real part: they stand by their own structural physics and block heat and fire between rooms and levels.",
+    size: "178 parts",
+    build: () =>
+      world("ITER-class Plant and Building", (w) => {
+        buildIterClassPlant(w);
+        buildTokamakBuilding(w);
+      }),
   },
   {
     id: "starter-rig",

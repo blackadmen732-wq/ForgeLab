@@ -112,6 +112,16 @@ Panel bolted and cooled in series), Primary Coolant Loop, Turbine–Generator Pa
 Protected Power Feed, Battery Rack. Groups live in the design file (optional `groups`);
 no solver reads them. Sockets that meet face to face are a flush joint: no pipe is drawn.
 
+## The building: rooms and storeys
+
+**ITER-class plant in its building** (blueprint) flanks the true-scale plant with concrete
+wings: each storey is a grid of 8 m Floor Slabs on 1.4 m concrete columns with a Concrete
+Wall across each bay, three storeys high and open on the near side like a cutaway
+(`buildTokamakBuilding` in `reactor-components/src/designs.ts`). It stands by the
+structural solver alone; the dimensions are a design choice, and longer or thinner spans
+crack (`building.test.ts` shows 12 m bays of 0.6 m slabs failing). Slabs have column
+seats on top so storeys stack.
+
 ## Material Lab
 
 **M** (or More → Material Lab) opens the material library beside the 3D view: materials

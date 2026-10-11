@@ -396,3 +396,106 @@ export function buildBenchmark(world: SimulationWorld, bays = 8): void {
   }
   world.solve();
 }
+
+/* ------------------------------------------------------------------------------------ *
+ * The tokamak building: concrete wings of rooms and storeys beside the machine
+ * ------------------------------------------------------------------------------------ */
+
+export interface TokamakBuildingOptions {
+  /** Centre of each wing's footprint, x (m). Default: one wing either side of the machine. */
+  readonly wingCentresX?: readonly number[];
+  /** Bays per side of a wing (each bay is one slab). */
+  readonly bays?: number;
+  readonly storeys?: number;
+  /** Slab span (square), depth and clear storey height, m. */
+  readonly spanM?: number;
+  readonly slabDepthM?: number;
+  readonly storeyHeightM?: number;
+  readonly columnSectionM?: number;
+}
+
+/**
+ * Concrete wings beside the machine, like the galleries of ITER's tokamak building: each
+ * storey is a grid of Floor Slabs on concrete columns, each bay divided into two rooms by
+ * a Concrete Wall, and the side facing the camera left open (a cutaway). Every piece is a
+ * catalogue part joined by real connections, so the structure stands or cracks by its own
+ * physics, and its walls and slabs block heat and fire between rooms and levels.
+ *
+ * The defaults (8 m bays, 0.8 m plain-concrete slabs, 1.4 m columns, 6 m storeys) are a
+ * design choice: the solver bends each slab as a beam between its outermost bearings and
+ * holds plain concrete to its tensile strength, so 12 m bays of 0.6 m slabs crack and
+ * 0.7 m columns buckle under three storeys. That is the physics, not a tuning.
+ */
+export function buildTokamakBuilding(
+  world: SimulationWorld,
+  options: TokamakBuildingOptions = {},
+): void {
+  const wings = options.wingCentresX ?? [-46, 46];
+  const bays = options.bays ?? 2;
+  const storeys = options.storeys ?? 3;
+  const span = options.spanM ?? 8;
+  const depth = options.slabDepthM ?? 0.8;
+  const height = options.storeyHeightM ?? 6;
+  const section = options.columnSectionM ?? 1.4;
+  const inset = Math.min(0.3, span / 10);
+  const corner = span / 2 - inset;
+  const corners = [
+    ["nx-nz", -corner, -corner],
+    ["nx-pz", -corner, corner],
+    ["px-nz", corner, -corner],
+    ["px-pz", corner, corner],
+  ] as const;
+
+  wings.forEach((wx, w) => {
+    for (let i = 0; i < bays; i += 1)
+      for (let j = 0; j < bays; j += 1) {
+        const x = wx + (i - (bays - 1) / 2) * span;
+        const z = (j - (bays - 1) / 2) * span;
+        let below: string | null = null;
+        let floorM = 0;
+        for (let s = 0; s < storeys; s += 1) {
+          const tag = `w${w}-b${i}${j}-s${s}`;
+          const slab = `slab-${tag}`;
+          const slabCentreY = floorM + height + depth / 2;
+          placePart(world, "concrete-slab", {
+            id: slab,
+            label: `Floor Slab L${s + 1}`,
+            position: vec3(x, slabCentreY, z),
+            dimensions: { spanXM: span, spanZM: span, depthM: depth },
+          });
+          for (const [suffix, dx, dz] of corners) {
+            const column = `column-${tag}-${suffix}`;
+            placePart(world, "structural-beam", {
+              id: column,
+              label: `Column L${s + 1}`,
+              materialId: MaterialIds.Concrete,
+              transform: transform(vec3(x + dx, floorM + height / 2, z + dz), UPRIGHT),
+              dimensions: { lengthM: height, sectionM: section, wallM: section / 2.5 },
+            });
+            link(world, [slab, `bottom-${suffix}`], [column, "end-b"]);
+            if (below !== null) link(world, [column, "end-a"], [below, `top-${suffix}`]);
+          }
+          // A wall across the bay, standing on this storey's floor (the ground, or the slab
+          // below), makes two rooms on this level.
+          const wall = `wall-${tag}`;
+          const wallHeight = height - 0.05;
+          placePart(world, "concrete-wall", {
+            id: wall,
+            label: `Room Wall L${s + 1}`,
+            transform: transform(
+              vec3(x, floorM + wallHeight / 2, z),
+              QuaternionMath.fromAxisAngle(vec3(0, 1, 0), (i + j) % 2 === 0 ? 0 : Math.PI / 2),
+            ),
+            dimensions: {
+              lengthM: span - 2 * inset - section,
+              heightM: wallHeight,
+              thicknessM: 0.3,
+            },
+          });
+          if (below !== null) link(world, [wall, "base"], [below, "top"]);
+          below = slab;
+          floorM = slabCentreY + depth / 2;
+        }
+      }
+  });
+}

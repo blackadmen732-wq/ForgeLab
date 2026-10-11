@@ -1346,7 +1346,7 @@ export const CONCRETE_SLAB = define({
   type: "concrete-slab",
   name: "Floor Slab",
   description:
-    "Plain C30/37 concrete slab, 8 × 8 m and 300 mm deep by default, with four corner bearings underneath. Stack storeys on columns or walls; the slab separates the levels.",
+    "Plain C30/37 concrete slab, 8 × 8 m and 300 mm deep by default, with four corner bearings underneath and column seats above them. Stack storeys on columns; the slab separates the levels.",
   category: "Structure",
   role: "structure",
   material: MaterialIds.Concrete,
@@ -1369,6 +1369,11 @@ export const CONCRETE_SLAB = define({
         structural("bottom-nx-pz", vec3(-cx, -depth / 2, cz), DOWN),
         structural("bottom-px-nz", vec3(cx, -depth / 2, -cz), DOWN),
         structural("bottom-px-pz", vec3(cx, -depth / 2, cz), DOWN),
+        // Over each bearing, for the columns of the storey above.
+        structural("top-nx-nz", vec3(-cx, depth / 2, -cz), UP),
+        structural("top-nx-pz", vec3(-cx, depth / 2, cz), UP),
+        structural("top-px-nz", vec3(cx, depth / 2, -cz), UP),
+        structural("top-px-pz", vec3(cx, depth / 2, cz), UP),
       ],
     };
   },
