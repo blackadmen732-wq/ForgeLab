@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { PresenceEntry } from "@forgelab/protocol";
 import type { VoiceMember } from "@forgelab/voice";
-import { ORB_COLORS, activityText, orbColor, orbDetail, orbEntries, orbPulse } from "./orbs.js";
+import {
+  ORB_COLORS,
+  activityText,
+  editorsOf,
+  orbColor,
+  orbDetail,
+  orbEntries,
+  orbPulse,
+} from "./orbs.js";
 
 const entry = (userId: string, patch: Partial<PresenceEntry> = {}): PresenceEntry => ({
   userId,
@@ -62,5 +70,18 @@ describe("presence orbs", () => {
     const orbs = orbEntries(roster, [voice("maya", 0.7)], "me", "ws", (id) => id !== "ghost");
     expect(orbs.map((o) => o.userId)).toEqual(["maya"]);
     expect(orbs[0]).toMatchObject({ focus: "tf-coil", speaking: true, level: 0.7, muted: false });
+  });
+});
+
+describe("soft locks", () => {
+  it("names teammates building with a part selected, not those only watching", () => {
+    const base = { name: "", color: "#fff", muted: false, speaking: false, level: 0 };
+    const entries = [
+      { ...base, userId: "a", name: "Maya", focus: "pump", activity: "building" as const },
+      { ...base, userId: "b", name: "Chris", focus: "pump", activity: "observing" as const },
+      { ...base, userId: "c", name: "Alex", focus: "vessel", activity: "building" as const },
+    ];
+    expect(editorsOf(entries, "pump").map((e) => e.name)).toEqual(["Maya"]);
+    expect(editorsOf(entries, "turbine")).toEqual([]);
   });
 });

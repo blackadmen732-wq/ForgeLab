@@ -3042,3 +3042,20 @@
   height: 28px;
   padding: 0 6px;
 }
+.insp-softlock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--warn, #ffb020) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn, #ffb020) 45%, transparent);
+  font-size: 12px;
+}
+.insp-softlock__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}

@@ -108,3 +108,12 @@ export function orbEntries(
   }
   return out.sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
 }
+
+/**
+ * Soft locks: teammates currently building with this part selected. Advisory only —
+ * edits are never blocked (the shared save still detects conflicting versions); this
+ * tells you someone is on it before you change it.
+ */
+export function editorsOf(entries: readonly OrbEntry[], componentId: string): OrbEntry[] {
+  return entries.filter((e) => e.focus === componentId && e.activity === "building");
+}

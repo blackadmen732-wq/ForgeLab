@@ -38,6 +38,7 @@ import {
   Unlink,
 } from "lucide-react";
 import { assemblyLibrary } from "../assemblyLibrary.js";
+import { useTeammatesEditing } from "../../collab/useSoftLocks.js";
 import { toast } from "../../lib/toast.js";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Euler, Quaternion } from "three";
@@ -925,6 +926,7 @@ function PartPanel({ component }: { component: SimulationComponent }) {
   return (
     <div className="insp-panel">
       <Breadcrumb component={component} />
+      <SoftLockNote componentId={component.id} />
       <header className="insp-head">
         <PartIcon role={component.role} />
         <div className="insp-head__text">
@@ -1615,5 +1617,18 @@ export function Inspector() {
         <MultiPanel components={selected} />
       )}
     </aside>
+  );
+}
+
+/** Who else is building with this part selected (advisory soft lock). */
+function SoftLockNote({ componentId }: { componentId: string }) {
+  const editors = useTeammatesEditing(componentId);
+  if (editors.length === 0) return null;
+  const names = editors.map((e) => e.name).join(", ");
+  return (
+    <p className="insp-softlock" role="status">
+      <span className="insp-softlock__dot" style={{ background: editors[0]!.color }} />
+      {names} {editors.length === 1 ? "is" : "are"} editing this part — talk before you change it.
+    </p>
   );
 }

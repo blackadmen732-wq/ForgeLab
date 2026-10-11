@@ -1,5 +1,6 @@
 import { orbPreview } from "./scene/PresenceOrbs.js";
 import type { OrbEntry } from "../collab/orbs.js";
+import { useTeammatesEditing } from "../collab/useSoftLocks.js";
 import "./builder.css";
 import { SIMULATION_ENGINE_VERSION, parseAssemblyFile, serializeWorld } from "@forgelab/sim-core";
 import { designHash } from "@forgelab/sim-runner";
@@ -927,6 +928,7 @@ export function BuilderRoute() {
           <CinemaContext.Provider value={cinema}>
             <CollabContext.Provider value={collab}>
               <PresenceFocus />
+              <SoftLockWarning />
               <Workspace
                 context={context}
                 teamOpen={teamOpen}
@@ -985,6 +987,29 @@ export function BuilderRoute() {
 }
 
 /** Publishes the selected part as this member's presence focus: teammates see an orb there. */
+/** One heads-up per part and teammate when you pick a part someone else is editing. */
+function SoftLockWarning() {
+  const id = useEditor((v) =>
+    v.mode === "build" ? (v.selection[v.selection.length - 1] ?? null) : null,
+  );
+  const editors = useTeammatesEditing(id);
+  const [warned] = useState(() => new Set<string>());
+  useEffect(() => {
+    if (id === null) return;
+    for (const e of editors) {
+      const key = `${id}|${e.userId}`;
+      if (warned.has(key)) continue;
+      warned.add(key);
+      toast(
+        "info",
+        `${e.name} is editing this part`,
+        "Your changes still apply — agree who changes it first.",
+      );
+    }
+  }, [id, editors, warned]);
+  return null;
+}
+
 function PresenceFocus() {
   const collab = useCollabController();
   const focusId = useEditor((v) => v.selection[v.selection.length - 1] ?? null);
