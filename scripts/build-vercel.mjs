@@ -182,6 +182,15 @@ const supabaseWs = supabaseOrigin.replace(/^http/, "ws");
 const livekitUrl = (process.env.VITE_LIVEKIT_URL ?? "").trim();
 const livekitOrigin = livekitUrl === "" ? "" : new URL(livekitUrl).origin;
 const livekitHttp = livekitOrigin.replace(/^ws/, "http");
+// Product analytics (PostHog), only when configured: events go to its ingestion host.
+// No PostHog scripts are loaded at runtime (disable_external_dependency_loading).
+const posthogOrigin =
+  (process.env.VITE_POSTHOG_KEY ?? "").trim() === ""
+    ? ""
+    : new URL((process.env.VITE_POSTHOG_HOST ?? "https://us.i.posthog.com").trim()).origin;
+// 3D assets (HDRIs, PBR textures) served from the R2 bucket's public origin.
+const assetBase = (process.env.VITE_ASSET_BASE_URL ?? "").trim();
+const assetOrigin = assetBase === "" ? "" : new URL(assetBase).origin;
 const csp = [
   "default-src 'self'",
   // 'wasm-unsafe-eval' lets the debris physics (Rapier, WebAssembly) compile; it does not
@@ -189,9 +198,11 @@ const csp = [
   "script-src 'self' 'wasm-unsafe-eval'",
   "worker-src 'self' blob:",
   "style-src 'self' 'unsafe-inline'",
-  `img-src 'self' data: blob: ${supabaseOrigin} https://*.supabase.co`.trim(),
+  `img-src 'self' data: blob: ${supabaseOrigin} https://*.supabase.co ${assetOrigin}`
+    .replace(/\s+/g, " ")
+    .trim(),
   "font-src 'self' data:",
-  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://*.supabase.co wss://*.supabase.co ${livekitOrigin} ${livekitHttp}`
+  `connect-src 'self' ${supabaseOrigin} ${supabaseWs} https://*.supabase.co wss://*.supabase.co ${livekitOrigin} ${livekitHttp} ${posthogOrigin} ${assetOrigin}`
     .replace(/\s+/g, " ")
     .trim(),
   "frame-ancestors 'none'",

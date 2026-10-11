@@ -1,5 +1,6 @@
 import { Check, Clapperboard, Maximize, SlidersHorizontal, Volume2, VolumeX } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { analytics } from "../../lib/analytics.js";
 import {
   QUALITY_TIERS,
   updateSettings,
@@ -14,6 +15,7 @@ import { toggleCinematic, toggleFullscreen } from "../../presentation/view.js";
  */
 export function PresentationMenu() {
   const settings = useSettings();
+  const sharing = useSyncExternalStore(analytics.subscribe, analytics.enabled);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -102,6 +104,21 @@ export function PresentationMenu() {
           {slider("masterVolume", "Master")}
           {slider("alarmVolume", "Alarms")}
           {slider("ambientVolume", "Hall ambience")}
+          {analytics.available() && (
+            <>
+              <div className="menu__sep" />
+              <button
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={sharing}
+                className="menu__item"
+                title="Anonymous counts of what players do (activate, fail, place parts and kits). No account, design or voice data. Off when your browser sends Do Not Track."
+                onClick={() => analytics.setEnabled(!sharing)}
+              >
+                {sharing ? <Check /> : <span className="menu__pad" />} Share anonymous usage stats
+              </button>
+            </>
+          )}
           <div className="menu__sep" />
           <button
             type="button"

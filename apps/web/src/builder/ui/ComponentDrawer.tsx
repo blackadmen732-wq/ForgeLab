@@ -13,6 +13,7 @@ import { metres } from "../../lib/format.js";
 import { useEditor, useEditorStore } from "../store/context.js";
 import { PartIcon } from "./PartIcon.js";
 import { toast } from "../../lib/toast.js";
+import { analytics } from "../../lib/analytics.js";
 
 function matches(definition: ComponentDefinition, query: string): boolean {
   if (query === "") return true;
@@ -180,7 +181,10 @@ function AssembliesSection({ query }: { query: string }) {
     if (file === null) return;
     if (!assemblyLibrary.add(name, file))
       toast("error", "Could not save the assembly", "This browser's storage is full or disabled.");
-    else toast("success", `Saved “${name}”`, "It is under My assemblies in the parts drawer.");
+    else {
+      analytics.track("assembly_saved", { parts: file.components.length });
+      toast("success", `Saved “${name}”`, "It is under My assemblies in the parts drawer.");
+    }
     setNaming(null);
   };
   if (kits.length === 0 && mine.length === 0 && q !== "") return null;
@@ -193,7 +197,10 @@ function AssembliesSection({ query }: { query: string }) {
           type="button"
           className="part"
           disabled={!building}
-          onClick={() => store.placeAssembly(kitFile(kit.id), kit.name)}
+          onClick={() => {
+            if (store.placeAssembly(kitFile(kit.id), kit.name))
+              analytics.track("kit_placed", { kit: kit.id });
+          }}
           title={`${kit.description}\n\nPlaces as a group. Alt-click picks one part; Ctrl Shift G takes it apart.`}
         >
           <Boxes aria-hidden="true" />

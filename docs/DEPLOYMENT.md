@@ -97,6 +97,27 @@ voice works; without the presence key everything but live presence works. See
    16-part reference plant takes about 5 s of CPU; the 400-part design cap bounds the
    worst case.
 
+## 2a. Product analytics (PostHog, optional)
+
+1. In PostHog, create a project and copy its **project API key** (`phc_…`). It is public by
+   design. Never use a personal API key (`phx_…`): ForgeLab refuses one and stays off.
+2. In Vercel set `VITE_POSTHOG_KEY` (and `VITE_POSTHOG_HOST` if your project is in the EU:
+   `https://eu.i.posthog.com`), then redeploy. The build adds the host to `connect-src`.
+3. In PostHog → Project settings, turn **off** "Collect IP address" (ForgeLab never sends
+   account ids, emails, design contents or chat, and does not call identify).
+
+What is sent: page views and the build → run loop as counts and catalogue ids
+(`plant_activated`, `run_failed`, `part_added`, `kit_placed`, `assembly_placed`,
+`assembly_saved`, `parts_grouped`, `group_taken_apart`). What is not: no autocapture, no
+session recording, no heatmaps, no surveys, and no PostHog scripts are loaded at runtime.
+Players can switch it off in the settings menu ("Share anonymous usage stats"); Do Not
+Track and Global Privacy Control turn it off. Code: `apps/web/src/lib/analytics.ts`.
+
+## 2b. 3D assets on Cloudflare R2 (optional)
+
+See [ASSETS.md](ASSETS.md): CC0 HDRIs and PBR textures uploaded to an R2 bucket and
+served from its public origin (`VITE_ASSET_BASE_URL`).
+
 ## 3. Local development
 
 ```bash

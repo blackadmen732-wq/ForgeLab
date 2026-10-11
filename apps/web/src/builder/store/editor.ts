@@ -55,6 +55,7 @@ import {
   designHash,
 } from "@forgelab/sim-runner";
 import { toast } from "../../lib/toast.js";
+import { analytics } from "../../lib/analytics.js";
 import { MAX_PEEL, peeledIds, type SectionPlane } from "../scene/inspection.js";
 import { materialsIn } from "../scene/materialView.js";
 import { SimulationClient } from "../sim/client.js";
@@ -974,6 +975,7 @@ export class EditorStore {
     if (!ok) return null;
     this.#selection = [id];
     this.#publish();
+    analytics.track("part_added", { type });
     return id;
   };
 
@@ -1047,9 +1049,12 @@ export class EditorStore {
       toast("info", "Select two or more parts to group them.");
       return;
     }
-    this.#edit(`Group ${ids.length} parts`, (world) => {
-      world.createGroup(ids, name === undefined ? {} : { name });
-    });
+    if (
+      this.#edit(`Group ${ids.length} parts`, (world) => {
+        world.createGroup(ids, name === undefined ? {} : { name });
+      })
+    )
+      analytics.track("parts_grouped", { parts: ids.length });
   };
 
   /** Takes apart every group the selection touches; the parts stay where they are. */
@@ -1069,6 +1074,7 @@ export class EditorStore {
         for (const g of touched) world.ungroup(g.id);
       },
     );
+    analytics.track("group_taken_apart", { groups: touched.length });
   };
 
   renameGroup = (groupId: string, name: string): void => {
@@ -1126,6 +1132,7 @@ export class EditorStore {
     if (ok && created.length > 0) {
       this.#selection = created;
       this.#publish();
+      analytics.track("assembly_placed", { parts: created.length });
     }
     return ok;
   };
@@ -1543,6 +1550,11 @@ export class EditorStore {
   };
 
   startSimulation = (speed: SessionSpeed = 1): void => {
+    if (this.#mode !== "simulate")
+      analytics.track("plant_activated", {
+        parts: this.#snapshot.components.length,
+        blueprint: this.#blueprintId ?? "custom",
+      });
     if (this.#snapshot.components.length === 0) {
       toast("info", "Nothing to simulate yet", "Add parts from the drawer first.");
       return;
@@ -1636,6 +1648,11 @@ export class EditorStore {
           : event.newFailures.length > 0
             ? [...this.#sim.failures, ...event.newFailures]
             : this.#sim.failures;
+        if (event.newFailures.length > 0 && this.#sim.failures.length === 0)
+          analytics.track("run_failed", {
+            failureType: event.newFailures[0]!.failureType,
+            simTimeSec: Math.round(event.timeSec),
+          });
         if (event.newFailures.length > 0 && !reset) {
           const first = event.newFailures[0]!;
           toast(

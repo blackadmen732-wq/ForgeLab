@@ -10,6 +10,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { RouterProvider } from "react-router";
 import { router } from "./app/router.js";
+import { analytics } from "./lib/analytics.js";
 
 const container = document.getElementById("root");
 if (container === null) throw new Error("ForgeLab: #root element missing from index.html.");
@@ -19,3 +20,6 @@ createRoot(container).render(
     <RouterProvider router={router} />
   </StrictMode>,
 );
+
+// Analytics load after the app, only when this deployment and the viewer allow them.
+window.setTimeout(() => void analytics.start(), 2000);
