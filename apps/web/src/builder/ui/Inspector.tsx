@@ -42,6 +42,7 @@ import {
 } from "lucide-react";
 import { assemblyLibrary } from "../assemblyLibrary.js";
 import { useTeammatesEditing } from "../../collab/useSoftLocks.js";
+import { AssignWork } from "../../collab/WorkPanel.js";
 import { toast } from "../../lib/toast.js";
 import { useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Euler, Quaternion } from "three";
@@ -930,6 +931,7 @@ function PartPanel({ component }: { component: SimulationComponent }) {
     <div className="insp-panel">
       <Breadcrumb component={component} />
       <SoftLockNote componentId={component.id} />
+      <AssignWork key={component.id} targetId={component.id} targetLabel={component.label} />
       <header className="insp-head">
         <PartIcon role={component.role} />
         <div className="insp-head__text">

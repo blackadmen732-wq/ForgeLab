@@ -185,6 +185,54 @@ await check("chat is plain text: markup is shown, never rendered", async () => {
   expect(!(await B.page.evaluate(() => "pwned" in window)), "script ran");
 });
 
+await check(
+  "a durable work order reaches its assignee and follows actual component focus",
+  async () => {
+    await A.page.getByRole("button", { name: "Assign Work", exact: true }).click();
+    const assignee = await A.page
+      .getByLabel("Assign to", { exact: true })
+      .locator("option")
+      .evaluateAll(
+        (options, name) => options.find((option) => option.textContent === name)?.value,
+        andre.username,
+      );
+    expect(assignee, "member is missing from work assignees");
+    await A.page.getByLabel("Assign to", { exact: true }).selectOption(assignee);
+    await A.page.getByLabel("Work title").fill("Inspect primary coolant pump");
+    await A.page.getByRole("button", { name: "Assign job", exact: true }).click();
+    await B.page.getByRole("status").filter({ hasText: "Assigned to you" }).waitFor();
+    await B.page.getByRole("button", { name: /^Work ·/ }).click();
+    const card = B.page.locator(".work__card", { hasText: "Inspect primary coolant pump" });
+    await card.getByRole("button", { name: "Accept", exact: true }).click();
+    await card.getByRole("button", { name: /^Go to component/ }).click();
+    await B.page.waitForSelector('.insp-head__label[value="Primary Pump"]');
+    const orb = A.page.locator(".presence-orb__label", { hasText: andre.username });
+    await orb
+      .locator(".presence-orb__work", { hasText: "Inspect primary coolant pump" })
+      .waitFor({ timeout: 15000 });
+    await card.getByRole("button", { name: "Start", exact: true }).click();
+    // Clearing actual selection removes the orb, not the durable assignment.
+    await B.page.keyboard.press("Escape");
+    await orb.waitFor({ state: "detached", timeout: 15000 });
+    await card.getByRole("button", { name: /^Go to component/ }).click();
+    await orb.waitFor({ timeout: 15000 });
+    if (SHOTS) await A.page.screenshot({ path: join(SHOTS, "work-live-orb.png") });
+    await B.page.reload({ waitUntil: "networkidle" });
+    await B.page.getByRole("button", { name: /^Work ·/ }).click();
+    await B.page.getByRole("button", { name: "Complete", exact: true }).click();
+    await B.page.getByRole("checkbox", { name: "History" }).check();
+    await B.page.locator(".work__card .badge", { hasText: "Completed" }).waitFor();
+    await A.page.getByRole("button", { name: /^Work ·/ }).click();
+    await A.page.getByLabel("Work order filter").selectOption("managed");
+    await A.page.getByRole("checkbox", { name: "History" }).check();
+    await A.page
+      .locator(".work__card .badge", { hasText: "Completed" })
+      .waitFor({ timeout: 15000 });
+    for (const page of [A.page, B.page])
+      await page.getByRole("button", { name: "Chat & voice", exact: true }).click();
+  },
+);
+
 await check("a new channel appears for everyone without reloading", async () => {
   const { page } = A;
   await page.click('button[aria-label="Members, invites and channels"]');

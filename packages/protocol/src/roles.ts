@@ -19,6 +19,8 @@ export const PERMISSIONS = Object.freeze([
   "can_invite",
   "can_mute_others",
   "can_remove_member",
+  "can_update_work",
+  "can_assign_work",
 ] as const);
 export type Permission = (typeof PERMISSIONS)[number];
 
@@ -28,6 +30,7 @@ const MEMBER: readonly Permission[] = [
   "can_speak",
   "can_send_messages",
   "can_edit_design",
+  "can_update_work",
 ];
 const ADMIN: readonly Permission[] = [
   ...MEMBER,
@@ -35,6 +38,7 @@ const ADMIN: readonly Permission[] = [
   "can_invite",
   "can_mute_others",
   "can_remove_member",
+  "can_assign_work",
 ];
 
 export const ROLE_PERMISSIONS: Readonly<Record<ProjectRole, readonly Permission[]>> = Object.freeze(

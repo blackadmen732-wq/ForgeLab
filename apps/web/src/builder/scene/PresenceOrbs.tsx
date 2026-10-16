@@ -1,5 +1,6 @@
 import "../../collab/collab.css";
 import { Html } from "@react-three/drei";
+import { focusedWork, WORK_STATUS_LABELS, type WorkOrder } from "@forgelab/protocol";
 import { useFrame } from "@react-three/fiber";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
@@ -19,7 +20,7 @@ import {
   SpriteMaterial,
   Vector3,
 } from "three";
-import { useCollab, useCollabController } from "../../collab/context.js";
+import { useCollab, useCollabController, useWorkOrders } from "../../collab/context.js";
 import { type OrbEntry, activityText, orbDetail, orbEntries, orbPulse } from "../../collab/orbs.js";
 import { useEditor } from "../store/context.js";
 import { meshRegistry } from "./meshes.js";
@@ -31,6 +32,7 @@ import { meshRegistry } from "./meshes.js";
  */
 export function PresenceOrbs() {
   const controller = useCollabController();
+  const work = useWorkOrders();
   const roster = useCollab((s) => s.session.roster);
   const voice = useCollab((s) => s.voice.members);
   const workspaceId = useCollab((s) => s.session.self.workspaceId);
@@ -47,13 +49,26 @@ export function PresenceOrbs() {
   return (
     <group name="presence-orbs">
       {entries.map((entry) => (
-        <Orb key={entry.userId} entry={entry} />
+        <Orb
+          key={entry.userId}
+          entry={entry}
+          focusLabel={components.find((c) => c.id === entry.focus)?.label ?? entry.focus}
+          work={focusedWork(work?.orders ?? [], entry.userId, entry.focus)}
+        />
       ))}
     </group>
   );
 }
 
-function Orb({ entry }: { readonly entry: OrbEntry }) {
+function Orb({
+  entry,
+  focusLabel,
+  work,
+}: {
+  readonly entry: OrbEntry;
+  readonly focusLabel: string;
+  readonly work: WorkOrder | undefined;
+}) {
   const [rig] = useState(() => new OrbRig(entry.color));
   const [label, setLabel] = useState<HTMLDivElement | null>(null);
   useEffect(() => () => rig.dispose(), [rig]);
@@ -80,8 +95,13 @@ function Orb({ entry }: { readonly entry: OrbEntry }) {
             />
           </span>
           <span className="presence-orb__activity">
-            {entry.focus} · {activityText(entry.activity)}
+            {focusLabel} · {activityText(entry.activity)}
           </span>
+          {work && (
+            <span className="presence-orb__work">
+              Assigned: {work.title} · {WORK_STATUS_LABELS[work.status]}
+            </span>
+          )}
         </div>
       </Html>
     </primitive>

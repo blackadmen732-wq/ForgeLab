@@ -19,8 +19,9 @@
 }
 
 .team {
-  display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-height: 0;
   border-right: 1px solid var(--line);
   background: var(--panel);
@@ -135,6 +136,7 @@
 
 /* chat */
 .chat {
+  flex: 1;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
   min-height: 0;
@@ -524,4 +526,118 @@
 
 .presence-orb__mic.is-muted {
   background: #ff5b5b;
+}
+
+/* Compact durable work orders live beside chat, leaving the scene primary. */
+.team__tabs,
+.work__head,
+.work__filters,
+.work__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.team__tabs {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.team__head,
+.team__tabs,
+.team__members,
+.team__channels {
+  flex-shrink: 0;
+}
+.work {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+.work__head {
+  margin-bottom: 12px;
+}
+.work__head svg,
+.work__target svg,
+.work__assign svg {
+  width: 15px;
+  height: 15px;
+}
+.work__head button {
+  margin-left: auto;
+}
+.work__filters {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.work__filters > select {
+  min-width: 0;
+  flex: 1;
+}
+.work__filters > label {
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+}
+.work__list {
+  display: grid;
+  gap: 10px;
+}
+.work__card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--panel-raised, #1a2430);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+.work__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: space-between;
+  font-size: var(--fs-xs);
+  color: var(--text-dim);
+}
+.work__description {
+  white-space: pre-wrap;
+}
+.work__actions {
+  flex-wrap: wrap;
+}
+.work__target {
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+}
+.work__empty {
+  line-height: 1.6;
+}
+.work__form {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: var(--fs-sm);
+}
+.work__form label {
+  display: grid;
+  gap: 5px;
+}
+.work__form .input {
+  width: 100%;
+  min-width: 0;
+}
+.work__form .work__filters > label {
+  flex: 1;
+}
+.work__assign {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.presence-orb__work {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 400;
+  color: #c3d8ef;
 }

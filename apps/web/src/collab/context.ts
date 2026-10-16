@@ -1,5 +1,6 @@
 import { createContext, useContext, useSyncExternalStore } from "react";
 import type { CollabController, CollabState } from "./controller.js";
+import type { WorkOrderState } from "./workOrders.js";
 
 export const CollabContext = createContext<CollabController | null>(null);
 
@@ -16,3 +17,8 @@ export function useCollab<T>(select: (state: CollabState) => T): T | undefined {
 }
 
 const noopSubscribe = () => () => undefined;
+
+export function useWorkOrders(): WorkOrderState | undefined {
+  const work = useCollabController()?.work;
+  return useSyncExternalStore(work?.subscribe ?? noopSubscribe, () => work?.getState());
+}

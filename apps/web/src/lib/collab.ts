@@ -67,10 +67,11 @@ function unwrap<T>(result: { data: T | null; error: PgError | null }): T {
   return result.data as T;
 }
 
-async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+export async function collabRpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   const supabase = await requireSupabase();
   return unwrap((await supabase.rpc(fn, args)) as { data: T | null; error: PgError | null });
 }
+const rpc = collabRpc;
 
 /* ---------------------------------------------------------------------------------- */
 

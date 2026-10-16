@@ -10,7 +10,8 @@ import {
 } from "@forgelab/protocol";
 import { voiceSupported } from "@forgelab/voice";
 import { errorMessage, toast } from "../lib/toast.js";
-import { useCollab, useCollabController } from "./context.js";
+import { useCollab, useCollabController, useWorkOrders } from "./context.js";
+import { WorkPanel } from "./WorkPanel.js";
 
 const NO_MESSAGES: readonly ChatMessage[] = [];
 const ACTIVITY_LABELS = { building: "Building", simulating: "Simulating", observing: "Observing" };
@@ -33,6 +34,8 @@ export function TeamPanel({
 }) {
   const controller = useCollabController();
   const state = useCollab((s) => s);
+  const work = useWorkOrders();
+  const [tab, setTab] = useState<"chat" | "work">("chat");
   if (controller === null || state === undefined) return null;
 
   const online = state.session.roster.length;
@@ -79,12 +82,50 @@ export function TeamPanel({
               Live presence is unavailable: {state.presenceError}
             </p>
           )}
-          <Channels />
-          <Chat
-            key={state.textChannelId}
-            onFocusComponent={onFocusComponent}
-            componentExists={componentExists}
-          />
+          <div className="team__tabs" role="group" aria-label="Team sections">
+            <button
+              className={`btn btn--sm${tab === "chat" ? " btn--primary" : ""}`}
+              type="button"
+              aria-pressed={tab === "chat"}
+              onClick={() => setTab("chat")}
+            >
+              Chat & voice
+            </button>
+            <button
+              className={`btn btn--sm${tab === "work" ? " btn--primary" : ""}`}
+              type="button"
+              aria-pressed={tab === "work"}
+              onClick={() => setTab("work")}
+            >
+              Work ·{" "}
+              {work?.orders.filter(
+                (w) =>
+                  w.assignedTo === controller.userId &&
+                  w.status !== "completed" &&
+                  w.status !== "cancelled",
+              ).length ?? 0}
+            </button>
+          </div>
+          {tab === "work" ? (
+            <WorkPanel
+              work={controller.work}
+              userId={controller.userId}
+              members={state.members}
+              canAssign={controller.can("can_assign_work")}
+              canUpdate={controller.can("can_update_work")}
+              onFocus={onFocusComponent}
+              exists={componentExists}
+            />
+          ) : (
+            <>
+              <Channels />
+              <Chat
+                key={state.textChannelId}
+                onFocusComponent={onFocusComponent}
+                componentExists={componentExists}
+              />
+            </>
+          )}
           <Members />
         </>
       )}

@@ -3,7 +3,7 @@ import {
   findRefs,
   normaliseMessage,
   parseChatRow,
-  personalWorkspaceId,
+  projectWorkspaceId,
   type Activity,
   type ChatMessage,
   type Permission,
@@ -31,6 +31,13 @@ import {
 import { safeStorage } from "../lib/storage.js";
 import { requireSupabase } from "../lib/supabase.js";
 import { subscribeChat, supabaseTransport } from "./realtime.js";
+import { WorkOrderStore, type WorkOrderPort } from "./workOrders.js";
+import {
+  listWorkOrders,
+  createWorkOrder,
+  transitionWorkOrder,
+  subscribeWorkOrders,
+} from "../lib/workOrders.js";
 
 export interface RevisionNotice {
   readonly fromName: string;
@@ -75,6 +82,7 @@ interface VoicePrefs {
  */
 export class CollabController {
   readonly voice: VoiceClient;
+  readonly work: WorkOrderStore;
   private session: ProjectSession | null = null;
   private state: CollabState;
   private readonly listeners = new Set<() => void>();
@@ -91,7 +99,14 @@ export class CollabController {
   constructor(
     readonly projectId: string,
     readonly userId: string,
+    workPort: WorkOrderPort = {
+      list: listWorkOrders,
+      create: createWorkOrder,
+      transition: transitionWorkOrder,
+      subscribe: subscribeWorkOrders,
+    },
   ) {
+    this.work = new WorkOrderStore(projectId, userId, workPort);
     const prefs = safeStorage.getJson<VoicePrefs>(VOICE_PREFS, {});
     this.voice = new VoiceClient({
       requestToken: fetchVoiceToken,
@@ -111,7 +126,7 @@ export class CollabController {
       presenceError: null,
       members: [],
       channels: [],
-      session: { status: "connecting", role: null, self: IDLE_SELF(userId), roster: [] },
+      session: { status: "connecting", role: null, self: IDLE_SELF(projectId), roster: [] },
       textChannelId: null,
       messages: [],
       chat: "loading",
@@ -148,6 +163,7 @@ export class CollabController {
         return;
       }
       this.set({ role, members, channels, loading: false });
+      void this.work.start();
       const general = channels[0];
       if (general !== undefined) void this.selectTextChannel(general.id);
     } catch (error) {
@@ -181,7 +197,7 @@ export class CollabController {
       projectId: this.projectId,
       transport: supabaseTransport(supabase),
       fetchTicket: (key) => fetchPresenceTicket(this.projectId, key),
-      initial: { workspaceId: personalWorkspaceId(this.userId) },
+      initial: { workspaceId: projectWorkspaceId(this.projectId) },
     });
     this.session = session;
     this.cleanups.push(
@@ -197,6 +213,7 @@ export class CollabController {
           void this.refresh().catch(() => undefined);
         }
         if (snapshot.status === "unauthorized") {
+          this.work.stop();
           void this.voice.leave();
           this.set({ role: null, error: "You no longer have access to this project." });
         }
@@ -227,6 +244,7 @@ export class CollabController {
   }
 
   async stop(): Promise<void> {
+    this.work.stop();
     this.generation += 1;
     for (const cleanup of this.cleanups.splice(0)) cleanup();
     this.chatUnsubscribe?.();
@@ -248,6 +266,7 @@ export class CollabController {
     ]);
     if (generation !== this.generation) return;
     if (role === null) {
+      this.work.stop();
       await this.voice.leave();
       this.set({
         role: null,
@@ -369,13 +388,13 @@ export class CollabController {
   }
 }
 
-function IDLE_SELF(userId: string) {
+function IDLE_SELF(projectId: string) {
   return {
     voiceChannelId: null,
     mic: "muted" as const,
     deafened: false,
     activity: "building" as const,
-    workspaceId: personalWorkspaceId(userId),
+    workspaceId: projectWorkspaceId(projectId),
     focus: null,
   };
 }

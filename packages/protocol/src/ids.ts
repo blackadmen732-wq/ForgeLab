@@ -21,6 +21,12 @@ export function personalWorkspaceId(userId: string): string {
   return `ws:${userId}`;
 }
 
+/** Members opening the same project share its build area; voice routing is unchanged. */
+export function projectWorkspaceId(projectId: string): string {
+  if (!isUuid(projectId)) throw new Error("projectWorkspaceId: invalid project id");
+  return `ws:project:${projectId.toLowerCase()}`;
+}
+
 const encoder = new TextEncoder();
 
 export function base64url(bytes: Uint8Array): string {
