@@ -68,6 +68,6 @@ bucket.
   path-traced stills of a design (too heavy for live play).
 
 ForgeLab's live renderer already uses three.js's ground-truth ambient occlusion (GTAO,
-HIGH and ULTRA), a mirror floor, image-based lighting and procedural wear. Imported
+HIGH and ULTRA), subdued dry-floor reflections, image-based lighting and procedural wear. Imported
 machine models are not wired in yet: a model must fit the part's physical envelope, and its
 internals must stay labelled SCHEMATIC (CLAUDE.md §21).

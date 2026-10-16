@@ -24,6 +24,7 @@ const browser = await chromium.launch({
 });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await context.newPage();
+page.setDefaultTimeout(90000); // software GL may delay action completion during dense effects
 const pageErrors = [];
 page.on("pageerror", (e) => pageErrors.push(e.message));
 page.on("console", (m) => m.type() === "error" && pageErrors.push(m.text()));
@@ -76,12 +77,21 @@ async function loadScenario(id) {
 /** ACTIVATE; returns the preflight findings shown (empty when there were none). */
 async function activate(speed) {
   await page.click("button.simulate-btn");
+  await page.waitForFunction(
+    () =>
+      window.__forgelab.store.getView().mode === "simulate" ||
+      document.querySelector('[role="dialog"]:has(.preflight)') !== null ||
+      [...document.querySelectorAll('[role="dialog"]')].some((d) =>
+        d.textContent?.includes("Preflight"),
+      ),
+  );
   const dialog = page.locator('[role="dialog"]:has-text("Preflight")');
   let findings = "";
   if (await dialog.isVisible({ timeout: 1500 }).catch(() => false)) {
     findings = await dialog.innerText();
     await dialog.locator('button:has-text("Activate anyway")').click();
   }
+  await page.waitForFunction(() => window.__forgelab.store.getView().mode === "simulate");
   await page.evaluate((s) => window.__forgelab.store.setSpeed(s), speed);
   return findings;
 }
@@ -90,6 +100,7 @@ async function waitFor(predicate, arg, timeout = 120000) {
 }
 
 await page.goto(`${BASE}/app?debug`, { waitUntil: "networkidle" });
+await page.waitForFunction(() => window.__forgelab?.three);
 await page.keyboard.press("Escape");
 await page.mouse.click(720, 450); // a gesture, so audio may start
 
