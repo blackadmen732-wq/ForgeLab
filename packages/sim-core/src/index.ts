@@ -14,6 +14,8 @@
 export const SIMULATION_ENGINE_VERSION = "0.1.0";
 
 export * from "./construction.js";
+export * from "./serviceGeometry.js";
+export * from "./serviceRouting.js";
 
 export {
   boxGeometry,

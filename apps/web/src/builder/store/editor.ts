@@ -50,6 +50,8 @@ import {
   parseAssemblyFile,
   serializeWorld,
   worldAabb,
+  planServiceRoutes,
+  type ServiceRoute,
 } from "@forgelab/sim-core";
 import {
   type HistoryPoint,
@@ -193,6 +195,7 @@ export interface EditorView {
   readonly angleSnapDeg: number;
   readonly socketSnap: boolean;
   readonly snapshot: SimulationSnapshot;
+  readonly serviceRoutes: readonly ServiceRoute[];
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   readonly undoLabel: string | null;
@@ -344,6 +347,8 @@ export class EditorStore {
   #revision = 0;
   #designRevision = 0;
   #view: EditorView | undefined;
+  #routeSnapshot: SimulationSnapshot | undefined;
+  #serviceRoutes: readonly ServiceRoute[] = [];
   #listeners = new Set<() => void>();
 
   // Simulation
@@ -454,6 +459,14 @@ export class EditorStore {
   }
 
   #buildView(): EditorView {
+    if (this.#routeSnapshot !== this.#snapshot) {
+      this.#routeSnapshot = this.#snapshot;
+      this.#serviceRoutes = planServiceRoutes(
+        this.#snapshot.components,
+        this.#snapshot.connections,
+        this.#snapshot.settings.groundLevelM,
+      );
+    }
     const undoTop = this.#undo[this.#undo.length - 1];
     const redoTop = this.#redo[this.#redo.length - 1];
     return {
@@ -477,6 +490,7 @@ export class EditorStore {
       angleSnapDeg: this.#angleSnapDeg,
       socketSnap: this.#socketSnap,
       snapshot: this.#snapshot,
+      serviceRoutes: this.#serviceRoutes,
       canUndo: undoTop !== undefined,
       canRedo: redoTop !== undefined,
       undoLabel: undoTop?.label ?? null,
@@ -1736,9 +1750,35 @@ export class EditorStore {
       return;
     }
     this.#connectFrom = null;
-    this.#edit(`Connect ${a.connectionType}`, (world) => {
-      world.connect(from, endpoint);
+    const previouslyClear = new Set(
+      this.getView()
+        .serviceRoutes.filter((r) => r.state === "clear")
+        .map((r) => r.id),
+    );
+    const connected = this.#edit(`Connect ${a.connectionType}`, (world) => {
+      const connection = world.connect(from, endpoint);
+      if (isLoadBearing(connection.type)) return;
+      const routes = planServiceRoutes(
+        world.listComponents(),
+        world.listConnections(),
+        world.settings.groundLevelM,
+      );
+      const blocked = routes.find(
+        (r) => r.state === "blocked" && (r.id === connection.id || previouslyClear.has(r.id)),
+      );
+      if (blocked)
+        throw new Error(
+          `No clear ${connection.type} route found. Blocked by ${blocked.blockers
+            .slice(0, 3)
+            .map((x) => x.label)
+            .join(", ")}. Move the equipment or clear space near its ports.`,
+        );
     });
+    if (!connected) {
+      this.#connectFrom = from;
+      this.#publish();
+      return;
+    }
     // Joinable but mismatched ratings: the simulation decides whether the weaker side copes.
     if (compatibility.warnings.length > 0)
       toast("info", "Connected, with a rating mismatch", compatibility.warnings.join(" "));
@@ -1775,6 +1815,7 @@ export class EditorStore {
       this.#snapshot.components,
       this.#snapshot.connections,
       this.#snapshot.buildAssemblies,
+      { serviceRoutes: this.getView().serviceRoutes },
     );
     if (!report.canActivate || this.#skipPreflight || report.items.length === 0) {
       this.startSimulation();

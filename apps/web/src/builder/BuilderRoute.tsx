@@ -14,6 +14,7 @@ import { CollabController } from "../collab/controller.js";
 import { ManageDialog } from "../collab/ManageDialog.js";
 import { TeamPanel } from "../collab/TeamPanel.js";
 import { WorkNotice } from "../collab/WorkPanel.js";
+import { RouteWarnings } from "./ui/RouteWarnings.js";
 import { VoiceBar } from "../collab/VoiceBar.js";
 import { ErrorBoundary } from "../components/ErrorBoundary.js";
 import { Loading } from "../components/States.js";
@@ -236,6 +237,7 @@ function Workspace({
             <Viewport />
           </ErrorBoundary>
           <div className="stage-notices">
+            <RouteWarnings />
             <WorkNotice onFocus={store.focusComponent} />
             <ReadOnlyBanner onFork={context.fork} />
             <CollabBanner

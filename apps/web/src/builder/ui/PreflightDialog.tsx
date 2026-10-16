@@ -33,10 +33,14 @@ const SYSTEMS: readonly { id: PreflightSystem; label: string; roles: readonly st
 export function PreflightDialog() {
   const store = useEditorStore();
   const snapshot = useEditor((v) => v.snapshot);
+  const serviceRoutes = useEditor((v) => v.serviceRoutes);
   const [skip, setSkip] = useState(store.skipPreflight);
   const report = useMemo(
-    () => preflight(snapshot.components, snapshot.connections, snapshot.buildAssemblies),
-    [snapshot],
+    () =>
+      preflight(snapshot.components, snapshot.connections, snapshot.buildAssemblies, {
+        serviceRoutes,
+      }),
+    [snapshot, serviceRoutes],
   );
   const roles = useMemo(() => new Set(snapshot.components.map((c) => c.role)), [snapshot]);
   const close = () => store.openDialog(null);

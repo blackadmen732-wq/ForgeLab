@@ -7,22 +7,19 @@ import {
   CurvePath,
   CylinderGeometry,
   LineCurve3,
+  Line,
+  LineDashedMaterial,
+  BufferGeometry as ThreeBufferGeometry,
   Matrix4,
   Quaternion,
   TubeGeometry,
   Vector3,
 } from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import { localPointToWorld, type Vec3 } from "@forgelab/shared";
-import {
-  currentTransform,
-  isLoadBearing,
-  type ConnectionType,
-  type SimulationComponent,
-} from "@forgelab/sim-core";
+import { routeEnd as worldEnd, isLoadBearing, type ConnectionType } from "@forgelab/sim-core";
 import { useEditor } from "../store/context.js";
 import { CONNECTION_COLORS } from "./appearance.js";
-import { filleted, routePath, routeStyle, type RouteEnd } from "./routing.js";
+import { routeStyle, type RouteEnd } from "./routing.js";
 
 /**
  * Service connections drawn as routed cables and pipes (see routing.ts): each system on
@@ -47,18 +44,6 @@ const DEFAULT_LOOK = { color: "#8b96a4", metalness: 0.3, roughness: 0.6 };
 
 const FLANGED = new Set<ConnectionType>(["coolant", "cryo", "steam", "vacuum", "fuel", "port"]);
 const Y = new Vector3(0, 1, 0);
-
-function worldEnd(component: SimulationComponent, socketId: string): RouteEnd | null {
-  const socket = component.connectionPoints.find((p) => p.id === socketId);
-  if (socket === undefined) return null;
-  const t = currentTransform(component);
-  const p: Vec3 = localPointToWorld(t, socket.localPosition);
-  const q = new Quaternion(t.rotation.x, t.rotation.y, t.rotation.z, t.rotation.w);
-  const n = new Vector3(socket.localDirection.x, socket.localDirection.y, socket.localDirection.z)
-    .applyQuaternion(q)
-    .normalize();
-  return { position: [p.x, p.y, p.z], normal: [n.x, n.y, n.z] };
-}
 
 function tube(
   points: readonly (readonly [number, number, number])[],
@@ -149,6 +134,7 @@ function sleeve(at: RouteEnd, radius: number): BufferGeometry {
 }
 
 export function Cables() {
+  const routes = useEditor((v) => v.serviceRoutes);
   const connections = useEditor((v) => v.snapshot.connections);
   const components = useEditor((v) => v.snapshot.components);
   const hidden = useEditor((v) => v.hidden);
@@ -162,6 +148,7 @@ export function Cables() {
   const focusSystem = useEditor((v) => v.focusSystem);
 
   const meshes = useMemo(() => {
+    const byRoute = new Map(routes.map((r) => [r.id, r]));
     const byId = new Map(components.map((c) => [c.id, c]));
     const shells: Shell[] = components
       .filter((c) => c.type === "cryostat" && c.geometry.kind === "cylinder" && !peeled.has(c.id))
@@ -192,7 +179,9 @@ export function Cables() {
       )?.port;
       const portB = b.connectionPoints.find((p) => p.id === connection.to.connectionPointId)?.port;
       const style = routeStyle(connection.type, portA, portB);
-      const path = filleted(routePath(ea, eb, style), Math.max(style.radiusM * 2.5, 0.3));
+      const planned = byRoute.get(connection.id);
+      if (!planned || planned.state === "blocked") continue;
+      const path = planned.points;
       if (path.length < 2) continue;
       const list = parts.get(connection.type) ?? [];
       list.push(tube(path, style.radiusM));
@@ -206,7 +195,50 @@ export function Cables() {
       for (const g of geometries) g.dispose();
       return { type, geometry: merged, look: LOOK[type] ?? DEFAULT_LOOK };
     });
-  }, [connections, components, hidden, peeled]);
+  }, [routes, connections, components, hidden, peeled]);
+
+  const blocked = useMemo(
+    () =>
+      routes
+        .filter(
+          (r) =>
+            r.state === "blocked" &&
+            r.points.length > 1 &&
+            !connections.some(
+              (c) =>
+                c.id === r.id &&
+                [c.from.componentId, c.to.componentId].some(
+                  (id) => hidden.has(id) || peeled.has(id),
+                ),
+            ),
+        )
+        .map((r) => {
+          const g = new ThreeBufferGeometry().setFromPoints(r.points.map((p) => new Vector3(...p)));
+          const line = new Line(
+            g,
+            new LineDashedMaterial({
+              color: "#ff6871",
+              dashSize: 0.18,
+              gapSize: 0.12,
+              depthTest: false,
+            }),
+          );
+          line.name = `blocked-service:${r.id}`;
+          line.computeLineDistances();
+          line.renderOrder = 4;
+          return line;
+        }),
+    [routes, connections, hidden, peeled],
+  );
+  useLayoutEffect(
+    () => () => {
+      for (const line of blocked) {
+        line.geometry.dispose();
+        line.material.dispose();
+      }
+    },
+    [blocked],
+  );
 
   useLayoutEffect(
     () => () => {
@@ -227,6 +259,11 @@ export function Cables() {
   if (exploded) return null;
   return (
     <group name="services">
+      <group name="unresolved-service-guides">
+        {blocked.map((line) => (
+          <primitive key={line.name} object={line} />
+        ))}
+      </group>
       {meshes.map((m) => {
         // An isolated system keeps its own runs solid; X-ray and isolation ghost the rest.
         const inFocus = focusSystem !== null && plantSystemOfConnection(m.type) === focusSystem;

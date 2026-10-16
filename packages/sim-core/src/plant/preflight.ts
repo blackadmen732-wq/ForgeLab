@@ -2,6 +2,7 @@ import { resolveConstruction, type BuildAssembly } from "../construction.js";
 import { getMaterial } from "@forgelab/materials";
 import type { SimulationComponent } from "../component.js";
 import type { Connection } from "../connections.js";
+import type { ServiceRoute } from "../serviceRouting.js";
 import { getCoolantFluid, lameHoopStressPa, loopPressurePa } from "./fluids.js";
 import { booleanParameter, COOLED_ROLES, numberParameter, stringParameter } from "./roles.js";
 import { geometricCouplings, isPoloidalCoil } from "./fieldCoupling.js";
@@ -34,6 +35,7 @@ export type PreflightCode =
   | "UNPUMPED_COOLANT_LOOP"
   | "PIPE_PRESSURE_LIMIT"
   | "INCOMPLETE_CONSTRUCTION"
+  | "SERVICE_ROUTE_BLOCKED"
   | "NO_VACUUM_PUMP"
   | "OPEN_CHAMBER"
   | "BRANCHED_CHAMBER"
@@ -84,7 +86,9 @@ export function preflight(
   components: readonly SimulationComponent[],
   connections: readonly Connection[],
   buildAssemblies: readonly BuildAssembly[] = [],
+  options: { readonly serviceRoutes?: readonly ServiceRoute[] } = {},
 ): PreflightReport {
+  const authoredConnections = connections;
   const resolved = resolveConstruction(components, connections, buildAssemblies);
   components = resolved.components;
   connections = resolved.connections;
@@ -103,6 +107,22 @@ export function preflight(
     };
   const topology = buildTopology(components, connections);
   const items: PreflightItem[] = [
+    ...(options.serviceRoutes ?? [])
+      .filter((r) => r.state === "blocked")
+      .map((r): PreflightItem => ({
+        code: "SERVICE_ROUTE_BLOCKED",
+        system: "design",
+        severity: "warning",
+        componentIds: authoredConnections
+          .filter((c) => c.id === r.id)
+          .flatMap((c) => [c.from.componentId, c.to.componentId]),
+        message: `Service ${r.id}: no clear installation route found (${r.blockers
+          .slice(0, 3)
+          .map((b) => b.label)
+          .join(
+            ", ",
+          )}). The network model still assumes this endpoint link; its physical installation is unresolved.`,
+      })),
     ...resolved.statuses
       .filter((s) => s.state !== "complete")
       .map((s) => ({

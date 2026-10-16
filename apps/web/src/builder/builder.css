@@ -3116,3 +3116,31 @@
   color: #a5e5be;
   border-color: #67b88a;
 }
+
+.route-warning {
+  pointer-events: auto;
+  max-width: 510px;
+  padding: 9px 12px;
+  border: 1px solid #865146;
+  border-radius: 5px;
+  background: rgba(33, 22, 24, 0.96);
+  color: #f2b8b3;
+  font-size: var(--fs-sm);
+}
+.route-warning summary {
+  cursor: pointer;
+}
+.route-warning p {
+  margin: 8px 0;
+  color: var(--text);
+}
+.route-warning ul {
+  padding-left: 16px;
+  margin: 8px 0;
+}
+.route-warning li {
+  margin: 7px 0;
+}
+.route-warning button {
+  margin-left: 8px;
+}

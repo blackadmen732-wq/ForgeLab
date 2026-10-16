@@ -88,6 +88,8 @@ jobs:
           node scripts/serve-output.mjs 3000 &
           sleep 2
           mkdir -p e2e-shots
+          E2E_SHOTS=e2e-shots/work-orders node e2e/work-orders-local.mjs
+          E2E_SHOTS=e2e-shots/service-clearance node e2e/service-clearance.mjs http://localhost:3000
           E2E_SHOTS=e2e-shots node e2e/acceptance.mjs http://localhost:3000
           E2E_SHOTS=e2e-shots node e2e/collaboration.mjs http://localhost:3000
           E2E_SHOTS=e2e-shots node e2e/showroom.mjs http://localhost:3000

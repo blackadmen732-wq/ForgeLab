@@ -30,7 +30,7 @@ describe("service routing", () => {
     ]);
   });
 
-  it("sizes pipes from the port bore, within sensible limits", () => {
+  it("sizes pipes from the port bore without shrinking large declared interfaces", () => {
     const port = (d: number) =>
       ({
         domain: "fluid",
@@ -42,7 +42,7 @@ describe("service routing", () => {
         ratedTemperatureK: 600,
       }) as const;
     expect(routeStyle("coolant", port(0.4)).radiusM).toBeCloseTo(0.23, 6);
-    expect(routeStyle("coolant", port(5)).radiusM).toBe(0.6);
+    expect(routeStyle("coolant", port(5)).radiusM).toBe(2.53);
     expect(routeStyle("electrical").radiusM).toBeLessThan(routeStyle("coolant").radiusM);
   });
 
