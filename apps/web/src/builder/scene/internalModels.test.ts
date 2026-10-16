@@ -20,6 +20,8 @@ describe("machine internals (schematic)", () => {
         "steam-generator",
         "steam-turbine",
         "vacuum-pump",
+        "reactor-chamber",
+        "tokamak-vessel",
       ].sort(),
     );
   });

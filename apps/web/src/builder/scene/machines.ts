@@ -9,6 +9,7 @@ import {
 } from "three";
 import { box, cyl, ring, merge, halfExtents, type V } from "./machineGeometry.js";
 import { buildCoolantPump } from "./coolantPump.js";
+import { vesselModel } from "./vessels.js";
 import {
   type ArcGeometry,
   type ComponentGeometry,
@@ -431,6 +432,8 @@ export function machineModel(
   points: readonly ConnectionPoint[],
 ): MachineModel | null {
   if (type === "coolant-pump") return buildCoolantPump(geometry, points);
+  const vessel = vesselModel(type, geometry, points);
+  if (vessel !== null) return vessel;
   const h = halfExtents(geometry);
   const main: BufferGeometry[] = [];
   const trim: BufferGeometry[] = [];

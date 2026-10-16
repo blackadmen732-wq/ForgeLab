@@ -27,6 +27,7 @@ import { damageState } from "../../presentation/damageState.js";
 import { cutPlaneFor } from "./cutPlanes.js";
 import { breachPlanes } from "./fracture.js";
 import { hasBespokeInternals, internalModel } from "./internalModels.js";
+import { detailedVessel } from "./vessels.js";
 import { meshRegistry } from "./meshes.js";
 import { regionHighlight, useRegionHighlight } from "./regionHighlight.js";
 
@@ -186,7 +187,12 @@ function Section({ component }: { component: SimulationComponent }) {
     [component.type],
   );
   const meshes = useMemo(() => {
-    const model = internalModel(component.type, component.geometry, internals);
+    const model = internalModel(
+      component.type,
+      component.geometry,
+      internals,
+      component.connectionPoints,
+    );
     return internals.flatMap((internal, k) => {
       const geometry = model.get(internal.id);
       if (geometry === undefined) return [];
@@ -205,13 +211,15 @@ function Section({ component }: { component: SimulationComponent }) {
           metalness: fluid ? 0 : 0.25,
           side: DoubleSide,
           clippingPlanes: [cutPlaneFor(component.id)],
-          polygonOffset: true,
+          // Real shell spacing supplies the depth separation. Generic band bias can
+          // push thin armour behind the casing at a grazing viewing angle.
+          polygonOffset: !detailedVessel(component.type, component.geometry),
           polygonOffsetFactor: k,
         }),
       };
       return [{ geometry, region }];
     });
-  }, [component.type, component.geometry, component.id, internals]);
+  }, [component.type, component.geometry, component.id, component.connectionPoints, internals]);
 
   useLayoutEffect(() => {
     registry.set(
@@ -241,6 +249,7 @@ function Section({ component }: { component: SimulationComponent }) {
       {meshes.map((m) => (
         <mesh
           key={m.region.id}
+          name={`internal:${component.id}:${m.region.id}`}
           geometry={m.geometry}
           material={m.region.material}
           renderOrder={m.region.fluid ? 2 : 1}

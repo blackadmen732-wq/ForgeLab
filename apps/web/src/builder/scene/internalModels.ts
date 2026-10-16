@@ -8,7 +8,8 @@ import {
   Vector2,
 } from "three";
 import type { ProductInternal } from "@forgelab/reactor-components";
-import type { ComponentGeometry } from "@forgelab/sim-core";
+import type { ComponentGeometry, ConnectionPoint } from "@forgelab/sim-core";
+import { vesselInternals } from "./vessels.js";
 import { arcTube, box, cyl, halfExtents, merge, ring, type V } from "./machines.js";
 
 /**
@@ -306,7 +307,7 @@ const BUILDERS: Readonly<Record<string, Builder>> = {
 
 /** Machine types with a bespoke internal model. */
 export function hasBespokeInternals(type: string): boolean {
-  return type in BUILDERS;
+  return type in BUILDERS || type === "reactor-chamber" || type === "tokamak-vessel";
 }
 
 /**
@@ -363,7 +364,17 @@ export function internalModel(
   type: string,
   geometry: ComponentGeometry,
   internals: readonly ProductInternal[],
+  points: readonly ConnectionPoint[] = [],
 ): RegionGeometry {
+  const vessel = vesselInternals(type, geometry, points);
+  if (vessel !== null) {
+    for (const [id, g] of vessel)
+      if (!internals.some((i) => i.id === id)) {
+        g.dispose();
+        vessel.delete(id);
+      }
+    return vessel;
+  }
   const out = new Map<string, BufferGeometry>();
   const builder = BUILDERS[type];
   if (builder !== undefined) {

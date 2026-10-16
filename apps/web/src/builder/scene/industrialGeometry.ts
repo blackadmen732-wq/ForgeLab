@@ -18,6 +18,11 @@ const UP = new Vector3(0, 1, 0);
 // CPU-only template, shared by every pattern. Clones are merged and disposed per build.
 const HEX_HEAD = new CylinderGeometry(1, 1, 1, 6);
 
+/** One hex head from the same CPU template used by all bolt patterns. */
+export function hexHead(radiusM: number, heightM: number): BufferGeometry {
+  return HEX_HEAD.clone().scale(radiusM, heightM, radiusM);
+}
+
 /** Consumes temporary geometries; a pattern is one mesh, never a mesh per fastener. */
 export function joinGeometry(parts: BufferGeometry[]): BufferGeometry {
   const copies = parts.map((p) => (p.index === null ? p : p.toNonIndexed()));
@@ -85,9 +90,11 @@ export function boltCircle(
   for (let i = 0; i < count; i += 1) {
     const a = ((i + 0.5) * Math.PI * 2) / count;
     parts.push(
-      HEX_HEAD.clone()
-        .scale(headRadiusM, headHeightM, headRadiusM)
-        .translate(Math.cos(a) * pitchRadiusM, 0, Math.sin(a) * pitchRadiusM),
+      hexHead(headRadiusM, headHeightM).translate(
+        Math.cos(a) * pitchRadiusM,
+        0,
+        Math.sin(a) * pitchRadiusM,
+      ),
     );
   }
   return along(joinGeometry(parts), axis, at);
