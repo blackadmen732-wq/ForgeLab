@@ -1,5 +1,4 @@
 import {
-  BoxGeometry,
   type BufferGeometry,
   CylinderGeometry,
   Matrix4,
@@ -8,13 +7,13 @@ import {
   TorusGeometry,
   Vector3,
 } from "three";
-import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { box, cyl, ring, merge, halfExtents, type V } from "./machineGeometry.js";
+import { buildCoolantPump } from "./coolantPump.js";
 import {
   type ArcGeometry,
   type ComponentGeometry,
   type ConnectionPoint,
   arcFrame,
-  geometryLocalHalfExtentsM,
 } from "@forgelab/sim-core";
 
 /**
@@ -36,44 +35,10 @@ export interface MachineModel {
   readonly replacesEnvelope: boolean;
 }
 
-export type V = readonly [number, number, number];
+export { box, cyl, ring, merge, halfExtents } from "./machineGeometry.js";
+export type { V } from "./machineGeometry.js";
 const Y = new Vector3(0, 1, 0);
 const Z = new Vector3(0, 0, 1);
-
-export function box(sx: number, sy: number, sz: number, x = 0, y = 0, z = 0): BufferGeometry {
-  return new BoxGeometry(Math.max(sx, 1e-3), Math.max(sy, 1e-3), Math.max(sz, 1e-3)).translate(
-    x,
-    y,
-    z,
-  );
-}
-
-/** Cylinder of radius r and length l along `axis`, centred at c. */
-export function cyl(
-  r: number,
-  l: number,
-  axis: "x" | "y" | "z",
-  c: V = [0, 0, 0],
-  segments = 24,
-  r2 = r,
-): BufferGeometry {
-  const g = new CylinderGeometry(r2, r, Math.max(l, 1e-3), segments);
-  if (axis === "x") g.rotateZ(-Math.PI / 2);
-  if (axis === "z") g.rotateX(Math.PI / 2);
-  return g.translate(c[0], c[1], c[2]);
-}
-
-export function ring(
-  R: number,
-  tube: number,
-  axis: "x" | "y" | "z",
-  c: V = [0, 0, 0],
-): BufferGeometry {
-  const g = new TorusGeometry(R, tube, 6, 32);
-  if (axis === "y") g.rotateX(Math.PI / 2);
-  if (axis === "x") g.rotateY(Math.PI / 2);
-  return g.translate(c[0], c[1], c[2]);
-}
 
 /** Along `dir` from `at`: a short nozzle of radius r and length l, flanged at its end. */
 function nozzle(
@@ -92,34 +57,6 @@ function nozzle(
     pipe: place(new CylinderGeometry(r, r, l, 16), mid),
     flange: place(new CylinderGeometry(r * 1.45, r * 1.45, Math.max(0.05, r * 0.3), 16), end),
   };
-}
-
-export function merge(parts: BufferGeometry[]): BufferGeometry | null {
-  const indexed = parts.map((p) => (p.index === null ? p : p.toNonIndexed()));
-  const merged = indexed.length === 0 ? null : mergeGeometries(indexed, false);
-  for (const p of [...parts, ...indexed]) p.dispose();
-  return merged;
-}
-
-export function halfExtents(g: ComponentGeometry): V {
-  switch (g.kind) {
-    case "box":
-      return [g.sizeM.x / 2, g.sizeM.y / 2, g.sizeM.z / 2];
-    case "cylinder": {
-      const r = g.radiusM;
-      const h = g.heightM / 2;
-      return g.axis === "x" ? [h, r, r] : g.axis === "z" ? [r, r, h] : [r, h, r];
-    }
-    case "torus": {
-      const R = g.majorRadiusM + g.minorRadiusM;
-      const a = g.minorRadiusM;
-      return g.axis === "x" ? [a, R, R] : g.axis === "z" ? [R, R, a] : [R, a, R];
-    }
-    case "arc": {
-      const h = geometryLocalHalfExtentsM(g);
-      return [h.x, h.y, h.z];
-    }
-  }
 }
 
 /**
@@ -353,27 +290,6 @@ const BUILDERS: Readonly<Record<string, Builder>> = {
       for (const sz of [-1, 1]) trim.push(box(0.12, 2 * hy, 0.12, sx * hx, 0, sz * hz));
     return { accentColor: "#e0b22b", replacesEnvelope: true };
   },
-  "coolant-pump": ([hx, hy, hz], main, trim, accent) => {
-    // Vertical in-line pump: skid, volute casing with suction/discharge, coupling, finned motor.
-    trim.push(box(2 * hx, 0.12 * hy, 2 * hz * 0.9, 0, -hy + 0.06 * hy, 0));
-    const casingR = 0.52 * Math.min(hx, hz);
-    main.push(cyl(casingR, 0.55 * hy, "y", [0, -0.55 * hy, 0], 28));
-    main.push(cyl(0.3 * hy, 2 * hx * 0.95, "x", [0, -0.55 * hy, 0], 20));
-    trim.push(ring(casingR * 1.02, 0.03 * hy, "y", [0, -0.28 * hy, 0]));
-    trim.push(cyl(0.18 * hx, 0.25 * hy, "y", [0, -0.12 * hy, 0], 16)); // coupling guard
-    accent.push(cyl(0.4 * Math.min(hx, hz), 0.95 * hy, "y", [0, 0.45 * hy, 0], 28)); // motor
-    for (let i = 0; i < 16; i += 1) {
-      const a = (i / 16) * Math.PI * 2;
-      const r = 0.42 * Math.min(hx, hz);
-      trim.push(
-        box(0.09 * hx, 0.8 * hy, 0.03 * hz)
-          .rotateY(-a)
-          .translate(Math.cos(a) * r, 0.45 * hy, Math.sin(a) * r),
-      );
-    }
-    trim.push(cyl(0.43 * Math.min(hx, hz), 0.06 * hy, "y", [0, 0.94 * hy, 0], 28));
-    return { accentColor: "#35698c", replacesEnvelope: true };
-  },
   "steam-generator": ([hx, hy], main, trim) => {
     // Vertical shell-and-tube: shell, elliptical heads, skirt, girth welds, manway.
     const r = hx;
@@ -514,6 +430,7 @@ export function machineModel(
   geometry: ComponentGeometry,
   points: readonly ConnectionPoint[],
 ): MachineModel | null {
+  if (type === "coolant-pump") return buildCoolantPump(geometry, points);
   const h = halfExtents(geometry);
   const main: BufferGeometry[] = [];
   const trim: BufferGeometry[] = [];

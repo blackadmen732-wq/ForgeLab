@@ -22,6 +22,7 @@ import { findMaterialRecord } from "@forgelab/materials";
 import { boxProjectUVs, partWearMaps } from "./environment/surfaces.js";
 import { arcTube, machineModel } from "./machines.js";
 import { createPlasmaMaterial } from "./plasma.js";
+import { coolantPumpCoupling } from "./coolantPump.js";
 
 /**
  * Procedural presentation meshes.
@@ -101,7 +102,8 @@ function rotorShape(
   geometry: ComponentGeometry,
 ): { geometry: BufferGeometry; axis: "x" | "y" | "z"; offset: [number, number, number] } | null {
   const h = halfExtents(geometry);
-  if (role === "coolant-pump" || role === "vacuum-pump") {
+  if (role === "coolant-pump") return coolantPumpCoupling(geometry);
+  if (role === "vacuum-pump") {
     const r = Math.max(0.15, Math.min(h.x, h.z) * 0.6);
     const hub = new CylinderGeometry(r * 0.25, r * 0.25, 0.12, 16);
     const blades = [0, 1, 2, 3].map((i) =>
@@ -377,6 +379,12 @@ export const ComponentMesh = memo(function ComponentMesh({
   const lamp = useMemo(() => {
     if (!RUNNING_ROLES.has(role)) return null;
     const h = halfExtents(geometry);
+    if (role === "coolant-pump")
+      return {
+        geometry: new BoxGeometry(0.045 * h.x, 0.025 * h.y, 0.015 * h.z),
+        material: new MeshBasicMaterial({ color: "#1b1f24", toneMapped: false }),
+        position: [0.065 * h.x, 0.55 * h.y, 0.455 * Math.min(h.x, h.z)] as [number, number, number],
+      };
     return {
       geometry: new BoxGeometry(0.28, 0.12, 0.28),
       material: new MeshBasicMaterial({ color: "#1b1f24", toneMapped: false }),
@@ -471,7 +479,11 @@ export const ComponentMesh = memo(function ComponentMesh({
           </mesh>
         )}
         {rotor !== null && (
-          <group ref={rotorRef} position={rotor.offset}>
+          <group
+            ref={rotorRef}
+            position={rotor.offset}
+            name={role === "coolant-pump" ? "pump-coupling" : "machine-rotor"}
+          >
             <mesh geometry={rotor.geometry} material={body} castShadow />
           </group>
         )}
