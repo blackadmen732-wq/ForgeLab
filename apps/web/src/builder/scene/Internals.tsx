@@ -30,6 +30,7 @@ import { hasBespokeInternals, internalModel } from "./internalModels.js";
 import { detailedVessel } from "./vessels.js";
 import { meshRegistry } from "./meshes.js";
 import { regionHighlight, useRegionHighlight } from "./regionHighlight.js";
+import { fluidFinish, surfaceFinish } from "./finishes.js";
 
 export { layerScales } from "./internalModels.js";
 
@@ -106,7 +107,7 @@ interface RegionMesh {
 function baseColor(internal: ProductInternal): Color {
   if (internal.substanceId === null) return SYSTEM_COLOR.get(SYSTEM_OF[internal.kind])!.clone();
   if (findFluid(internal.substanceId) !== undefined)
-    return internal.kind === "vacuum" ? new Color("#f0c6e0") : new Color("#4aa3e8");
+    return new Color(fluidFinish(internal.substanceId).color);
   return materialColor(internal.substanceId);
 }
 
@@ -121,6 +122,8 @@ export function paintRegion(
   m: MeshStandardMaterial,
 ): void {
   let opacity = region.fluid ? (region.kind === "vacuum" ? 0.12 : 0.35) : 1;
+  if (overlay === "none" && region.fluid)
+    opacity = region.kind === "vacuum" ? 0 : fluidFinish(region.substanceId ?? null).opacity;
   let emissive = 0;
   m.emissive.setRGB(0, 0, 0);
   if (overlay === "materials") {
@@ -207,8 +210,8 @@ function Section({ component }: { component: SimulationComponent }) {
         fluid,
         surface: surfaceMaterial(internal.substanceId),
         material: new MeshStandardMaterial({
-          roughness: fluid ? 0.2 : 0.6,
-          metalness: fluid ? 0 : 0.25,
+          ...surfaceFinish(internal.substanceId),
+          ...(fluid ? fluidFinish(internal.substanceId) : {}),
           side: DoubleSide,
           clippingPlanes: [cutPlaneFor(component.id)],
           // Real shell spacing supplies the depth separation. Generic band bias can

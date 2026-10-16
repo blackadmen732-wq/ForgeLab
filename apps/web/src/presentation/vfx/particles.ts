@@ -25,8 +25,8 @@ interface Look {
   /** Vertical acceleration at birth, m/s² (positive rises). */
   readonly buoyancy: number;
   /**
-   * Vertical acceleration at the end of life. Cold helium fog first sinks (denser than
-   * air), then rises as it warms; steam's droplets evaporate as it rises and slows.
+   * Vertical acceleration at the end of life. Cryogenic mist is condensed air moisture,
+   * not visible helium gas. The cold plume spreads before dispersing; warm helium rises.
    */
   readonly buoyancyEnd: number;
   /** Linear drag, 1/s. */
@@ -193,6 +193,8 @@ const FRAGMENT = /* glsl */ `
   uniform float uHard;
   uniform float uLit;
   uniform float uFire;
+  uniform float uDrop;
+  uniform float uTime;
   float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float noise(vec2 p) {
     vec2 i = floor(p);
@@ -216,7 +218,17 @@ const FRAGMENT = /* glsl */ `
       if (r > 1.0) discard;
       float core = 1.0 - smoothstep(0.0, 1.0, r);
       float head = mix(0.3, 1.0, smoothstep(-1.0, 1.0, q.x));
-      gl_FragColor = vec4(mix(vTint, vec3(1.0), core * core * 0.35), vAlpha * core * head);
+      if (uDrop > 0.5) {
+        // Clear droplets scatter/reflect light; they never emit like molten sparks.
+        float rim = pow(1.0 - core, 3.0);
+        float glint = pow(max(0.0, 1.0 - length(vec2(q.x - 0.25, q.y / max(vRatio, 0.001) - 0.25))), 12.0);
+        gl_FragColor = vec4(vTint * (0.55 + 0.35 * rim) + vec3(glint * 0.7),
+                            vAlpha * (0.18 + 0.65 * rim + glint) * core * head);
+      } else {
+        gl_FragColor = vec4(vTint * (1.0 + 1.8 * core * core), vAlpha * core * head);
+      }
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
       return;
     }
     float d = dot(p, p);
@@ -224,13 +236,24 @@ const FRAGMENT = /* glsl */ `
     float c = cos(vAngle);
     float s = sin(vAngle);
     vec2 r = mat2(c, -s, s, c) * p;
-    float n = fbm(r * 1.6 + vSeed * 37.0);
+    // Advected density gives rolling wisps rather than rotating static circular decals.
+    vec2 drift = vec2(0.12 * sin(vSeed * 23.0 + uTime * 0.4), -uTime * 0.18);
+    float n = fbm(r * 2.2 + vSeed * 37.0 + drift);
     float edge = 1.0 - d;
     float density = smoothstep(0.0, 0.55, edge * (0.45 + 1.0 * n) - 0.12);
     vec3 col = vTint;
     if (uLit > 0.5) col *= 0.72 + 0.4 * (p.y * 0.5 + 0.5) + 0.25 * (n - 0.5);
-    if (uFire > 0.5) col = mix(col, vec3(1.0, 0.94, 0.78), clamp(pow(edge, 3.0) * n * 1.6, 0.0, 1.0));
+    if (uFire > 0.5) {
+      float lift = p.y * 0.5 + 0.5;
+      float tongues = fbm(vec2(p.x * 4.0, p.y * 2.0 - uTime * 2.8) + vSeed * 19.0);
+      float width = mix(0.8, 0.12, lift);
+      float flame = 1.0 - smoothstep(width * 0.25, width, abs(p.x + (tongues - 0.5) * 0.5));
+      density *= flame * smoothstep(0.1, 0.5, tongues + (1.0 - lift) * 0.35);
+      col = mix(col, vec3(1.0, 0.8, 0.42), pow(edge, 2.0) * (1.0 - lift)) * 2.2;
+    }
     gl_FragColor = vec4(col, vAlpha * density);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
   }
 `;
 
@@ -289,6 +312,7 @@ export class ParticleSystem {
         uHard: { value: kind === "sparks" || kind === "spray" ? 1 : 0 },
         uLit: { value: this.#look.blending === NormalBlending ? 1 : 0 },
         uFire: { value: kind === "fire" ? 1 : 0 },
+        uDrop: { value: kind === "spray" ? 1 : 0 },
         uStreak: { value: STREAK_S[kind] ?? 0 },
         uTime: { value: 0 },
         uViewport: { value: new Vector2(1280, 720) },

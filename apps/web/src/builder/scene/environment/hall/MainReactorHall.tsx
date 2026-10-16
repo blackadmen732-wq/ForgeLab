@@ -87,15 +87,15 @@ function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): M
     new MeshStandardMaterial({ color, metalness, roughness, ...extra });
   /** Metal with wear: the maps modulate the base colour and finish. */
   const metal = (color: string, metalness: number, roughness: number, extra = {}) =>
-    std(color, metalness, roughness * 1.6, {
+    std(color, metalness, Math.min(1, roughness / 0.94), {
       map: worn.map,
       roughnessMap: worn.roughnessMap,
       normalMap: worn.normalMap,
-      normalScale: new Vector2(0.6, 0.6),
+      normalScale: new Vector2(0.25, 0.25),
       ...extra,
     });
-  /** Painted steel: the paint is less metallic and wears through at the scratches. */
-  const paint = (color: string, roughness: number) => metal(color, 0.25, roughness);
+  /** The visible coating is dielectric, even when the substrate is steel. */
+  const paint = (color: string, roughness: number) => metal(color, 0, roughness);
   const glow = (color: string, intensity: number) =>
     new MeshStandardMaterial({
       color: "#101216",
@@ -110,15 +110,15 @@ function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): M
       map: deck.map,
       roughnessMap: deck.roughnessMap,
       normalMap: photo !== null && photo.normalMap === null ? null : deck.normalMap,
-      normalScale: new Vector2(0.8, 0.8),
+      normalScale: new Vector2(0.4, 0.4),
       roughness: 1,
-      metalness: 0.3,
+      metalness: 0.15,
     }),
     steel: metal("#5f6a75", 0.7, 0.42),
-    steelDark: metal("#2f353b", 0.6, 0.5),
+    steelDark: metal("#424d58", 0.85, 0.5),
     concrete: std(dark ? "#6f747a" : "#9aa0a6", 0, 0.92, { map: concreteMap }),
-    panel: std(dark ? "#5b636c" : "#7d8791", 0.3, 0.6, { map: panelMap }),
-    glass: std("#0c1319", 0.9, 0.04, { transparent: true, opacity: 0.42, depthWrite: false }),
+    panel: std(dark ? "#5b636c" : "#909ca8", 0, 0.6, { map: panelMap }),
+    glass: std("#adc4d4", 0, 0.12, { transparent: true, opacity: 0.25, depthWrite: false }),
     interior: std("#40464d", 0, 0.9, {
       emissive: "#ffe7c4",
       emissiveIntensity: dark ? 0.05 : 0.08,
@@ -462,7 +462,7 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
             resolution={budget.floorReflections}
             blur={[320, 120]}
             mixBlur={1}
-            mixStrength={preset.id === "dark-facility" ? 2.2 : 1.4}
+            mixStrength={preset.id === "dark-facility" ? 0.4 : 0.3}
             mixContrast={1.05}
             mirror={0}
             depthScale={0}

@@ -140,7 +140,7 @@ function heightField(ctx: CanvasRenderingContext2D, size: number): Float32Array 
 /**
  * Steel deck plate, as on a reactor-hall floor: one tile covers `tileM` metres, laid in
  * staggered 3 × 1.5 m plates with ground seams, countersunk fixings, brushing, grime along
- * the joints, the odd rust bloom, and standing water that turns the plate glossy.
+ * the joints and restrained rust at fixings. Dry satin finish, without standing water.
  */
 export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
   const size = 1024;
@@ -159,7 +159,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
   const h = height.ctx;
   a.fillStyle = "rgb(150,152,154)";
   a.fillRect(0, 0, size, size);
-  r.fillStyle = "rgb(110,110,110)";
+  r.fillStyle = "rgb(190,190,190)";
   r.fillRect(0, 0, size, size);
   h.fillStyle = "rgb(200,200,200)";
   h.fillRect(0, 0, size, size);
@@ -174,7 +174,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     // Each plate came from a different heat: slightly different tone and finish.
     const tone = 132 + (random() - 0.5) * 16;
     const warm = (random() - 0.5) * 6;
-    const finish = 95 + random() * 40;
+    const finish = 175 + random() * 30;
     const paint = (x: number, y: number) => {
       a.fillStyle = `rgb(${tone + warm},${tone},${tone - warm})`;
       a.fillRect(x, y, plateW, plateH);
@@ -247,18 +247,17 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     const rad = 40 + random() * 140;
     wrapped(size, x, y, rad, (px, py) => {
       blob(a, px, py, rad, "235,235,235", 0.08);
-      blob(r, px, py, rad, "0,0,0", 0.18);
+      blob(r, px, py, rad, "140,140,140", 0.12);
     });
   }
-  // Grime and oil.
+  // Dry workshop dust: no decorative oil slicks or standing water in the build area.
   for (let i = 0; i < 36; i += 1) {
     const x = random() * size;
     const y = random() * size;
     const rad = 10 + random() * 70;
-    const oil = random() > 0.75;
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, oil ? "20,18,16" : "60,52,44", oil ? 0.16 : 0.07);
-      blob(r, px, py, rad, oil ? "0,0,0" : "255,255,255", oil ? 0.3 : 0.15);
+      blob(a, px, py, rad, "60,52,44", 0.05);
+      blob(r, px, py, rad, "255,255,255", 0.12);
     });
   }
   // Occasional rust bloom at a fixing or seam.
@@ -271,20 +270,6 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
       blob(a, px, py, rad, "120,62,30", 0.3);
       blob(r, px, py, rad, "255,255,255", 0.5);
     });
-  }
-  // Standing water: large irregular puddles where the plate is near-mirror smooth.
-  for (let i = 0; i < 9; i += 1) {
-    const x = random() * size;
-    const y = random() * size;
-    for (let k = 0; k < 7; k += 1) {
-      const px0 = x + (random() - 0.5) * 220;
-      const py0 = y + (random() - 0.5) * 120;
-      const rad = 40 + random() * 90;
-      wrapped(size, px0, py0, rad, (px, py) => {
-        blob(r, px, py, rad, "0,0,0", 0.6);
-        blob(a, px, py, rad, "30,32,36", 0.06);
-      });
-    }
   }
   // Scratches.
   for (let i = 0; i < 220; i += 1) {
@@ -335,7 +320,9 @@ export function wornMetalMaps(tileM = 2, seed = 977, wearAmount = 1): SurfaceMap
   const h = height.ctx;
   a.fillStyle = "rgb(236,236,236)";
   a.fillRect(0, 0, size, size);
-  r.fillStyle = "rgb(128,128,128)";
+  // A near-white multiplier preserves the selected finish. A mid-grey map halves
+  // roughness, making concrete, rubber and matte paint look like polished metal.
+  r.fillStyle = "rgb(240,240,240)";
   r.fillRect(0, 0, size, size);
   h.fillStyle = "rgb(128,128,128)";
   h.fillRect(0, 0, size, size);

@@ -14,6 +14,7 @@ const BASE = process.argv[2] ?? process.env.FORGELAB_URL ?? "http://localhost:30
 const SHOTS = process.env.E2E_SHOTS ?? null;
 
 const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   args: [
     "--use-gl=angle",
     "--use-angle=swiftshader",

@@ -18,9 +18,9 @@ import { boxProjectUVs } from "../surfaces.js";
  * emergency lamps, beacons) are instanced so the lighting controller can animate them.
  *
  * Layout (metres): 140 × 90 floor, 50 m to the underside of the roof trusses, 56 m to the
- * roof deck. North (z = −45) is the back wall with the control room; west (x = −70) has
- * the equipment door, loading bay and goods lift; east (x = +70) has the observation
- * galleries; south (z = +45) is behind the default camera.
+ * roof deck. North (z = −45) has an open maintenance gantry; west (x = −70) has
+ * the equipment door, loading bay and goods lift; east (x = +70) has open service
+ * catwalks; south (z = +45) is behind the default camera.
  */
 export const HALL = Object.freeze({
   halfX: 70,
@@ -85,7 +85,7 @@ export interface HallGeometry {
   readonly workLights: ReadonlyArray<Emitter & { readonly normal: Vector3 }>;
   /** Emergency lamps (dark until the facility needs them). */
   readonly emergency: ReadonlyArray<Emitter & { readonly zone: Zone }>;
-  /** Rotating warning beacons (door and control room). */
+  /** Rotating warning beacons (door and maintenance gantry). */
   readonly beacons: ReadonlyArray<Emitter & { readonly zone: Zone }>;
   /** Small indicator lamps on cabinets. */
   readonly indicators: ReadonlyArray<Emitter & { readonly zone: Zone }>;
@@ -433,7 +433,7 @@ function stair(c: Collector, zone: Zone, a: Vector3, b: Vector3, w: number) {
   }
 }
 
-/** Back wall: four layers with the elevated control room. */
+/** Back wall: open maintenance gantry, service ducts and the loading-bay opening. */
 function northWall(
   c: Collector,
   emergency: Array<Emitter & { zone: Zone }>,
@@ -463,60 +463,31 @@ function northWall(
   for (const x of [-55, -25, 25]) personnelDoor(c, zone, x, z + 0.25, "x", 1);
   for (const x of [-45, -35, 35, 42]) vent(c, zone, x, 4.6, z + 0.25, "x", 1);
 
-  // Layer 3: elevated control room between x = −30 and +20, floor at 9 m, glazing to 14 m.
+  // Open maintenance gantry, not a building inside the warehouse. Its deck, braces,
+  // toe board and railings stay tight to the wall; the central build floor is clear.
   const x0 = -30;
   const x1 = 20;
   const yF = 9;
-  const yC = 14.5;
-  const depth = 5; // room projects this far into the hall
-  const front = z + depth;
-  // Floor slab, fascia, roof slab.
-  c.add(
-    zone,
-    "concrete",
-    box(x1 - x0 + 1, 0.5, depth + 1, (x0 + x1) / 2, yF - 0.25, z + depth / 2),
-  );
-  c.add(zone, "steelDark", box(x1 - x0 + 1.2, 0.9, 0.2, (x0 + x1) / 2, yF - 0.55, front + 0.5));
-  c.add(
-    zone,
-    "steel",
-    box(x1 - x0 + 1.2, 0.6, depth + 1.4, (x0 + x1) / 2, yC + 0.3, z + depth / 2 + 0.2),
-  );
-  // Supporting columns under the slab.
-  for (let x = x0; x <= x1 + 0.01; x += 10)
-    c.add(zone, "steel", ...column(x, front + 0.2, 0, yF - 0.5, true, 0.8));
-  // Inclined glazing (tilted out at the top, as control rooms are) with mullions.
-  const glassH = yC - yF - 0.1;
-  const tilt = 0.18;
-  const glass = new BoxGeometry(x1 - x0, glassH, 0.04)
-    .rotateX(-tilt)
-    .translate((x0 + x1) / 2, yF + glassH / 2 + 0.05, front + 0.55);
-  c.add(zone, "glass", glass);
-  for (let x = x0; x <= x1 + 0.01; x += 2.5) {
-    const m = new BoxGeometry(0.1, glassH, 0.12)
-      .rotateX(-tilt)
-      .translate(x, yF + glassH / 2 + 0.05, front + 0.55);
-    c.add(zone, "steelDark", m);
+  const front = z + 2.8;
+  c.add(zone, "steelDark", box(x1 - x0 + 1, 0.16, 2.8, -5, yF - 0.08, z + 1.4));
+  c.add(zone, "accent", box(x1 - x0 + 1, 0.18, 0.08, -5, yF + 0.09, front));
+  for (let x = x0; x <= x1; x += 5) {
+    c.add(zone, "steel", box(0.16, 0.3, 2.8, x, yF - 0.3, z + 1.4));
+    c.add(zone, "steel", strut(v(x, yF - 2.4, z + 0.35), v(x, yF - 0.2, front), 0.16));
   }
-  c.add(zone, "steelDark", box(x1 - x0, 0.12, 0.14, (x0 + x1) / 2, yF + 1.1, front + 0.58));
-  // Interior: back wall lit, desks with screens, ceiling light panels — seen through glass.
-  c.add(zone, "interior", box(x1 - x0, yC - yF, 0.2, (x0 + x1) / 2, (yF + yC) / 2, z + 0.1));
-  c.add(zone, "interior", box(x1 - x0, 0.1, depth, (x0 + x1) / 2, yF + 0.05, z + depth / 2));
-  for (let x = x0 + 2; x < x1 - 1; x += 4) {
-    c.add(zone, "steelDark", box(3.2, 0.75, 1.1, x + 1, yF + 0.45, front - 1.6)); // desk
-    c.add(zone, "screen", box(0.9, 0.55, 0.04, x + 0.3, yF + 1.25, front - 1.95));
-    c.add(zone, "screen", box(0.9, 0.55, 0.04, x + 1.3, yF + 1.25, front - 1.95));
-    c.add(zone, "steelDark", box(0.6, 1.0, 0.6, x + 1, yF + 0.55, front - 0.7)); // chair
-    c.add(zone, "interiorLit", box(3, 0.05, 1.2, x + 1, yC - 0.1, z + depth / 2));
+  railing(c, zone, v(x0 - 0.5, yF, front), v(x1 + 2.5, yF, front), 2.5);
+  railing(c, zone, v(x0 - 0.5, yF, z + 0.2), v(x0 - 0.5, yF, front), 1.2);
+  c.add(zone, "steelDark", box(2, 0.16, 2.8, x1 + 1.5, yF - 0.08, z + 1.4));
+  stair(c, zone, v(x1 + 9, 0, front - 0.75), v(x1 + 1.5, yF, front - 0.75), 1.4);
+  // Wall-mounted risers and cable trays provide scale without enclosed rooms.
+  for (const x of [-27, -15, -3, 9]) {
+    c.add(zone, "propGrey", box(1.6, 2.3, 0.45, x, yF + 1.3, z + 0.4));
+    c.add(zone, "steelDark", box(0.05, 2.15, 0.06, x, yF + 1.3, z + 0.66));
+    for (const dx of [-0.45, 0, 0.45])
+      c.add(zone, "duct", pipe(v(x + dx, yF + 2.5, z + 0.5), v(x + dx, 17, z + 0.5), 0.045, 8));
   }
-  // Large mimic display on the back wall of the control room.
-  c.add(zone, "screen", box(14, 3, 0.05, (x0 + x1) / 2, yF + 2.6, z + 0.25));
-  // Balcony rail on the slab edge beyond the glazing ends.
-  railing(c, zone, v(x0 - 0.5, yF, front + 0.95), v(x1 + 0.5, yF, front + 0.95), 2.5);
-  // Stair to the control room at the east end.
-  stair(c, zone, v(x1 + 9, 0, front + 1.5), v(x1 + 1.5, yF, front + 1.5), 1.4);
-  beacons.push({ position: v(x0 - 1, yC + 0.9, front + 0.6), row: 0, zone });
-  beacons.push({ position: v(x1 + 1, yC + 0.9, front + 0.6), row: 0, zone });
+  beacons.push({ position: v(x0 - 0.5, yF + 1.3, front), row: 0, zone });
+  beacons.push({ position: v(x1 + 2.5, yF + 1.3, front), row: 0, zone });
 
   // Layer 4: high catwalk at 20 m for crane maintenance, with ducts and cable trays.
   const yW = 20;
@@ -643,7 +614,7 @@ function westWall(
     workLights.push({ position: v(x + 0.8, LOWER_M + 1.2, zz), row: 0, normal: v(1, 0, 0) });
 }
 
-/** East wall: two tiers of observation galleries with glazed control rooms and stairs. */
+/** East wall: two open service catwalks, risers and stairs. */
 function eastWall(
   c: Collector,
   emergency: Array<Emitter & { zone: Zone }>,
@@ -665,19 +636,12 @@ function eastWall(
       c.add(zone, "steel", strut(v(x - 0.3, y - 3, zz), v(x - w, y - 0.2, zz), 0.16));
     }
     railing(c, zone, v(x - w - 0.3, y, z0), v(x - w - 0.3, y, z1), 2);
-    // Glazed observation rooms behind the gallery.
-    const r0 = z0 + 10;
-    const r1 = r0 + 18;
-    c.add(zone, "glass", box(0.04, 3.4, r1 - r0, x - 0.35, y + 1.9, (r0 + r1) / 2));
-    for (let zz = r0; zz <= r1 + 0.01; zz += 2)
-      c.add(zone, "steelDark", box(0.12, 3.5, 0.08, x - 0.33, y + 1.9, zz));
-    c.add(zone, "interiorLit", box(0.1, 3, r1 - r0 - 0.5, x + 0.1, y + 1.8, (r0 + r1) / 2));
-    c.add(
-      zone,
-      "screen",
-      box(0.05, 0.8, 1.6, x + 0.02, y + 1.4, r0 + 4),
-      box(0.05, 0.8, 1.6, x + 0.02, y + 1.4, r1 - 4),
-    );
+    // Exposed service conduits and brackets behind the open walkway.
+    for (const yy of [y + 1.7, y + 2.2, y + 2.7]) {
+      c.add(zone, "duct", pipe(v(x - 0.55, yy, z0 + 2), v(x - 0.55, yy, z1 - 2), 0.08, 12));
+      for (let zz = z0 + 4; zz < z1 - 2; zz += 8)
+        c.add(zone, "steelDark", box(0.5, 0.08, 0.12, x - 0.4, yy - 0.12, zz));
+    }
   }
   // Stairs: floor → 8 m → 16 m.
   stair(c, zone, v(x - 5.5, 0, 38), v(x - 5.5, 8, 30), 1.4);
@@ -741,7 +705,20 @@ function roof(c: Collector, fixtures: Emitter[]): void {
       box(BAY, 0.25, 0.25, x + BAY / 2, bottom, Z - 9),
     );
   }
-  c.add(zone, "roof", box(2 * X + 1.4, 0.4, 2 * Z + 1.4, 0, R, 0));
+  // Two glazed roof strips match the broad daylight sources in the reflection probe.
+  // Split the roof deck around them so they are real visible apertures from inside.
+  for (const [a, b] of [
+    [-X - 0.7, -32],
+    [-24, 24],
+    [32, X + 0.7],
+  ])
+    c.add(zone, "roof", box(b! - a!, 0.4, 2 * Z + 1.4, (a! + b!) / 2, R, 0));
+  for (const x of [-28, 28]) {
+    c.add(zone, "clerestory", box(8, 0.06, 72, x, R - 0.15, 0));
+    for (const z of [-40.85, 40.85]) c.add(zone, "roof", box(8, 0.4, 9.7, x, R, z));
+    for (const dx of [-4, 0, 4]) c.add(zone, "steelDark", box(0.12, 0.3, 72, x + dx, R - 0.28, 0));
+    for (let z = -36; z <= 36; z += 3) c.add(zone, "steelDark", box(8, 0.3, 0.1, x, R - 0.28, z));
+  }
   // Supply-air ducts with drop diffusers, hangers.
   for (const z of [-18, 18]) {
     c.add(zone, "duct", pipe(v(-X, H - 2.8, z), v(X, H - 2.8, z), 1.0, 24));
@@ -991,7 +968,7 @@ function props(
     );
   };
   const kits: Record<string, Kit> = { cabinet, lockers, fire, safety, rack, cart, bench, reel };
-  // Along the north wall (facing +z): avoid doors, control-room stair and the bay opening.
+  // Along the north wall (facing +z): avoid doors, gantry stair and the bay opening.
   const north: Array<[number, string]> = [
     [-66, "rack"],
     [-62, "cabinet"],

@@ -56,7 +56,7 @@ function hallReflectionScene(dark: boolean): Scene {
     0,
   );
   // High-bay lamps: seven rows of warm sources.
-  const lamp = basic("#ffd9a8", dark ? 6 : 14);
+  const lamp = basic("#fff0da", dark ? 6 : 14);
   for (let row = -3; row <= 3; row += 1)
     for (let x = -60; x <= 60; x += 15) add(new BoxGeometry(2.2, 0.2, 2.2), lamp, x, 47, row * 12);
   // Clerestory band of daylight along both long walls (dim after hours).
@@ -74,8 +74,8 @@ function hallReflectionScene(dark: boolean): Scene {
     for (const z of [-44.6, 44.6]) add(new BoxGeometry(1.2, 0.5, 0.2), work, x, 9, z);
   for (let z = -35; z <= 35; z += 17.5)
     for (const x of [-69.6, 69.6]) add(new BoxGeometry(0.2, 0.5, 1.2), work, x, 9, z);
-  // The glazed control room's glow on the back wall.
-  add(new BoxGeometry(50, 5, 0.2), basic("#ffe9c9", dark ? 1.2 : 2.5), -5, 11.5, -44.5);
+  // Reflections match the open service gantry: individual work lights, no fictitious room.
+  for (const x of [-26, -14, -2, 10]) add(new BoxGeometry(1.8, 0.3, 0.2), work, x, 11, -44.5);
 
   scene.userData.dispose = () => disposables.forEach((d) => d.dispose());
   return scene;

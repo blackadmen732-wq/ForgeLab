@@ -620,6 +620,7 @@ function StateReadouts({ component }: { component: SimulationComponent }) {
           }
         >
           <p className="insp-note">{p.vessel.plasma.statusText}</p>
+          <p className="insp-note">Plasma shape and edge light are schematic; the model is 0-D.</p>
           <Row label="Pressure">{pascals(p.vessel.pressurePa)}</Row>
           {p.vessel.plasma.phase !== "off" && (
             <>

@@ -18,7 +18,7 @@ import {
   type SimulationComponent,
   geometryLocalHalfExtentsM,
 } from "@forgelab/sim-core";
-import { findMaterialRecord } from "@forgelab/materials";
+import { surfaceFinish } from "./finishes.js";
 import { boxProjectUVs, partWearMaps } from "./environment/surfaces.js";
 import { arcTube, machineModel } from "./machines.js";
 import { createPlasmaMaterial } from "./plasma.js";
@@ -266,18 +266,6 @@ function wear() {
   };
 }
 
-/**
- * Metalness and roughness from the material's presentation data. The wear map's roughness
- * averages about one half, so the base is doubled to keep the material's mean finish.
- */
-function surfaceFinish(materialId: string | null): { metalness: number; roughness: number } {
-  const p = materialId === null ? undefined : findMaterialRecord(materialId)?.presentation;
-  return {
-    metalness: p?.metalness ?? 0.35,
-    roughness: Math.min(1, 2 * (p?.roughness ?? 0.55)),
-  };
-}
-
 export interface ComponentMeshProps {
   readonly component: SimulationComponent;
   readonly selected: boolean;
@@ -326,15 +314,15 @@ export const ComponentMesh = memo(function ComponentMesh({
       // Trim is bare machined/forged steel; accents are painted.
       trim: new MeshStandardMaterial({
         ...wear(),
-        color: "#3a4047",
-        metalness: 0.75,
-        roughness: 0.42,
+        color: "#9aa2aa",
+        metalness: 0.95,
+        roughness: 0.3,
       }),
       accent: new MeshStandardMaterial({
         ...wear(),
         color: model?.accentColor ?? "#8a939e",
-        metalness: 0.3,
-        roughness: 0.48,
+        metalness: 0,
+        roughness: 0.46,
       }),
     }),
     [model],

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { VesselState } from "@forgelab/sim-core";
-import { filamentTwist, plasmaBrightness } from "./plasma.js";
+import {
+  animatePlasma,
+  applyPlasmaState,
+  createPlasmaMaterial,
+  filamentTwist,
+  plasmaBrightness,
+} from "./plasma.js";
 
 const vessel = (plasma: Partial<VesselState["plasma"]>): VesselState =>
   ({
@@ -41,5 +47,28 @@ describe("plasma presentation", () => {
     );
     // Whole stripes only, so the pattern closes around the torus.
     expect(Number.isInteger(filamentTwist(vessel({ safetyFactorQ95: 3.7 })))).toBe(true);
+  });
+
+  it("fades continuously to zero density and never fabricates light for invalid readings", () => {
+    expect(plasmaBrightness(vessel({ densityM3: 5e17 }))).toBeCloseTo(0.15);
+    for (const densityM3 of [0, -1, NaN, Infinity, -Infinity])
+      expect(plasmaBrightness(vessel({ densityM3 }))).toBe(0);
+  });
+
+  it("clears breakdown light on disruption and reset, even during an animation update", () => {
+    const material = createPlasmaMaterial(true);
+    const state = vessel({});
+    const before = JSON.stringify(state);
+    applyPlasmaState(material, state);
+    animatePlasma(material, 1, 10);
+    expect(material.uniforms["uFlash"]!.value).toBe(1);
+    expect(JSON.stringify(state)).toBe(before);
+    for (const off of [vessel({ phase: "disrupted" }), null]) {
+      applyPlasmaState(material, off);
+      animatePlasma(material, 2, 1);
+      expect(material.uniforms["uIntensity"]!.value).toBe(0);
+      expect(material.uniforms["uFlash"]!.value).toBe(0);
+    }
+    material.dispose();
   });
 });
