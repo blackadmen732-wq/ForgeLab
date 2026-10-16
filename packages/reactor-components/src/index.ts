@@ -20,6 +20,7 @@ export {
 } from "./definition.js";
 
 export * from "./builtin.js";
+export * from "./assemblyRecipes.js";
 
 export {
   TOKAMAK_CENTRE_Y,

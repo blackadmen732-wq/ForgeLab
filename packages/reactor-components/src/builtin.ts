@@ -1,3 +1,4 @@
+import { PUMP_CONSTRUCTION_RECIPE } from "@forgelab/sim-core";
 import { MaterialIds, type MaterialId } from "@forgelab/materials";
 import { type Vec3, Vec3Math, vec3 } from "@forgelab/shared";
 import {
@@ -1143,6 +1144,79 @@ export const COOLANT_PUMP = define({
   keyProperty: "4000 kg/s",
 });
 
+/** Meaningful stock pump modules: ports remain on the module that owns the interface. */
+export const PUMP_PARTS = PUMP_CONSTRUCTION_RECIPE.parts.map((part) =>
+  define({
+    type: part.type,
+    name: `Pump ${part.key === "base" ? "Base / Skid" : part.key === "drive" ? "Drive Module" : part.key === "motor" ? "Motor" : "Casing"}`,
+    description: `${part.name} for the modular coolant pump. Attach the stock modules at their mounting interfaces; incomplete constructions cannot pump coolant.`,
+    category: "Fluids",
+    role: "structure",
+    material: MaterialIds.StainlessSteel,
+    dimensions: [],
+    shape: () => {
+      const sockets: SocketTemplate[] = [];
+      const full = COOLANT_PUMP.createSpec({ id: "source" });
+      for (const [name, [owner, portId]] of Object.entries(
+        PUMP_CONSTRUCTION_RECIPE.externalPorts,
+      )) {
+        if (owner !== part.key) continue;
+        const source = full.connectionPoints!.find((p) => p.id === portId)!;
+        const p = source.localPosition;
+        sockets.push({
+          ...source,
+          id: name,
+          localPosition: vec3(p.x - part.offset.x, p.y - part.offset.y, p.z - part.offset.z),
+          derivedCapacity: source.connectionType === "structural",
+        });
+      }
+      for (const joint of PUMP_CONSTRUCTION_RECIPE.joints) {
+        const mine =
+          joint.from[0] === part.key ? joint.from : joint.to[0] === part.key ? joint.to : null;
+        if (!mine) continue;
+        const y = joint.from[0] === "base" ? -0.75 : joint.from[0] === "casing" ? -0.235 : 0.035;
+        sockets.push(
+          mount(mine[1], vec3(0, y - part.offset.y, 0), mine === joint.from ? UP : DOWN),
+        );
+      }
+      if (!sockets.some((p) => p.connectionType === "structural"))
+        sockets.push(structural("support", vec3(0, -part.size.y / 2, 0), DOWN));
+      return { geometry: boxGeometry(part.size, 0.02), sockets };
+    },
+    ports: Object.fromEntries(
+      Object.entries(PUMP_CONSTRUCTION_RECIPE.externalPorts)
+        .filter(([, v]) => v[0] === part.key)
+        .flatMap(([name]) => {
+          const spec = COOLANT_PUMP.createSpec({ id: "source" }).connectionPoints!.find(
+            (p) => p.id === name,
+          )?.port;
+          return spec ? [[name, spec]] : [];
+        }),
+    ),
+    product: {
+      summary: `Stock ${part.name.toLowerCase()} for a construction pump; geometry is schematic.`,
+      internals: [
+        {
+          id: "module-body",
+          name: part.name,
+          kind: "structure",
+          substanceId: "stainless-steel",
+          purpose: "Stock manufactured module. Detailed internals remain schematic.",
+        },
+      ],
+      internalsSetMass: false,
+      capabilities: ["structural"],
+      ratings: () => [{ label: "Model", value: "Stock construction module" }],
+      failureModes: [],
+      audio: "none",
+      visual: "block",
+      animations: [],
+    },
+    dimensionsOf: () => ({}),
+    keyProperty: "Pump Kit · stock module",
+  }),
+);
+
 export const STEAM_GENERATOR = define({
   type: "steam-generator",
   name: "Steam Generator",
@@ -1504,6 +1578,7 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   BREEDING_BLANKET,
   COOLANT_PIPE,
   COOLANT_PUMP,
+  ...PUMP_PARTS,
   STEAM_GENERATOR,
   STEAM_TURBINE,
   GENERATOR,

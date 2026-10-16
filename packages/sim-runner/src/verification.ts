@@ -129,6 +129,7 @@ export function designHash(file: AssemblyFileV2): string {
       return authored;
     }),
     connections: file.connections,
+    ...(file.buildAssemblies?.length ? { buildAssemblies: file.buildAssemblies } : {}),
     simulationSettings: file.simulationSettings,
   };
   return sha256Hex(canonicalJson(design));

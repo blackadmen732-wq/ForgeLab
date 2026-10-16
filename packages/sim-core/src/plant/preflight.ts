@@ -1,3 +1,4 @@
+import { resolveConstruction, type BuildAssembly } from "../construction.js";
 import { getMaterial } from "@forgelab/materials";
 import type { SimulationComponent } from "../component.js";
 import type { Connection } from "../connections.js";
@@ -32,6 +33,7 @@ export type PreflightCode =
   | "OPEN_COOLANT_LOOP"
   | "UNPUMPED_COOLANT_LOOP"
   | "PIPE_PRESSURE_LIMIT"
+  | "INCOMPLETE_CONSTRUCTION"
   | "NO_VACUUM_PUMP"
   | "OPEN_CHAMBER"
   | "BRANCHED_CHAMBER"
@@ -81,7 +83,11 @@ const list = (names: readonly string[]) =>
 export function preflight(
   components: readonly SimulationComponent[],
   connections: readonly Connection[],
+  buildAssemblies: readonly BuildAssembly[] = [],
 ): PreflightReport {
+  const resolved = resolveConstruction(components, connections, buildAssemblies);
+  components = resolved.components;
+  connections = resolved.connections;
   if (components.length === 0)
     return {
       items: [
@@ -97,6 +103,15 @@ export function preflight(
     };
   const topology = buildTopology(components, connections);
   const items: PreflightItem[] = [
+    ...resolved.statuses
+      .filter((s) => s.state !== "complete")
+      .map((s) => ({
+        code: "INCOMPLETE_CONSTRUCTION" as const,
+        system: "design" as const,
+        severity: "warning" as const,
+        componentIds: Object.values(s.assembly.partIds),
+        message: `${s.name} is ${s.state} and inactive. ${s.issues.join(" ")}`,
+      })),
     ...unconnectedPorts(components, connections),
     ...electrical(topology, components),
     ...coolant(topology, components),

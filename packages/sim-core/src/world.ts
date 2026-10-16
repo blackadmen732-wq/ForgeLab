@@ -1,3 +1,11 @@
+import {
+  pumpPart,
+  isConstructionMate,
+  PUMP_CONSTRUCTION_RECIPE,
+  inspectConstruction,
+  resolveConstruction,
+  type BuildAssembly,
+} from "./construction.js";
 import type { MaterialId } from "@forgelab/materials";
 import { type Seconds, type Transform, Vec3Math, localPointToWorld } from "@forgelab/shared";
 import {
@@ -58,6 +66,7 @@ export interface SimulationSnapshot {
   readonly diagnostics: readonly string[];
   /** Plant-wide results: power balance, networks, loops and model confidence. */
   readonly plant: PlantSummary;
+  readonly buildAssemblies?: readonly BuildAssembly[];
 }
 
 const EMPTY_PLANT_SUMMARY: PlantSummary = Object.freeze({
@@ -114,6 +123,72 @@ export class SimulationWorld {
   #plantDiagnostics: readonly string[] = [];
   /** Design organisation only: never read by a solver. */
   #groups = new Map<string, ComponentGroup>();
+  #buildAssemblies = new Map<string, BuildAssembly>();
+
+  listBuildAssemblies(): readonly BuildAssembly[] {
+    return [...this.#buildAssemblies.values()].sort((a, b) =>
+      a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
+    );
+  }
+  setBuildAssembly(assembly: BuildAssembly): void {
+    this.#buildAssemblies.set(
+      assembly.id,
+      Object.freeze({ ...assembly, partIds: Object.freeze({ ...assembly.partIds }) }),
+    );
+    this.#markDirty();
+  }
+  /** Reconcile recognized mount graphs, independently of visual groups. */
+  reconcileBuildAssemblies(): void {
+    const parts = this.listComponents().filter((c) => pumpPart(c.type));
+    const links = new Map<string, string[]>();
+    for (const connection of this.listConnections()) {
+      if (connection.type !== "mount") continue;
+      const a = this.getComponent(connection.from.componentId),
+        b = this.getComponent(connection.to.componentId);
+      const pa = a?.connectionPoints.find((p) => p.id === connection.from.connectionPointId),
+        pb = b?.connectionPoints.find((p) => p.id === connection.to.connectionPointId);
+      if (!a || !b || !pa || !pb || !isConstructionMate(a, pa, b, pb)) continue;
+      links.set(a.id, [...(links.get(a.id) ?? []), b.id]);
+      links.set(b.id, [...(links.get(b.id) ?? []), a.id]);
+    }
+    for (const base of parts.filter((c) => c.type === "pump-base")) {
+      const reachable = new Set<string>(),
+        pending = [base.id];
+      while (pending.length) {
+        const id = pending.pop()!;
+        if (reachable.has(id)) continue;
+        reachable.add(id);
+        for (const other of links.get(id) ?? [])
+          if (!reachable.has(other) && this.requireComponent(other).type !== "pump-base")
+            pending.push(other);
+      }
+      const existing = this.listBuildAssemblies().find(
+        (a) =>
+          a.recipeId === PUMP_CONSTRUCTION_RECIPE.id &&
+          (a.partIds["base"] === base.id ||
+            (a.partIds["base"] === undefined &&
+              Object.values(a.partIds).some((id) => reachable.has(id)))),
+      );
+      const partIds: Record<string, string> = { ...existing?.partIds, base: base.id };
+      for (const id of reachable) {
+        const p = pumpPart(this.requireComponent(id).type)!;
+        partIds[p.key] = id;
+      }
+      if (!existing || JSON.stringify(existing.partIds) !== JSON.stringify(partIds))
+        this.setBuildAssembly({
+          id: existing?.id ?? this.nextId("construction"),
+          recipeId: PUMP_CONSTRUCTION_RECIPE.id,
+          partIds,
+        });
+    }
+  }
+  constructionStatus() {
+    return inspectConstruction(
+      this.listComponents(),
+      this.listConnections(),
+      this.listBuildAssemblies(),
+    );
+  }
 
   constructor(options: WorldOptions = {}) {
     this.#name = options.name ?? "Untitled Assembly";
@@ -184,7 +259,12 @@ export class SimulationWorld {
     do {
       this.#idCounter += 1;
       id = `${prefix}-${this.#idCounter}`;
-    } while (this.#components.has(id) || this.#connections.has(id));
+    } while (
+      this.#components.has(id) ||
+      this.#connections.has(id) ||
+      this.#groups.has(id) ||
+      this.#buildAssemblies.has(id)
+    );
     return id;
   }
 
@@ -214,6 +294,17 @@ export class SimulationWorld {
 
   removeComponent(id: ComponentId): void {
     if (!this.#components.delete(id)) return;
+    for (const [key, assembly] of this.#buildAssemblies) {
+      const partIds = Object.fromEntries(
+        Object.entries(assembly.partIds).filter(([, member]) => member !== id),
+      );
+      if (Object.keys(partIds).length)
+        this.#buildAssemblies.set(
+          key,
+          Object.freeze({ ...assembly, partIds: Object.freeze(partIds) }),
+        );
+      else this.#buildAssemblies.delete(key);
+    }
     for (const [connectionId, connection] of [...this.#connections]) {
       if (connection.from.componentId === id || connection.to.componentId === id) {
         this.#connections.delete(connectionId);
@@ -564,10 +655,37 @@ export class SimulationWorld {
     this.#diagnostics = Object.freeze([...result.diagnostics]);
   }
 
+  #constructionCache:
+    | { revision: number; broken: string; resolved: ReturnType<typeof resolveConstruction> }
+    | undefined;
+  #constructionSignature = "[]";
+
   #runPlant(dtSec: number): void {
+    const components = this.listComponents(),
+      connections = this.listConnections(),
+      assemblies = this.listBuildAssemblies();
+    // Geometry, joints and ownership change with the world revision. Runtime failure can
+    // invalidate a complete assembly without a design edit, so it is tracked separately.
+    const broken = assemblies.length
+      ? components
+          .filter((c) => pumpPart(c.type) && (c.state.plant.disabled || c.state.structural.failed))
+          .map((c) => c.id)
+          .join("\0")
+      : "";
+    const cached = this.#constructionCache;
+    const resolved =
+      cached?.revision === this.#revision && cached.broken === broken
+        ? cached.resolved
+        : resolveConstruction(components, connections, assemblies);
+    const signature = JSON.stringify(resolved.statuses.map((s) => [s.state, s.assembly.partIds]));
+    if (signature !== this.#constructionSignature) {
+      this.#constructionSignature = signature;
+      this.#revision += 1;
+    }
+    if (assemblies.length) this.#constructionCache = { revision: this.#revision, broken, resolved };
     const result = this.#plant.step({
-      components: this.listComponents(),
-      connections: this.listConnections(),
+      components: resolved.components,
+      connections: resolved.connections,
       settings: this.#settings,
       dtSec,
       tick: this.#tick,
@@ -578,9 +696,56 @@ export class SimulationWorld {
       const component = this.#components.get(id);
       if (component !== undefined) this.#components.set(id, withPlantState(component, plant));
     }
+    const modelMass = new Map(resolved.components.map((c) => [c.id, c.massKg]));
+    for (const [id, modelId] of resolved.aliases) {
+      const c = this.#components.get(id),
+        state = result.states.get(modelId);
+      if (c && state) {
+        const key = pumpPart(c.type)?.key;
+        const share = c.massKg / modelMass.get(modelId)!;
+        this.#components.set(
+          id,
+          withPlantState(c, {
+            ...state,
+            electrical: key === "motor" ? state.electrical : null,
+            coolant: key === "casing" ? state.coolant : null,
+            outputs: key === "casing" ? state.outputs : {},
+            thermal: {
+              ...state.thermal,
+              heatGeneratedW: state.thermal.heatGeneratedW * share,
+              heatToCoolantW: state.thermal.heatToCoolantW * share,
+              heatToAmbientW: state.thermal.heatToAmbientW * share,
+              spatialHeatInW: state.thermal.spatialHeatInW * share,
+            },
+          }),
+        );
+      }
+    }
+    for (const status of resolved.statuses)
+      if (status.state !== "complete") {
+        for (const id of Object.values(status.assembly.partIds)) {
+          const c = this.#components.get(id);
+          if (c)
+            this.#components.set(
+              id,
+              withPlantState(c, {
+                ...c.state.plant,
+                warnings: [
+                  ...c.state.plant.warnings,
+                  `Pump ${status.state}: ${status.issues.join(" ")}`,
+                ],
+              }),
+            );
+        }
+      }
     this.#recordFailures(result.events);
     this.#plantSummary = result.summary;
-    this.#plantDiagnostics = Object.freeze([...result.diagnostics]);
+    this.#plantDiagnostics = Object.freeze([
+      ...result.diagnostics,
+      ...resolved.statuses
+        .filter((s) => s.state !== "complete")
+        .map((s) => `${s.name}: ${s.state}; pump inactive. ${s.issues.join(" ")}`),
+    ]);
   }
 
   #recordFailures(events: readonly FailureEvent[]): void {
@@ -679,6 +844,7 @@ export class SimulationWorld {
       failures: Object.freeze([...this.#failures]),
       diagnostics: Object.freeze([...this.#diagnostics, ...this.#plantDiagnostics]),
       plant: this.#plantSummary,
+      ...(this.#buildAssemblies.size ? { buildAssemblies: this.listBuildAssemblies() } : {}),
     });
   }
 

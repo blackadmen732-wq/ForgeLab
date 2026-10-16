@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { SimulationWorld, serializeWorld } from "@forgelab/sim-core";
-import { buildReferencePlant, placePart } from "@forgelab/reactor-components";
+import { findKit, buildReferencePlant, placePart } from "@forgelab/reactor-components";
 import {
   MAX_VERIFIED_COMPONENTS,
   SimulationSession,
@@ -44,6 +44,18 @@ describe("sha256", () => {
 });
 
 describe("design hash", () => {
+  it("includes construction membership because it changes the simulated model", () => {
+    const world = findKit("coolant-pump-kit-v1")!.build();
+    const file = serializeWorld(world);
+    const { buildAssemblies: _builds, ...legacy } = file;
+    expect(designHash(legacy)).not.toBe(designHash(file));
+    expect(
+      designHash({
+        ...file,
+        groups: [{ id: "g", name: "visual group", componentIds: file.components.map((c) => c.id) }],
+      }),
+    ).toBe(designHash(file));
+  });
   it("ignores run state and metadata but not design changes", () => {
     const world = new SimulationWorld({ name: "Reference" });
     buildReferencePlant(world);

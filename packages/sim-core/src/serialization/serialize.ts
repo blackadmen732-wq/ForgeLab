@@ -72,6 +72,13 @@ export function serializeWorld(
           })),
         }
       : {}),
+    ...(world.listBuildAssemblies().length
+      ? {
+          buildAssemblies: world
+            .listBuildAssemblies()
+            .map((a) => ({ ...a, partIds: { ...a.partIds } })),
+        }
+      : {}),
     simulationSettings: serializeSettings(world.settings),
     runtime: {
       tick: world.tick,
@@ -309,6 +316,8 @@ export function deserializeWorld(
     });
   }
 
+  for (const assembly of file.buildAssemblies ?? []) world.setBuildAssembly(assembly);
+
   for (const group of file.groups ?? []) {
     const members = group.componentIds.filter((id) => world.getComponent(id) !== undefined);
     if (members.length >= 2) world.createGroup(members, { id: group.id, name: group.name });
@@ -408,6 +417,27 @@ function validateFile(record: Record<string, unknown>, version: number): Assembl
     }
   }
 
+  const rawBuilds = record["buildAssemblies"];
+  if (rawBuilds !== undefined && !Array.isArray(rawBuilds))
+    throw new AssemblyFileError("Invalid construction assemblies.");
+  const buildAssemblies = (rawBuilds ?? []).map((entry: unknown) => {
+    if (
+      !isRecord(entry) ||
+      typeof entry["id"] !== "string" ||
+      typeof entry["recipeId"] !== "string" ||
+      !isRecord(entry["partIds"]) ||
+      !Object.entries(entry["partIds"]).every(
+        ([key, id]) => key.length > 0 && typeof id === "string" && componentIds.has(id),
+      )
+    )
+      throw new AssemblyFileError("Invalid construction membership.");
+    const partIds = entry["partIds"] as Record<string, string>;
+    if (new Set(Object.values(partIds)).size !== Object.values(partIds).length)
+      throw new AssemblyFileError("A construction cannot reuse the same module twice.");
+    return { id: entry["id"], recipeId: entry["recipeId"], partIds: { ...partIds } };
+  });
+  if (new Set(buildAssemblies.map((a) => a.id)).size !== buildAssemblies.length)
+    throw new AssemblyFileError("Duplicate construction assembly ids.");
   const runtime = record["runtime"];
   const meta = record["meta"];
   // Groups are optional organisation: malformed entries are dropped, never fatal.
@@ -434,6 +464,7 @@ function validateFile(record: Record<string, unknown>, version: number): Assembl
     components,
     connections,
     ...(groups.length > 0 ? { groups } : {}),
+    ...(buildAssemblies.length > 0 ? { buildAssemblies } : {}),
     simulationSettings: settings,
     ...(isRecord(runtime)
       ? {
@@ -767,6 +798,21 @@ export function extractAssembly(
     name,
     components,
     connections,
+    ...(world
+      .listBuildAssemblies()
+      .filter((a) => Object.values(a.partIds).some((id) => ids.has(id))).length
+      ? {
+          buildAssemblies: world
+            .listBuildAssemblies()
+            .filter((a) => Object.values(a.partIds).some((id) => ids.has(id)))
+            .map((a) => ({
+              ...a,
+              partIds: Object.fromEntries(
+                Object.entries(a.partIds).filter(([, id]) => ids.has(id)),
+              ),
+            })),
+        }
+      : {}),
     simulationSettings: serializeSettings(world.settings),
   };
 }
@@ -806,6 +852,14 @@ export function insertAssembly(
       ...(component.composition === undefined ? {} : { composition: component.composition }),
     });
   }
+  for (const assembly of file.buildAssemblies ?? [])
+    world.setBuildAssembly({
+      ...assembly,
+      id: world.nextId("construction"),
+      partIds: Object.fromEntries(
+        Object.entries(assembly.partIds).map(([key, id]) => [key, idMap.get(id)!]),
+      ),
+    });
   for (const connection of file.connections) {
     world.connect(
       {

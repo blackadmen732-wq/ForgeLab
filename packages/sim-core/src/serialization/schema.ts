@@ -1,3 +1,4 @@
+import type { BuildAssembly } from "../construction.js";
 import type { PortSpec } from "../ports.js";
 import type { ConnectionType } from "../connections.js";
 import type { PlantRole } from "../plant/roles.js";
@@ -174,6 +175,7 @@ export interface AssemblyFileV2 {
   readonly connections: readonly SerializedConnection[];
   /** Optional (added without a version bump; older readers ignore it). */
   readonly groups?: readonly SerializedGroup[];
+  readonly buildAssemblies?: readonly BuildAssembly[];
   readonly simulationSettings: SerializedSimulationSettings;
   readonly runtime?: SerializedRuntime;
   /** Informational only; never read back by the engine. */

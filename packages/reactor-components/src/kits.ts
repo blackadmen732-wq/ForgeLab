@@ -1,4 +1,4 @@
-import { SimulationWorld } from "@forgelab/sim-core";
+import { PUMP_CONSTRUCTION_RECIPE, SimulationWorld } from "@forgelab/sim-core";
 import { vec3 } from "@forgelab/shared";
 import { placePart } from "./designs.js";
 
@@ -41,6 +41,26 @@ export function buildBlanketModule(world: SimulationWorld, prefix = ""): void {
 }
 
 export const KITS: readonly Kit[] = Object.freeze([
+  {
+    id: "coolant-pump-kit-v1",
+    name: "Coolant Pump Kit",
+    description:
+      "Four loose stock modules: skid, casing, drive and motor. Move them onto matching mounts to build a pump. No automatic service connections.",
+    build: () =>
+      kit("Coolant Pump Kit", (w) => {
+        const partIds: Record<string, string> = {};
+        PUMP_CONSTRUCTION_RECIPE.parts.forEach((p, i) => {
+          const id = `pump-${p.key}`;
+          partIds[p.key] = id;
+          placePart(w, p.type, { id, position: vec3((i - 1.5) * 2.8, p.size.y / 2, 0) });
+        });
+        w.setBuildAssembly({
+          id: "pump-construction",
+          recipeId: PUMP_CONSTRUCTION_RECIPE.id,
+          partIds,
+        });
+      }),
+  },
   {
     id: "blanket-module",
     name: "Blanket Module",
