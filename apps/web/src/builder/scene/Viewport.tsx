@@ -86,6 +86,7 @@ import {
 } from "./appearance.js";
 import { hover } from "./hover.js";
 import { Environment } from "./environment/Environment.js";
+import { PlantShadows } from "./environment/PlantShadows.js";
 import { DEFAULT_CAMERA } from "./environment/hall/cameras.js";
 import { ComponentMesh, isDragging, meshRegistry, setDragging } from "./meshes.js";
 
@@ -569,6 +570,7 @@ function useAltKey(): boolean {
 
 function Gizmo() {
   const store = useEditorStore();
+  const get = useThree((s) => s.get);
   const mode = useEditor((v) => v.mode);
   const tool = useEditor((v) => v.tool);
   const selection = useEditor((v) => v.selection);
@@ -643,6 +645,8 @@ function Gizmo() {
               h.group.position.copy(s.pivotPos).add(offset).add(delta);
               h.group.quaternion.copy(dq).multiply(item.quat);
             }
+            get().gl.shadowMap.needsUpdate = true;
+            invalidate();
           }}
           onMouseUp={() => {
             const s = start.current;
@@ -1102,6 +1106,7 @@ export function Viewport() {
         <Sockets />
         <Gizmo />
         <AppearanceDriver />
+        <PlantShadows />
         <ComponentAnimator />
         <AudioBridge />
         <VfxLayer />

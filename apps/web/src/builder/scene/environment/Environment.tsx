@@ -7,7 +7,6 @@ import { useAssetManifest } from "../../../lib/assets.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { tierBudget, useSettings } from "../../../presentation/settings.js";
 import { EngineeringGrid } from "./hall/EngineeringGrid.js";
-import { HALL } from "./hall/geometry.js";
 import { HALL_LIGHT_NAMES, MainReactorHall } from "./hall/MainReactorHall.js";
 import { useEnvironment } from "./presets.js";
 import { hallReflections } from "./reflections.js";
@@ -87,18 +86,10 @@ export function Environment({
       s.map?.dispose();
       s.map = null;
     }
-    s.camera.left = -HALL.halfX - 10;
-    s.camera.right = HALL.halfX + 10;
-    s.camera.top = HALL.halfZ + 30;
-    s.camera.bottom = -HALL.halfZ - 30;
-    s.camera.near = 1;
-    s.camera.far = 320;
-    s.bias = -0.0004;
-    s.normalBias = 0.04;
-    s.camera.updateProjectionMatrix();
-    light.target.position.set(0, 0, 0);
-    light.target.updateMatrixWorld();
-  }, [budget.shadowMapSize]);
+    // PlantShadows fits the projection and bias to the rendered assembly.
+    s.needsUpdate = true;
+    get().gl.shadowMap.needsUpdate = true;
+  }, [budget.shadowMapSize, get]);
 
   const haze = hall && settings.haze && budget.haze;
   const fogNear = haze ? preset.fog.near * 0.7 : preset.fog.near;
@@ -127,6 +118,7 @@ export function Environment({
         name={HALL_LIGHT_NAMES.fill}
         position={[70, 45, 60]}
         intensity={preset.light.fill}
+        color={preset.light.fillColor}
       />
       {hall && <MainReactorHall preset={preset} />}
       {hall && showGrid && <EngineeringGrid dim={dimGrid} />}

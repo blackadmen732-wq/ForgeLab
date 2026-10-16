@@ -448,14 +448,21 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
   return (
     <group name="main-reactor-hall">
       {budget.floorReflections > 0 ? (
-        <mesh geometry={shared.floorGeometry} rotation-x={-Math.PI / 2} receiveShadow>
-          {/* Wet steel deck: a live mirror, blurred where the plate is rough and sharp in
-              the standing water (the roughness map drives the blur). */}
+        <mesh
+          key="reflective-floor"
+          name="hall-floor"
+          geometry={shared.floorGeometry}
+          rotation-x={-Math.PI / 2}
+          receiveShadow
+        >
+          {/* Distinct keys preserve the attached material when crossing quality tiers. */}
+          {/* Brushed steel deck: subdued reflections under machinery; the roughness map
+              keeps worn patches distinct without turning the hall into a mirror. */}
           <MeshReflectorMaterial
             resolution={budget.floorReflections}
             blur={[320, 120]}
             mixBlur={1}
-            mixStrength={preset.id === "dark-facility" ? 6 : 4.5}
+            mixStrength={preset.id === "dark-facility" ? 2.2 : 1.4}
             mixContrast={1.05}
             mirror={0}
             depthScale={0}
@@ -470,6 +477,8 @@ export function MainReactorHall({ preset }: { preset: EnvironmentPreset }) {
         </mesh>
       ) : (
         <mesh
+          key="standard-floor"
+          name="hall-floor"
           geometry={shared.floorGeometry}
           rotation-x={-Math.PI / 2}
           material={materials.floor}

@@ -255,7 +255,7 @@ function wear() {
     map: maps.map,
     roughnessMap: maps.roughnessMap,
     normalMap: maps.normalMap,
-    normalScale: new Vector2(0.5, 0.5),
+    normalScale: new Vector2(0.25, 0.25),
   };
 }
 

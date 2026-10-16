@@ -60,8 +60,14 @@ function hallReflectionScene(dark: boolean): Scene {
   for (let row = -3; row <= 3; row += 1)
     for (let x = -60; x <= 60; x += 15) add(new BoxGeometry(2.2, 0.2, 2.2), lamp, x, 47, row * 12);
   // Clerestory band of daylight along both long walls (dim after hours).
-  const sky = basic("#c9dcf0", dark ? 0.15 : 2.2);
+  const sky = basic("#c9dcf0", dark ? 0.15 : 3.2);
   for (const z of [-44.8, 44.8]) add(new BoxGeometry(130, 3.5, 0.2), sky, 0, 44, z);
+  // Broad roof-light strips make cylindrical housings and flat steel readable between
+  // the small lamp highlights. The night preset keeps only its existing work lights.
+  if (!dark) {
+    const roofLight = basic("#e2edfa", 2.5);
+    for (const x of [-28, 28]) add(new BoxGeometry(8, 0.2, 72), roofLight, x, 49, 0);
+  }
   // Warm wall-mounted work lights at the base of the walls.
   const work = basic("#ffcf8a", dark ? 5 : 7);
   for (let x = -60; x <= 60; x += 20)

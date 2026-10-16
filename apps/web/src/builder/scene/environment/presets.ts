@@ -25,6 +25,7 @@ export interface EnvironmentPreset {
     readonly key: number;
     readonly keyColor: string;
     readonly fill: number;
+    readonly fillColor: string;
     /** Emissive strength of the hall's light fixtures. */
     readonly fixtures: number;
     /** Strength of image-based reflections (scene.environmentIntensity). */
@@ -46,12 +47,13 @@ export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
     light: {
       sky: "#e6edf5",
       ground: "#3a3f45",
-      hemisphere: 0.5,
-      key: 3.0,
+      hemisphere: 0.65,
+      key: 2.6,
       keyColor: "#fff4e3",
-      fill: 0.35,
+      fill: 0.75,
+      fillColor: "#c6ddf5",
       fixtures: 1.4,
-      reflections: 0.5,
+      reflections: 0.85,
     },
     scene: "hall",
   },
@@ -65,12 +67,13 @@ export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
     light: {
       sky: "#8fa3b8",
       ground: "#101318",
-      hemisphere: 0.28,
+      hemisphere: 0.32,
       key: 0.9,
       keyColor: "#cfe0ff",
-      fill: 0.12,
+      fill: 0.18,
+      fillColor: "#a8c7ed",
       fixtures: 2.2,
-      reflections: 0.32,
+      reflections: 0.45,
     },
     scene: "hall",
   },
@@ -88,6 +91,7 @@ export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
       key: 1.6,
       keyColor: "#ffffff",
       fill: 0.5,
+      fillColor: "#e5eef9",
       fixtures: 1,
       reflections: 0.6,
     },
@@ -107,6 +111,7 @@ export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
       key: 2.4,
       keyColor: "#fff1d6",
       fill: 0.3,
+      fillColor: "#c4dafa",
       fixtures: 0,
       reflections: 0.5,
     },
@@ -126,6 +131,7 @@ export const ENVIRONMENT_PRESETS: readonly EnvironmentPreset[] = Object.freeze([
       key: 1.6,
       keyColor: "#ffffff",
       fill: 0.45,
+      fillColor: "#ffffff",
       fixtures: 0,
       reflections: 0.25,
     },

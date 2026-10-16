@@ -32,19 +32,26 @@ function Composer({ bloom, ao }: { bloom: boolean; ao: boolean }) {
   const size = useThree((s) => s.size);
   const composer = useMemo(() => {
     const c = new EffectComposer(gl);
+    // Rendering into a composer bypasses the canvas's MSAA. Retain edge smoothing on
+    // its beauty targets so HIGH does not become more jagged than the direct renderer.
+    const samples = Math.min(ao ? 4 : 2, gl.capabilities.maxSamples);
+    c.renderTarget1.samples = samples;
+    c.renderTarget2.samples = samples;
     c.addPass(new RenderPass(scene, camera));
     if (ao) {
       // Radii in metres: a contact shadow about the size of a flange or a foot.
       const gtao = new GTAOPass(scene, camera, size.width, size.height);
       gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.5, thickness: 1, samples: 12 });
-      gtao.blendIntensity = 0.85;
+      gtao.blendIntensity = 0.6;
       c.addPass(gtao);
     }
     if (bloom)
       c.addPass(new UnrealBloomPass(new Vector2(size.width, size.height), 0.55, 0.45, 0.9));
     const vignette = new ShaderPass(VignetteShader);
-    vignette.uniforms["offset"]!.value = 1.05;
-    vignette.uniforms["darkness"]!.value = 0.85;
+    // The shader mixes toward (1 - darkness): values below 1 brighten dark edges grey.
+    // Keep the target black and reduce the radius multiplier for a restrained vignette.
+    vignette.uniforms["offset"]!.value = 0.7;
+    vignette.uniforms["darkness"]!.value = 1;
     c.addPass(vignette);
     c.addPass(new OutputPass());
     return c;

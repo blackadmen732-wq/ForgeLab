@@ -324,7 +324,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
  * streaks running down, fine scratches and slight unevenness. One tile covers `tileM`
  * metres; apply with world-scale (box-projected) UVs so the wear keeps its size.
  */
-export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
+export function wornMetalMaps(tileM = 2, seed = 977, wearAmount = 1): SurfaceMaps {
   const size = 512;
   const random = mulberry32(seed);
   const albedo = canvas2d(size);
@@ -350,9 +350,9 @@ export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
     const rougher = random() > 0.5 ? "255,255,255" : "0,0,0";
     const raised = random() > 0.5 ? "255,255,255" : "0,0,0";
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, dark ? "70,64,58" : "255,255,255", dark ? 0.06 * k : 0.06 * k);
-      blob(r, px, py, rad, rougher, 0.12 * k);
-      blob(h, px, py, rad, raised, 0.05 * k);
+      blob(a, px, py, rad, dark ? "70,64,58" : "255,255,255", 0.06 * k * wearAmount);
+      blob(r, px, py, rad, rougher, 0.12 * k * wearAmount);
+      blob(h, px, py, rad, raised, 0.05 * k * wearAmount);
     });
   }
   // Drip streaks running down from edges and fixings.
@@ -361,14 +361,14 @@ export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
     const y = random() * size;
     const len = 30 + random() * 200;
     const w = 1 + random() * 4;
-    const alpha = 0.12 + random() * 0.18;
+    const alpha = (0.12 + random() * 0.18) * wearAmount;
     const paint = (px: number, py: number) => {
       const g = a.createLinearGradient(px, py, px, py + len);
       g.addColorStop(0, `rgba(60,52,44,${alpha})`);
       g.addColorStop(1, "rgba(60,52,44,0)");
       a.fillStyle = g;
       a.fillRect(px, py, w, len);
-      r.fillStyle = "rgba(255,255,255,0.12)";
+      r.fillStyle = `rgba(255,255,255,${0.12 * wearAmount})`;
       r.fillRect(px, py, w, len * 0.7);
     };
     wrapped(size, x, y + len / 2, len, (px, py) => paint(px, py - len / 2));
@@ -381,7 +381,7 @@ export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
     const len = 4 + random() * 30;
     const x2 = x + Math.cos(angle) * len;
     const y2 = y + Math.sin(angle) * len;
-    const alpha = 0.1 + random() * 0.25;
+    const alpha = (0.1 + random() * 0.25) * wearAmount;
     a.strokeStyle = `rgba(255,255,255,${alpha})`;
     r.strokeStyle = `rgba(0,0,0,${alpha * 1.4})`;
     h.strokeStyle = `rgba(0,0,0,${alpha})`;
@@ -397,13 +397,19 @@ export function wornMetalMaps(tileM = 2, seed = 977): SurfaceMaps {
   for (const ctx of [r, h]) {
     const img = ctx.getImageData(0, 0, size, size);
     for (let i = 0; i < img.data.length; i += 4) {
-      const n = (random() - 0.5) * 14;
+      const n = (random() - 0.5) * 14 * wearAmount;
       img.data[i] =
         img.data[i + 1] =
         img.data[i + 2] =
           Math.max(0, Math.min(255, img.data[i]! + n));
     }
     ctx.putImageData(img, 0, 0);
+  }
+
+  // Fine parallel brushing catches the light without covering a casing in large stains.
+  for (let y = 0; y < size; y += 2) {
+    r.fillStyle = `rgba(255,255,255,${0.015 + random() * 0.025})`;
+    r.fillRect(0, y, size, 1);
   }
 
   const maps = {
@@ -453,12 +459,12 @@ export function hazardStripeTexture(tileM = 1, seed = 61): Texture {
 let partMaps: SurfaceMaps | null = null;
 
 /**
- * Worn-metal maps shared by every machine casing (2 m per tile, for box-projected UVs).
+ * Lightly handled metal shared by machine casings (2 m per tile, box-projected UVs).
  * Created on first use and kept for the page's lifetime.
  */
 export function partWearMaps(): SurfaceMaps {
   if (partMaps === null) {
-    partMaps = wornMetalMaps(2, 5303);
+    partMaps = wornMetalMaps(2, 5303, 0.25);
     for (const t of Object.values(partMaps)) t.repeat.set(0.5, 0.5);
   }
   return partMaps;
