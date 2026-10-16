@@ -34,7 +34,10 @@ export function PreflightDialog() {
   const store = useEditorStore();
   const snapshot = useEditor((v) => v.snapshot);
   const [skip, setSkip] = useState(store.skipPreflight);
-  const report = useMemo(() => preflight(snapshot.components, snapshot.connections), [snapshot]);
+  const report = useMemo(
+    () => preflight(snapshot.components, snapshot.connections, snapshot.buildAssemblies),
+    [snapshot],
+  );
   const roles = useMemo(() => new Set(snapshot.components.map((c) => c.role)), [snapshot]);
   const close = () => store.openDialog(null);
   const activate = () => {

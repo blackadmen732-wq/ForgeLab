@@ -8,6 +8,7 @@ import {
   Vector3,
 } from "three";
 import { box, cyl, ring, merge, halfExtents, type V } from "./machineGeometry.js";
+import { coolantPumpPartModel } from "./coolantPumpParts.js";
 import { buildCoolantPump } from "./coolantPump.js";
 import { vesselModel } from "./vessels.js";
 import {
@@ -431,6 +432,8 @@ export function machineModel(
   geometry: ComponentGeometry,
   points: readonly ConnectionPoint[],
 ): MachineModel | null {
+  const pumpPartModel = coolantPumpPartModel(type, points);
+  if (pumpPartModel) return pumpPartModel;
   if (type === "coolant-pump") return buildCoolantPump(geometry, points);
   const vessel = vesselModel(type, geometry, points);
   if (vessel !== null) return vessel;

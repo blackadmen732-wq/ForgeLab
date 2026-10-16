@@ -68,7 +68,10 @@ try {
   );
   await page.evaluate(() => window.__forgelab.store.toggleDrawer(true));
   await page.getByRole("textbox", { name: "Search parts", exact: true }).fill("Coolant Pump");
-  await page.locator("button.part").filter({ hasText: "Coolant Pump" }).click();
+  await page
+    .locator("button.part")
+    .filter({ has: page.locator(".part__name", { hasText: /^Coolant Pump$/ }) })
+    .click();
   await page.waitForFunction(
     () => window.__forgelab.store.getView().snapshot.components.length === 1,
   );

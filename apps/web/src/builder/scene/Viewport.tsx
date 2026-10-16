@@ -57,6 +57,7 @@ import { PostFx } from "../../presentation/PostFx.js";
 import { ScreenCracks } from "../../presentation/vfx/ScreenCracks.js";
 import { VfxLayer } from "../../presentation/vfx/VfxLayer.js";
 import { portRating } from "../ui/Inspector.js";
+import { PlacementGhost } from "./PlacementGhost.js";
 import { Cables } from "./Cables.js";
 import { damageStage, stageDarkening } from "../../presentation/damage.js";
 import { damageState } from "../../presentation/damageState.js";
@@ -73,7 +74,7 @@ import { InternalsSection, showsInternals } from "./Internals.js";
 import { ComponentAnimator } from "./ComponentAnimator.js";
 import { applyPlasmaState } from "./plasma.js";
 import { useEditor, useEditorStore } from "../store/context.js";
-import type { EditorStore, ViewName } from "../store/editor.js";
+import type { EditorStore, ViewName, PlacementPreview } from "../store/editor.js";
 import {
   CONNECTION_COLORS,
   PALETTE,
@@ -587,6 +588,8 @@ function Gizmo() {
   } | null>(null);
   const invalidate = useThree((s) => s.invalidate);
 
+  const [snapHint, setSnapHint] = useState<{ x: number; y: number; z: number } | null>(null);
+  const snapMate = useRef<PlacementPreview["mate"]>(null);
   const primary = selection[selection.length - 1];
   const primaryComponent = components.find((c) => c.id === primary);
   const exploded = useEditor((v) => v.explode > 0);
@@ -609,6 +612,16 @@ function Gizmo() {
   return (
     <>
       <group ref={pivot} />
+      {snapHint && (
+        <mesh
+          name="moving-snap-preview"
+          position={[snapHint.x, snapHint.y, snapHint.z]}
+          raycast={() => {}}
+        >
+          <sphereGeometry args={[0.06, 12, 8]} />
+          <meshBasicMaterial color="#81e0ad" depthTest={false} />
+        </mesh>
+      )}
       {show && (
         <TransformControls
           object={pivot as unknown as MutableRefObject<Object3D>}
@@ -645,10 +658,40 @@ function Gizmo() {
               h.group.position.copy(s.pivotPos).add(offset).add(delta);
               h.group.quaternion.copy(dq).multiply(item.quat);
             }
+            if (!alt && s.items.length === 1) {
+              const item = s.items[0]!,
+                h = meshRegistry.get(item.id)!;
+              const q = h.group.quaternion;
+              const snap = store.previewConstructionMove(
+                item.id,
+                vec3(h.group.position.x, h.group.position.y, h.group.position.z),
+                { x: q.x, y: q.y, z: q.z, w: q.w },
+                selection,
+                snapMate.current,
+              );
+              snapMate.current = snap?.mate ?? null;
+              if (snap) {
+                h.group.position.set(
+                  snap.transform.positionM.x,
+                  snap.transform.positionM.y,
+                  snap.transform.positionM.z,
+                );
+                const r = snap.transform.rotation;
+                h.group.quaternion.set(r.x, r.y, r.z, r.w);
+                const target = store.world.requireComponent(snap.mate.componentId),
+                  socket = target.connectionPoints.find((p) => p.id === snap.mate.socketId)!;
+                setSnapHint(localPointToWorld(currentTransform(target), socket.localPosition));
+              } else setSnapHint(null);
+            } else {
+              setSnapHint(null);
+              snapMate.current = null;
+            }
             get().gl.shadowMap.needsUpdate = true;
             invalidate();
           }}
           onMouseUp={() => {
+            setSnapHint(null);
+            snapMate.current = null;
             const s = start.current;
             start.current = null;
             setDragging([]);
@@ -900,6 +943,15 @@ function ViewportBridge({
           -((clientY - rect.top) / rect.height) * 2 + 1,
         );
         raycaster.setFromCamera(ndc, camera);
+        if (store.getView().placement) {
+          const objects = [...meshRegistry.values()]
+            .filter((h) => h.group.visible)
+            .map((h) => h.group);
+          const surface = raycaster
+            .intersectObjects(objects, true)
+            .find((hit) => hit.object.visible);
+          if (surface) return vec3(surface.point.x, surface.point.y, surface.point.z);
+        }
         const plane = new Plane(new Vector3(0, 1, 0), -store.world.settings.groundLevelM);
         const hit = raycaster.ray.intersectPlane(plane, new Vector3());
         return hit === null ? null : vec3(hit.x, hit.y, hit.z);
@@ -986,6 +1038,7 @@ export function Viewport() {
   const tool = useEditor((v) => v.tool);
   const cutaway = useEditor((v) => v.cutaway);
   const mode = useEditor((v) => v.mode);
+  const placement = useEditor((v) => v.placement);
   const empty = useEditor((v) => v.snapshot.components.length === 0);
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const [box, setBox] = useState<BoxState | null>(null);
@@ -1023,6 +1076,17 @@ export function Viewport() {
     <div
       className={`viewport${tool === "box" ? " viewport--box" : ""}${tool === "connect" ? " viewport--connect" : ""}`}
       onPointerDownCapture={(event) => {
+        if (
+          store.getView().placement &&
+          event.button === 0 &&
+          (event.target as HTMLElement).tagName === "CANVAS"
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          store.commitPlacement();
+          suppressMiss.current = true;
+          return;
+        }
         if (event.button !== 0 || !(tool === "box" || event.shiftKey)) return;
         if ((event.target as HTMLElement).tagName !== "CANVAS") return;
         const state = {
@@ -1036,6 +1100,10 @@ export function Viewport() {
         if (controlsRef.current) controlsRef.current.enabled = false;
       }}
       onPointerMove={(event) => {
+        if (store.getView().placement) {
+          const at = store.viewport?.groundPointAt(event.clientX, event.clientY);
+          if (at) store.previewPlacement(at, event.altKey);
+        }
         const state = boxRef.current;
         if (state === null) return;
         state.x1 = event.clientX;
@@ -1056,6 +1124,10 @@ export function Viewport() {
         if (event.dataTransfer.types.includes("application/x-forgelab-part")) {
           event.preventDefault();
           event.dataTransfer.dropEffect = "copy";
+          if (store.getView().placement) {
+            const at = store.viewport?.groundPointAt(event.clientX, event.clientY);
+            if (at) store.previewPlacement(at, event.altKey);
+          }
         }
       }}
       onDrop={(event) => {
@@ -1063,9 +1135,23 @@ export function Viewport() {
         if (type === "") return;
         event.preventDefault();
         const at = store.viewport?.groundPointAt(event.clientX, event.clientY) ?? undefined;
-        store.addPart(type, at);
+        if (store.getView().placement) {
+          if (at) store.previewPlacement(at, event.altKey);
+          store.commitPlacement();
+        } else store.addPart(type, at);
       }}
     >
+      {placement && (
+        <div
+          className={`placement-hint ${placement.mate ? "placement-hint--snap" : ""}`}
+          role="status"
+        >
+          {placement.mate
+            ? "✓ Mount aligned · click to attach"
+            : "Move onto a matching mount · click to place"}
+          <span>Alt: bypass snap · Esc: cancel</span>
+        </div>
+      )}
       <Canvas
         frameloop="demand"
         dpr={[1, pixelRatio]}
@@ -1096,6 +1182,7 @@ export function Viewport() {
         <Environment showGrid={mode === "build"} />
         <CameraRig controlsRef={controlsRef} />
         <Parts />
+        <PlacementGhost />
         <Cables />
         <CutPlaneDriver />
         <InternalsSection />

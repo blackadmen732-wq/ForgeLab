@@ -141,9 +141,13 @@ speed without a gearbox. Convenience is good; invisible physical cheating is not
 Compatible: green halo + check. Warning: amber halo + warning icon. Incompatible: dimmed /
 red + X. The port keeps its domain colour underneath, so green never reads as a domain.
 
-## 11. Connecting takes two actions
+## 11. Physical mating and service connections
 
-Click the source port (compatible ports highlight), click the destination; the route is
+Physical construction mates attach by moving a part onto a compatible mount; the preview
+aligns the supported interface and release commits the joint as one undoable edit.
+Completion is determined by sim-core, not by grouping or a rendered overlap.
+
+The current service-connection interaction takes two actions: click the source port (compatible ports highlight), click the destination; the route is
 generated and the connection created. No confirmation dialog for a normal valid
 connection. Undo exists.
 
@@ -204,8 +208,10 @@ sources, conditions, confidence, curves, limitations.
 
 Finished machines may contain structure, conductor, superconductor, insulation, magnetic
 core, coolant, cryogen, vacuum, moving machinery, fuel, plasma-facing and breeder material,
-sensors and electronics. The player does not assemble these; advanced inspection reveals
-them.
+sensors and electronics. Finished products keep these inspectable internal regions.
+Supported construction kits may additionally expose meaningful manufactured modules
+(base, casing, motor, drive); do not require bolt-by-bolt internal assembly. Advanced
+inspection of either form remains schematic unless supported by sourced construction.
 
 ## 21. Say when internal geometry is schematic
 

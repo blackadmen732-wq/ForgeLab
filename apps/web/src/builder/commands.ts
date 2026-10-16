@@ -181,7 +181,10 @@ export const COMMANDS: readonly Command[] = [
     group: "Edit",
     keys: "Esc",
     match: (e) => e.key === "Escape",
-    run: (c) => c.store.clearSelection(),
+    run: (c) => {
+      c.store.cancelPlacement();
+      c.store.clearSelection();
+    },
   },
   {
     id: "rotate-90",

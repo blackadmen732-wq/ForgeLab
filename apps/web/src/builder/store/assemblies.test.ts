@@ -83,3 +83,120 @@ describe("assemblies in the builder", () => {
     expect(store.getView().snapshot.components).toHaveLength(0);
   });
 });
+
+/** Construction is physical membership; ordinary grouping remains only organisation. */
+describe("pump construction in the builder", () => {
+  function loose() {
+    const store = new EditorStore();
+    store.placeAssembly(kitFile("coolant-pump-kit-v1"), "Pump Kit", vec3(0, 0, 0));
+    return { store, assembly: store.world.listBuildAssemblies()[0]! };
+  }
+  function seat(store: EditorStore, partIds: Readonly<Record<string, string>>, key: string) {
+    const base = store.world.requireComponent(partIds["base"]!);
+    const offsetY: Record<string, number> = { casing: 0.725, drive: 0.775, motor: 1.375 };
+    const c = store.world.requireComponent(partIds[key]!);
+    store.moveComponents([
+      {
+        id: c.id,
+        position: vec3(
+          base.transform.positionM.x + 0.12,
+          base.transform.positionM.y + offsetY[key]!,
+          base.transform.positionM.z,
+        ),
+        rotation: base.transform.rotation,
+      },
+    ]);
+  }
+  it("seats three meaningful modules, undoes completion, detaches and reassembles", () => {
+    const { store, assembly } = loose();
+    expect(store.getView().groups).toHaveLength(0);
+    for (const key of ["casing", "drive", "motor"]) seat(store, assembly.partIds, key);
+    expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+    expect(store.world.listConnections().filter((c) => c.type === "mount")).toHaveLength(3);
+    store.undo();
+    expect(store.world.constructionStatus()[0]!.state).toBe("incomplete");
+    store.redo();
+    expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+    store.detachConstructionPart(assembly.partIds["motor"]!);
+    expect(store.world.constructionStatus()[0]!.state).toBe("incomplete");
+    seat(store, assembly.partIds, "motor");
+    expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+  });
+  it("attaches a complete pump's skid to an existing structural platform", () => {
+    const { store, assembly } = loose();
+    for (const key of ["casing", "drive", "motor"]) seat(store, assembly.partIds, key);
+    const base = store.world.requireComponent(assembly.partIds["base"]!),
+      p = base.transform.positionM;
+    const deck = store.addPart("structural-platform", vec3(p.x + 8, 0, p.z))!;
+    const c = store.world.requireComponent(deck),
+      top = c.connectionPoints.find((p) => p.id === "top")!;
+    const destination = vec3(
+      c.transform.positionM.x,
+      c.transform.positionM.y + top.localPosition.y + 0.125,
+      c.transform.positionM.z,
+    );
+    const delta = vec3(destination.x - p.x, destination.y - p.y, destination.z - p.z);
+    store.moveComponents(
+      Object.values(assembly.partIds).map((id) => {
+        const c = store.world.requireComponent(id),
+          p = c.transform.positionM;
+        return {
+          id,
+          position: vec3(p.x + delta.x, p.y + delta.y, p.z + delta.z),
+          rotation: c.transform.rotation,
+        };
+      }),
+    );
+    expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+    expect(
+      store.world
+        .requireComponent(base.id)
+        .connections.some(
+          (c) =>
+            c.type === "structural" && (c.from.componentId === deck || c.to.componentId === deck),
+        ),
+    ).toBe(true);
+  });
+  it("previews a keyed mount without editing the world and supports bypass/cancel", () => {
+    const { store, assembly } = loose();
+    const before = store.designHash();
+    const base = store.world.requireComponent(assembly.partIds["base"]!);
+    store.beginPlacement("pump-casing");
+    const at = vec3(base.transform.positionM.x + 0.1, 0.17, base.transform.positionM.z);
+    store.previewPlacement(at);
+    expect(store.getView().placement!.mate?.componentId).toBe(base.id);
+    expect(store.designHash()).toBe(before);
+    store.previewPlacement(at, true);
+    expect(store.getView().placement!.mate).toBeNull();
+    store.previewPlacement(at);
+    store.cancelPlacement();
+    expect(store.getView().placement).toBeNull();
+    expect(store.designHash()).toBe(before);
+  });
+  it("preserves complete construction in saved copies, duplicate, group rotation and reload", () => {
+    const { store, assembly } = loose();
+    for (const key of ["casing", "drive", "motor"]) seat(store, assembly.partIds, key);
+    store.select(Object.values(assembly.partIds));
+    store.groupSelected("My pump");
+    store.rotateSelection90();
+    expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+    const file = store.selectionAsAssembly("My pump")!;
+    store.placeAssembly(file, "My pump", vec3(12, 0, 0));
+    expect(store.world.constructionStatus().map((s) => s.state)).toEqual(["complete", "complete"]);
+    store.duplicateSelected();
+    expect(store.world.constructionStatus().map((s) => s.state)).toEqual([
+      "complete",
+      "complete",
+      "complete",
+    ]);
+    const saved = store.exportFile(),
+      hash = store.designHash();
+    store.loadFile(saved);
+    expect(store.designHash()).toBe(hash);
+    expect(store.world.constructionStatus().map((s) => s.state)).toEqual([
+      "complete",
+      "complete",
+      "complete",
+    ]);
+  });
+});

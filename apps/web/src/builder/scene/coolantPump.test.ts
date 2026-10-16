@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DoubleSide, Mesh, MeshBasicMaterial, Raycaster, Vector3 } from "three";
-import { COOLANT_PUMP } from "@forgelab/reactor-components";
-import { boxGeometry } from "@forgelab/sim-core";
+import { COOLANT_PUMP, PUMP_PARTS } from "@forgelab/reactor-components";
+import { PUMP_CONSTRUCTION_RECIPE, boxGeometry } from "@forgelab/sim-core";
 import { vec3 } from "@forgelab/shared";
 import { buildCoolantPump, coolantPumpCoupling } from "./coolantPump.js";
+import { coolantPumpPartModel } from "./coolantPumpParts.js";
 import { flangedRing } from "./industrialGeometry.js";
 
 describe("procedural coolant pump", () => {
@@ -68,5 +69,35 @@ describe("procedural coolant pump", () => {
       expect(rotor.axis).toBe("y");
       rotor.geometry.dispose();
     }
+  });
+});
+
+describe("modular pump geometry", () => {
+  it("reuses the finished pump at its real assembly coordinates within the triangle budget", () => {
+    let triangles = 0;
+    for (const part of PUMP_CONSTRUCTION_RECIPE.parts) {
+      const spec = PUMP_PARTS.find((p) => p.type === part.type)!.createSpec({ id: part.key });
+      const before = JSON.stringify(spec);
+      const model = coolantPumpPartModel(part.type, spec.connectionPoints!)!;
+      expect(model.replacesEnvelope).toBe(true);
+      for (const g of [model.main, model.trim, model.accent])
+        if (g) {
+          g.computeBoundingBox();
+          for (const n of [...g.boundingBox!.min.toArray(), ...g.boundingBox!.max.toArray()])
+            expect(Number.isFinite(n)).toBe(true);
+          const offset = [part.offset.x, part.offset.y, part.offset.z];
+          g.boundingBox!.min.toArray().forEach((n, i) =>
+            expect(n + offset[i]!).toBeGreaterThanOrEqual(-1.01),
+          );
+          g.boundingBox!.max.toArray().forEach((n, i) =>
+            expect(n + offset[i]!).toBeLessThanOrEqual(1.01),
+          );
+          triangles += (g.index?.count ?? g.getAttribute("position").count) / 3;
+          g.dispose();
+        }
+      expect(JSON.stringify(spec)).toBe(before);
+    }
+    expect(triangles).toBeGreaterThan(18000);
+    expect(triangles).toBeLessThan(30000);
   });
 });

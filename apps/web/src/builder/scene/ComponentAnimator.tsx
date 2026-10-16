@@ -1,3 +1,4 @@
+import { useEditorStore } from "../store/context.js";
 import { useFrame } from "@react-three/fiber";
 import { useContext, useRef } from "react";
 import { Color, type MeshBasicMaterial, type ShaderMaterial } from "three";
@@ -35,6 +36,7 @@ const MAX_SHUDDER_M = 0.03;
 const scratch = new Color();
 
 export function ComponentAnimator() {
+  const store = useEditorStore();
   const director = useContext(PresentationContext);
   const speeds = useRef(new Map<string, number>());
   const phases = useRef(new Map<string, string>());
@@ -53,8 +55,15 @@ export function ComponentAnimator() {
     let moving = false;
     const t = now / 1000;
     const parts = simulate ? state.reading?.components : undefined;
+    const drives = new Map(
+      (store.getView().snapshot.buildAssemblies ?? []).flatMap((a) =>
+        a.partIds["drive"] && a.partIds["casing"]
+          ? [[a.partIds["drive"], a.partIds["casing"]]]
+          : [],
+      ),
+    );
     for (const [id, handle] of meshRegistry) {
-      const visual = simulate ? state.visuals.get(id) : undefined;
+      const visual = simulate ? state.visuals.get(drives.get(id) ?? id) : undefined;
       // Precursors.
       const part = parts?.find((c) => c.id === id);
       const lost = part === undefined ? 0 : 1 - Math.min(1, Math.max(0, part.headFraction));

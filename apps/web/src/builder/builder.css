@@ -3059,3 +3059,60 @@
   border-radius: 50%;
   flex: none;
 }
+
+/* Modular construction keeps controls around the work, rather than over the machine. */
+.drawer__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer__tabs .btn {
+  flex: 1;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.construction-panel {
+  border-bottom: 1px solid var(--line);
+  padding: 4px 12px;
+}
+.construction-status {
+  font-weight: 600;
+  color: #e2bc76;
+  margin: 4px 0 8px;
+}
+.construction-status--complete {
+  color: #81d4a4;
+}
+.construction-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.placement-hint {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  padding: 12px 18px;
+  background: #10171fee;
+  border: 1px solid #536477;
+  border-radius: 8px;
+  pointer-events: none;
+  color: #d6e8fa;
+  box-shadow: 0 8px 30px #0005;
+  text-align: center;
+  font-size: 13px;
+}
+.placement-hint span {
+  display: block;
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 4px;
+}
+.placement-hint--snap {
+  color: #a5e5be;
+  border-color: #67b88a;
+}

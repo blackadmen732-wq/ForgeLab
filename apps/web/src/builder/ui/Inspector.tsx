@@ -1,3 +1,4 @@
+import { frameScalar } from "@forgelab/sim-runner";
 import {
   MATERIAL_CATALOG,
   findFluid,
@@ -14,6 +15,8 @@ import {
 } from "@forgelab/reactor-components";
 import {
   ROLE_PARAMETERS,
+  PUMP_CONSTRUCTION_RECIPE,
+  pumpPart,
   buildTopology,
   type ParameterSpec,
   type PlantSummary,
@@ -1597,6 +1600,124 @@ export function AssemblyPanel() {
   );
 }
 
+function ConstructionReadouts({ componentId, motorId }: { componentId: string; motorId: string }) {
+  const store = useEditorStore();
+  const mode = useEditor((v) => v.mode);
+  const snapshot = useEditor((v) => v.snapshot);
+  useSim((s) => s.frameNumber);
+  const c = snapshot.components.find((c) => c.id === componentId);
+  const frame = mode === "simulate" ? store.frame : null,
+    index = frame ? store.frameIndexOf(componentId) : undefined;
+  const flow =
+    frame && index !== undefined
+      ? frameScalar(frame, index, "massFlowKgS")
+      : (c?.state.plant.coolant?.massFlowKgS ?? 0);
+  const motor = snapshot.components.find((c) => c.id === motorId),
+    motorIndex = frame ? store.frameIndexOf(motorId) : undefined;
+  const power =
+    frame && motorIndex !== undefined
+      ? frameScalar(frame, motorIndex, "electricalPowerW")
+      : (motor?.state.plant.electrical?.deliveredW ?? 0);
+  return (
+    <>
+      <Row label={frame ? "Flow (live)" : "Flow"}>{si(flow, "kg/s")}</Row>
+      <Row label="Delivered power">{watts(power)}</Row>
+    </>
+  );
+}
+
+function ConstructionPanel() {
+  const store = useEditorStore();
+  const snapshot = useEditor((v) => v.snapshot);
+  const selected = useEditor((v) => v.selection);
+  const mode = useEditor((v) => v.mode);
+  const statuses = store.world
+    .constructionStatus()
+    .filter((s) => Object.values(s.assembly.partIds).some((id) => selected.includes(id)));
+  if (!statuses.length) return null;
+  return (
+    <div className="construction-panel">
+      {statuses.map((s) => (
+        <Section key={s.assembly.id} title={s.name}>
+          <p className={`construction-status construction-status--${s.state}`} role="status">
+            {s.state === "complete"
+              ? "Complete · ready to connect"
+              : `${titleCase(s.state)} · pump inactive`}
+          </p>
+          <p className="dim">
+            Stock pump recipe · existing lumped physics model. Internal construction is schematic.
+          </p>
+          {PUMP_CONSTRUCTION_RECIPE.parts.map((p) => (
+            <Row key={p.key} label={p.name}>
+              {snapshot.components.some((c) => c.id === s.assembly.partIds[p.key])
+                ? "Present"
+                : "Missing"}
+            </Row>
+          ))}
+          {s.issues.length > 0 && (
+            <ul className="insp-warnings">
+              {s.issues.map((issue, i) => (
+                <li key={i}>{issue}</li>
+              ))}
+            </ul>
+          )}
+          {s.state === "complete" && s.assembly.partIds["casing"] && (
+            <ConstructionReadouts
+              componentId={s.assembly.partIds["casing"]!}
+              motorId={s.assembly.partIds["motor"]!}
+            />
+          )}
+          <div className="construction-actions">
+            <button
+              type="button"
+              className="btn btn--sm"
+              onClick={() => store.select(Object.values(s.assembly.partIds))}
+            >
+              Select assembly
+            </button>
+            {mode === "build" && (
+              <button
+                type="button"
+                className="btn btn--sm"
+                onClick={() => {
+                  store.select(Object.values(s.assembly.partIds));
+                  store.groupSelected(s.name);
+                }}
+              >
+                Group assembly
+              </button>
+            )}
+            {mode === "build" &&
+              selected.length === 1 &&
+              pumpPart(snapshot.components.find((c) => c.id === selected[0])?.type ?? "") && (
+                <button
+                  type="button"
+                  className="btn btn--sm"
+                  onClick={() => store.detachConstructionPart(selected[0]!)}
+                >
+                  Detach module
+                </button>
+              )}
+          </div>
+          <details>
+            <summary>External interfaces</summary>
+            {Object.entries(s.externalPorts).map(([name, e]) => (
+              <Row key={name} label={name}>
+                {snapshot.components.find((c) => c.id === e.componentId)?.label} /{" "}
+                {e.connectionPointId}
+              </Row>
+            ))}
+          </details>
+          <p className="dim">
+            Move modules onto matching mounts. Alt-click picks a part inside a group; Escape cancels
+            placement.
+          </p>
+        </Section>
+      ))}
+    </div>
+  );
+}
+
 export function Inspector() {
   const selection = useEditor((v) => v.selection);
   const components = useEditor((v) => v.snapshot.components);
@@ -1609,6 +1730,7 @@ export function Inspector() {
   }, [selection, components]);
   return (
     <aside className="inspector" aria-label="Inspector">
+      <ConstructionPanel />
       {selected.length === 0 ? (
         <AssemblyPanel />
       ) : selected.length === 1 ? (

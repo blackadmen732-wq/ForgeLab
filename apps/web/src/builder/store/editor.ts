@@ -25,6 +25,10 @@ import {
 } from "@forgelab/shared";
 import {
   CONNECTION_SNAP_TOLERANCE_M,
+  constructionMateTransform,
+  isConstructionMate,
+  pumpPart,
+  createComponent,
   type AssemblyFileV2,
   type Connection,
   type ConnectionEndpoint,
@@ -182,6 +186,7 @@ export interface EditorView {
   readonly selection: readonly string[];
   /** Parts grouped in the design (assemblies placed or grouped by the player). */
   readonly groups: readonly ComponentGroup[];
+  readonly placement: PlacementPreview | null;
   readonly hidden: ReadonlySet<string>;
   readonly snapEnabled: boolean;
   readonly gridM: number;
@@ -259,6 +264,16 @@ interface HistoryEntry {
   readonly label: string;
 }
 
+export interface PlacementPreview {
+  readonly type: string;
+  readonly transform: Transform;
+  readonly mate: {
+    readonly componentId: string;
+    readonly socketId: string;
+    readonly movingSocketId: string;
+  } | null;
+}
+
 export interface TransformUpdate {
   readonly id: string;
   readonly position: Vec3;
@@ -285,6 +300,7 @@ const GENERATOR = "forgelab-web";
  * computes physics itself.
  */
 export class EditorStore {
+  #placement: PlacementPreview | null = null;
   #world: SimulationWorld;
   #snapshot: SimulationSnapshot;
   #undo: HistoryEntry[] = [];
@@ -454,6 +470,7 @@ export class EditorStore {
       showScale: this.#showScale,
       selection: this.#selection,
       groups: this.#world.listGroups(),
+      placement: this.#placement,
       hidden: this.#hidden,
       snapEnabled: this.#snapEnabled,
       gridM: this.#gridM,
@@ -527,6 +544,7 @@ export class EditorStore {
     const before = this.#capture(label);
     try {
       mutate(this.#world);
+      this.#world.reconcileBuildAssemblies();
     } catch (error) {
       this.#restore(before);
       this.#afterDesignChange(false);
@@ -699,6 +717,7 @@ export class EditorStore {
   };
 
   clearSelection = (): void => {
+    this.cancelPlacement();
     if (this.#connectFrom !== null) {
       this.#connectFrom = null;
       this.#publish();
@@ -964,6 +983,135 @@ export class EditorStore {
     return this.#snapPosition(vec3(focus.x, y, focus.z), false);
   }
 
+  beginPlacement = (type: string): void => {
+    const d = findComponentDefinition(type);
+    if (!d || this.#mode !== "build") return;
+    this.#placement = {
+      type,
+      transform: makeTransform(this.#spawnPosition(d.nominalSizeM)),
+      mate: null,
+    };
+    this.#publish();
+  };
+  cancelPlacement = (): void => {
+    if (this.#placement) {
+      this.#placement = null;
+      this.#publish();
+    }
+  };
+  previewPlacement = (at: Vec3, override = false): void => {
+    if (!this.#placement) return;
+    const d = getComponentDefinition(this.#placement.type);
+    const pos = this.#snapPosition(vec3(at.x, at.y + d.nominalSizeM.y / 2, at.z), override);
+    const c = createComponent(d.createSpec({ id: "__placement", transform: makeTransform(pos) }));
+    const hit =
+      override || !this.#socketSnap || !this.#snapEnabled
+        ? null
+        : this.#constructionSnap(this.#world, c, new Set(), this.#placement.mate);
+    this.#placement = {
+      type: d.type,
+      transform: hit?.transform ?? c.transform,
+      mate: hit?.mate ?? null,
+    };
+    this.#publish();
+  };
+  commitPlacement = (): string | null => {
+    const preview = this.#placement;
+    if (!preview) return null;
+    let id = "";
+    const ok = this.#edit(`Place ${getComponentDefinition(preview.type).name}`, (world) => {
+      id = uniqueId(world, preview.type);
+      world.addComponent(
+        getComponentDefinition(preview.type).createSpec({ id, transform: preview.transform }),
+      );
+      this.#reconcile(world, [id], false);
+    });
+    this.#placement = null;
+    if (ok) {
+      this.#selection = [id];
+      this.#inspectOpen = true;
+    }
+    this.#publish();
+    return ok ? id : null;
+  };
+
+  previewConstructionMove = (
+    id: string,
+    position: Vec3,
+    rotation: Quaternion,
+    excluded: readonly string[],
+    previous: PlacementPreview["mate"] = null,
+  ) => {
+    const c = this.#world.requireComponent(id);
+    if (!pumpPart(c.type) || !this.#snapEnabled || !this.#socketSnap) return null;
+    const moving: SimulationComponent = {
+      ...c,
+      transform: makeTransform(position, rotation),
+      state: { ...c.state, physical: { ...c.state.physical, positionM: position, rotation } },
+    };
+    return this.#constructionSnap(this.#world, moving, new Set(excluded), previous);
+  };
+
+  /** Keyed recipe mates, with hysteresis while hovering the same target. */
+  #constructionSnap(
+    world: SimulationWorld,
+    moving: SimulationComponent,
+    excluded: ReadonlySet<string>,
+    previous: PlacementPreview["mate"] = null,
+  ) {
+    const index = SocketIndex.of(
+      world.listComponents().filter((c) => !excluded.has(c.id) && !this.#hidden.has(c.id)),
+      SOCKET_SNAP_RADIUS_M * 1.35,
+    );
+    let best: {
+      distance: number;
+      transform: Transform;
+      mate: NonNullable<PlacementPreview["mate"]>;
+    } | null = null;
+    for (const pa of moving.connectionPoints) {
+      if (pa.connectionType !== "mount") continue;
+      for (const hit of index.near(
+        localPointToWorld(currentTransform(moving), pa.localPosition),
+        SOCKET_SNAP_RADIUS_M * 1.35,
+        "mount",
+      )) {
+        const target = world.requireComponent(hit.socket.componentId),
+          pb = target.connectionPoints.find((p) => p.id === hit.socket.socketId)!;
+        const pinned =
+          previous?.componentId === target.id &&
+          previous.socketId === pb.id &&
+          previous.movingSocketId === pa.id;
+        if (hit.distance > SOCKET_SNAP_RADIUS_M && !pinned) continue;
+        const pose = constructionMateTransform(moving, pa, target, pb);
+        if (!pose) continue;
+        const distance = hit.distance * (pinned ? 0.6 : 1);
+        if (!best || distance < best.distance)
+          best = {
+            distance,
+            transform: pose,
+            mate: { componentId: target.id, socketId: pb.id, movingSocketId: pa.id },
+          };
+      }
+    }
+    return best;
+  }
+
+  detachConstructionPart = (id: string): void => {
+    const c = this.#world.getComponent(id);
+    if (!c || !pumpPart(c.type)) return;
+    this.#edit(`Detach ${c.label}`, (world) => {
+      for (const link of c.connections) if (link.type === "mount") world.disconnect(link.id);
+      const group = world.groupOf(id);
+      if (group) world.ungroup(group.id);
+      world.setTransform(
+        id,
+        makeTransform(Vec3Math.add(c.transform.positionM, vec3(2.5, 0, 0)), c.transform.rotation),
+      );
+    });
+    this.#selection = [id];
+    this.#publish();
+  };
+
   addPart = (type: string, at?: Vec3): string | null => {
     const definition = findComponentDefinition(type);
     if (definition === undefined) return null;
@@ -1130,9 +1278,21 @@ export class EditorStore {
     let created: string[] = [];
     const ok = this.#edit(`Place ${name ?? parsed.name}`, (world) => {
       const spot = this.#spawnPosition(size, at);
-      created = insertAssembly(world, parsed, vec3(spot.x, 0, spot.z), {
+      const inserted = insertAssembly(world, parsed, vec3(spot.x, 0, spot.z), {
         name: name ?? parsed.name,
-      }).componentIds;
+      });
+      created = inserted.componentIds;
+      if (
+        inserted.groupId &&
+        world
+          .constructionStatus()
+          .some(
+            (s) =>
+              s.state !== "complete" &&
+              Object.values(s.assembly.partIds).some((id) => created.includes(id)),
+          )
+      )
+        world.ungroup(inserted.groupId);
     });
     if (ok && created.length > 0) {
       this.#selection = created;
@@ -1184,6 +1344,7 @@ export class EditorStore {
     copies: readonly Transform[][],
   ): string[] {
     const created: string[] = [];
+    const builds = world.listBuildAssemblies();
     for (const placements of copies) {
       const map = new Map<string, string>();
       ids.forEach((id, i) => {
@@ -1191,6 +1352,15 @@ export class EditorStore {
         map.set(id, copy.id);
         created.push(copy.id);
       });
+      for (const build of builds)
+        if (Object.values(build.partIds).every((id) => map.has(id)))
+          world.setBuildAssembly({
+            ...build,
+            id: world.nextId("construction"),
+            partIds: Object.fromEntries(
+              Object.entries(build.partIds).map(([key, id]) => [key, map.get(id)!]),
+            ),
+          });
       for (const connection of world.listConnections()) {
         const a = map.get(connection.from.componentId);
         const b = map.get(connection.to.componentId);
@@ -1309,6 +1479,34 @@ export class EditorStore {
   #snapToSockets(world: SimulationWorld, ids: readonly string[], override: boolean): void {
     if (override || !this.#socketSnap || !this.#snapEnabled) return;
     const moving = new Set(ids);
+    for (const id of ids) {
+      const c = world.requireComponent(id);
+      if (!pumpPart(c.type)) continue;
+      const snap = this.#constructionSnap(world, c, moving);
+      if (!snap) continue;
+      const dq = QuaternionMath.multiply(
+        snap.transform.rotation,
+        QuaternionMath.conjugate(c.transform.rotation),
+      );
+      for (const member of ids) {
+        const m = world.requireComponent(member);
+        world.setTransform(
+          member,
+          makeTransform(
+            Vec3Math.add(
+              snap.transform.positionM,
+              QuaternionMath.rotateVec3(
+                dq,
+                Vec3Math.subtract(m.transform.positionM, c.transform.positionM),
+              ),
+            ),
+            QuaternionMath.multiply(dq, m.transform.rotation),
+          ),
+        );
+      }
+      return;
+    }
+    // The skid keeps its external structural mount; internal modules only use keyed mates.
     const index = SocketIndex.of(
       world.listComponents().filter((c) => !moving.has(c.id) && !this.#hidden.has(c.id)),
       SOCKET_SNAP_RADIUS_M,
@@ -1318,8 +1516,16 @@ export class EditorStore {
       const m = world.requireComponent(id);
       const mt = currentTransform(m);
       for (const socket of m.connectionPoints) {
+        if (pumpPart(m.type) && !(m.type === "pump-base" && socket.id === "base")) continue;
         const p = localPointToWorld(mt, socket.localPosition);
-        const hit = index.near(p, SOCKET_SNAP_RADIUS_M, socket.connectionType)[0];
+        const hit = index.near(p, SOCKET_SNAP_RADIUS_M, socket.connectionType).find((h) => {
+          if (pumpPart(m.type) && pumpPart(world.requireComponent(h.socket.componentId).type))
+            return false;
+          const target = world
+            .requireComponent(h.socket.componentId)
+            .connectionPoints.find((p) => p.id === h.socket.socketId)!;
+          return checkPortCompatibility(socket, target).compatible;
+        });
         if (hit !== undefined && (best === null || hit.distance < best.distance)) {
           best = { distance: hit.distance, delta: Vec3Math.subtract(hit.socket.position, p) };
         }
@@ -1374,6 +1580,25 @@ export class EditorStore {
         const p = localPointToWorld(t, socket.localPosition);
         for (const { socket: other } of index.near(p, tolerance, socket.connectionType)) {
           if (other.componentId === id) continue;
+          const target = world.requireComponent(other.componentId),
+            targetPoint = target.connectionPoints.find((p) => p.id === other.socketId)!;
+          if (
+            socket.connectionType === "mount" &&
+            (pumpPart(component.type) || pumpPart(target.type)) &&
+            !isConstructionMate(component, socket, target, targetPoint)
+          )
+            continue;
+          if (
+            (pumpPart(component.type) || pumpPart(target.type)) &&
+            socket.connectionType === "structural" &&
+            !(
+              (component.type === "pump-base" && socket.id === "base" && !pumpPart(target.type)) ||
+              (!pumpPart(component.type) &&
+                target.type === "pump-base" &&
+                targetPoint.id === "base")
+            )
+          )
+            continue;
           const a = end(id, socket.id);
           const b = end(other.componentId, other.socketId);
           if (linked.has(`${a}|${b}`)) continue;
@@ -1546,7 +1771,11 @@ export class EditorStore {
    */
   requestActivation = (): void => {
     if (this.#mode === "simulate") return;
-    const report = preflight(this.#snapshot.components, this.#snapshot.connections);
+    const report = preflight(
+      this.#snapshot.components,
+      this.#snapshot.connections,
+      this.#snapshot.buildAssemblies,
+    );
     if (!report.canActivate || this.#skipPreflight || report.items.length === 0) {
       this.startSimulation();
       return;
@@ -1555,6 +1784,7 @@ export class EditorStore {
   };
 
   startSimulation = (speed: SessionSpeed = 1): void => {
+    this.cancelPlacement();
     if (this.#mode !== "simulate")
       analytics.track("plant_activated", {
         parts: this.#snapshot.components.length,

@@ -4,7 +4,7 @@ import {
   KITS,
   type ComponentDefinition,
 } from "@forgelab/reactor-components";
-import { type AssemblyFileV2, extractAssembly } from "@forgelab/sim-core";
+import { pumpPart, type AssemblyFileV2, extractAssembly } from "@forgelab/sim-core";
 import { getMaterial } from "@forgelab/materials";
 import { Boxes, LayoutTemplate, Save, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
@@ -38,8 +38,14 @@ function PartCard({ definition }: { definition: ComponentDefinition }) {
       onDragStart={(e) => {
         e.dataTransfer.setData("application/x-forgelab-part", definition.type);
         e.dataTransfer.effectAllowed = "copy";
+        if (pumpPart(definition.type)) store.beginPlacement(definition.type);
       }}
-      onClick={() => store.addPart(definition.type)}
+      onDragEnd={() => store.cancelPlacement()}
+      onClick={() =>
+        pumpPart(definition.type)
+          ? store.beginPlacement(definition.type)
+          : store.addPart(definition.type)
+      }
       title={`${definition.description}\n\nClick to place near the view centre, or drag into the workspace.`}
     >
       <PartIcon role={definition.role} />
@@ -58,6 +64,7 @@ function PartCard({ definition }: { definition: ComponentDefinition }) {
 export function ComponentDrawer() {
   const store = useEditorStore();
   const [query, setQuery] = useState("");
+  const [tab, setTab] = useState<"parts" | "kits" | "mine">("parts");
   const [category, setCategory] = useState<string | null>(null);
   const groups = useMemo(() => {
     return COMPONENT_CATEGORIES.map((c) => ({
@@ -81,6 +88,28 @@ export function ComponentDrawer() {
           <X />
         </button>
       </div>
+      <nav className="drawer__tabs" aria-label="Component library sections">
+        {(
+          [
+            ["parts", "Parts"],
+            ["kits", "Kits"],
+            ["mine", "My Assemblies"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            type="button"
+            key={key}
+            className={`btn btn--sm ${tab === key ? "btn--primary" : "btn--ghost"}`}
+            aria-pressed={tab === key}
+            onClick={() => {
+              setTab(key);
+              setQuery("");
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
       <div className="drawer__search">
         <Search aria-hidden="true" />
         <input
@@ -91,38 +120,43 @@ export function ComponentDrawer() {
           onChange={(e) => setQuery(e.target.value)}
         />
       </div>
-      <div className="chips" role="toolbar" aria-label="Categories">
-        <button
-          type="button"
-          className={`chip${category === null ? " is-active" : ""}`}
-          onClick={() => setCategory(null)}
-        >
-          All
-        </button>
-        {COMPONENT_CATEGORIES.filter((c) =>
-          COMPONENT_DEFINITIONS.some((d) => d.category === c),
-        ).map((c) => (
+      {tab === "parts" && (
+        <div className="chips" role="toolbar" aria-label="Categories">
           <button
-            key={c}
             type="button"
-            className={`chip${category === c ? " is-active" : ""}`}
-            onClick={() => setCategory(category === c ? null : c)}
+            className={`chip${category === null ? " is-active" : ""}`}
+            onClick={() => setCategory(null)}
           >
-            {c}
+            All
           </button>
-        ))}
-      </div>
+          {COMPONENT_CATEGORIES.filter((c) =>
+            COMPONENT_DEFINITIONS.some((d) => d.category === c),
+          ).map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`chip${category === c ? " is-active" : ""}`}
+              onClick={() => setCategory(category === c ? null : c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
       <div className="drawer__list">
-        {groups.length === 0 && <p className="dim drawer__empty">No parts match “{query}”.</p>}
-        {groups.map((g) => (
-          <section key={g.category} className="drawer__group">
-            <h3>{g.category}</h3>
-            {g.parts.map((d) => (
-              <PartCard key={d.type} definition={d} />
-            ))}
-          </section>
-        ))}
-        <AssembliesSection query={query} />
+        {tab === "parts" && groups.length === 0 && (
+          <p className="dim drawer__empty">No parts match “{query}”.</p>
+        )}
+        {tab === "parts" &&
+          groups.map((g) => (
+            <section key={g.category} className="drawer__group">
+              <h3>{g.category}</h3>
+              {g.parts.map((d) => (
+                <PartCard key={d.type} definition={d} />
+              ))}
+            </section>
+          ))}
+        {tab !== "parts" && <AssembliesSection query={query} tab={tab} />}
         <section className="drawer__group">
           <h3>Blueprints</h3>
           <button
@@ -165,7 +199,7 @@ function kitFile(id: string): AssemblyFileV2 | undefined {
  * Assemblies: built-in kits and the player's own saved pieces. Placing one puts its parts
  * down grouped, with their links; Ctrl Shift G takes it apart.
  */
-function AssembliesSection({ query }: { query: string }) {
+function AssembliesSection({ query, tab }: { query: string; tab: "kits" | "mine" }) {
   const store = useEditorStore();
   const building = useEditor((v) => v.mode === "build");
   const selectionCount = useEditor((v) => v.selection.length);
@@ -173,8 +207,10 @@ function AssembliesSection({ query }: { query: string }) {
   const [naming, setNaming] = useState<string | null>(null);
   const q = query.toLowerCase();
   const show = (text: string) => q === "" || text.toLowerCase().includes(q);
-  const kits = KITS.filter((k) => show(`${k.name} ${k.description} assembly kit`));
-  const mine = saved.filter((a) => show(`${a.name} assembly`));
+  const kits = (tab === "kits" ? KITS : []).filter((k) =>
+    show(`${k.name} ${k.description} assembly kit`),
+  );
+  const mine = (tab === "mine" ? saved : []).filter((a) => show(`${a.name} assembly`));
   const save = () => {
     const name = (naming ?? "").trim() || "My assembly";
     const file = store.selectionAsAssembly(name);
@@ -190,7 +226,7 @@ function AssembliesSection({ query }: { query: string }) {
   if (kits.length === 0 && mine.length === 0 && q !== "") return null;
   return (
     <section className="drawer__group" aria-label="Assemblies">
-      <h3>Assemblies</h3>
+      <h3>{tab === "kits" ? "Built-in kits" : "My Assemblies"}</h3>
       {kits.map((kit) => (
         <button
           key={kit.id}
@@ -238,39 +274,40 @@ function AssembliesSection({ query }: { query: string }) {
           </button>
         </div>
       ))}
-      {naming === null ? (
-        <button
-          type="button"
-          className="btn btn--sm drawer__save"
-          disabled={!building || selectionCount === 0}
-          onClick={() => setNaming("")}
-          title="Save the selected parts and the links between them as an assembly you can place again."
-        >
-          <Save aria-hidden="true" /> Save selection as assembly
-        </button>
-      ) : (
-        <form
-          className="drawer__save-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            save();
-          }}
-        >
-          <input
-            className="input"
-            autoFocus
-            maxLength={80}
-            placeholder="Assembly name"
-            aria-label="Assembly name"
-            value={naming}
-            onChange={(e) => setNaming(e.target.value)}
-            onKeyDown={(e) => e.key === "Escape" && setNaming(null)}
-          />
-          <button type="submit" className="btn btn--sm btn--primary">
-            Save
+      {tab === "mine" &&
+        (naming === null ? (
+          <button
+            type="button"
+            className="btn btn--sm drawer__save"
+            disabled={!building || selectionCount === 0}
+            onClick={() => setNaming("")}
+            title="Save the selected parts and the links between them as an assembly you can place again."
+          >
+            <Save aria-hidden="true" /> Save selection as assembly
           </button>
-        </form>
-      )}
+        ) : (
+          <form
+            className="drawer__save-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <input
+              className="input"
+              autoFocus
+              maxLength={80}
+              placeholder="Assembly name"
+              aria-label="Assembly name"
+              value={naming}
+              onChange={(e) => setNaming(e.target.value)}
+              onKeyDown={(e) => e.key === "Escape" && setNaming(null)}
+            />
+            <button type="submit" className="btn btn--sm btn--primary">
+              Save
+            </button>
+          </form>
+        ))}
     </section>
   );
 }

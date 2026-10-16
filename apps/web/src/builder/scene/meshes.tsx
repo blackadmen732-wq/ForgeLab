@@ -1,4 +1,4 @@
-import type { ThreeEvent } from "@react-three/fiber";
+import { useThree, type ThreeEvent } from "@react-three/fiber";
 import { Edges } from "@react-three/drei";
 import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import {
@@ -100,8 +100,13 @@ function halfExtents(geometry: ComponentGeometry): { x: number; y: number; z: nu
 function rotorShape(
   role: string,
   geometry: ComponentGeometry,
+  type?: string,
 ): { geometry: BufferGeometry; axis: "x" | "y" | "z"; offset: [number, number, number] } | null {
   const h = halfExtents(geometry);
+  if (type === "pump-drive-module") {
+    const coupling = coolantPumpCoupling({ kind: "box", sizeM: { x: 2, y: 2, z: 2 } });
+    return { ...coupling, offset: [0, 0, 0] };
+  }
   if (role === "coolant-pump") return coolantPumpCoupling(geometry);
   if (role === "vacuum-pump") {
     const r = Math.max(0.15, Math.min(h.x, h.z) * 0.6);
@@ -288,6 +293,7 @@ export const ComponentMesh = memo(function ComponentMesh({
   onPick,
   onHover,
 }: ComponentMeshProps) {
+  const invalidate = useThree((s) => s.invalidate);
   const group = useRef<Group>(null);
   const glow = useRef<Mesh>(null);
   const geometry = component.geometry;
@@ -374,7 +380,10 @@ export const ComponentMesh = memo(function ComponentMesh({
   const rotorRef = useRef<Group>(null);
   const lampRef = useRef<Mesh>(null);
   const shakeRef = useRef<Group>(null);
-  const rotor = useMemo(() => rotorShape(role, geometry), [role, geometry]);
+  const rotor = useMemo(
+    () => rotorShape(role, geometry, component.type),
+    [role, geometry, component.type],
+  );
   useLayoutEffect(() => () => rotor?.geometry.dispose(), [rotor]);
   const lamp = useMemo(() => {
     if (!RUNNING_ROLES.has(role)) return null;
@@ -406,6 +415,10 @@ export const ComponentMesh = memo(function ComponentMesh({
     const { positionM: p, rotation: q } = component.state.physical;
     g.position.set(p.x, p.y, p.z);
     g.quaternion.set(q.x, q.y, q.z, q.w);
+    // Demand rendering can defer the next draw after undo/redo. Picking must already
+    // see the new world transform, rather than the previous loose-module position.
+    g.updateWorldMatrix(true, true);
+    invalidate();
     meshRegistry.set(component.id, {
       group: g,
       shake: shakeRef.current!,
@@ -419,7 +432,7 @@ export const ComponentMesh = memo(function ComponentMesh({
     return () => {
       if (meshRegistry.get(component.id)?.group === g) meshRegistry.delete(component.id);
     };
-  }, [component, body, rotor, lamp, extras]);
+  }, [component, body, rotor, lamp, extras, invalidate]);
 
   const handlers = {
     onClick: (event: ThreeEvent<MouseEvent>) => {
@@ -482,7 +495,13 @@ export const ComponentMesh = memo(function ComponentMesh({
           <group
             ref={rotorRef}
             position={rotor.offset}
-            name={role === "coolant-pump" ? "pump-coupling" : "machine-rotor"}
+            name={
+              component.type === "pump-drive-module"
+                ? "pump-kit-coupling"
+                : role === "coolant-pump"
+                  ? "pump-coupling"
+                  : "machine-rotor"
+            }
           >
             <mesh geometry={rotor.geometry} material={body} castShadow />
           </group>
