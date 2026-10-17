@@ -31,6 +31,8 @@ export interface ComponentReading {
   readonly utilization: number;
   readonly supplyFraction: number;
   readonly powerW: number;
+  readonly shaftPowerW?: number;
+  readonly electricalOutputW?: number;
   readonly massFlowKgS: number;
   readonly fieldT: number;
   readonly heatW: number;
@@ -101,6 +103,8 @@ export function readingFromFrame(
       utilization: frameScalar(frame, i, "utilization"),
       supplyFraction: frameScalar(frame, i, "supplyFraction"),
       powerW: frameScalar(frame, i, "electricalPowerW"),
+      shaftPowerW: frameScalar(frame, i, "shaftPowerW"),
+      electricalOutputW: frameScalar(frame, i, "electricalOutputW"),
       massFlowKgS: frameScalar(frame, i, "massFlowKgS"),
       fieldT: frameScalar(frame, i, "fieldT"),
       heatW: frameScalar(frame, i, "heatGeneratedW"),

@@ -27,7 +27,8 @@ import {
   CONNECTION_SNAP_TOLERANCE_M,
   constructionMateTransform,
   isConstructionMate,
-  pumpPart,
+  constructionPart,
+  isConstructionBase,
   createComponent,
   type AssemblyFileV2,
   type Connection,
@@ -1057,7 +1058,7 @@ export class EditorStore {
     previous: PlacementPreview["mate"] = null,
   ) => {
     const c = this.#world.requireComponent(id);
-    if (!pumpPart(c.type) || !this.#snapEnabled || !this.#socketSnap) return null;
+    if (!constructionPart(c.type) || !this.#snapEnabled || !this.#socketSnap) return null;
     const moving: SimulationComponent = {
       ...c,
       transform: makeTransform(position, rotation),
@@ -1112,14 +1113,30 @@ export class EditorStore {
 
   detachConstructionPart = (id: string): void => {
     const c = this.#world.getComponent(id);
-    if (!c || !pumpPart(c.type)) return;
+    if (!c || !constructionPart(c.type)) return;
+    const assembly = this.#world
+      .listBuildAssemblies()
+      .find((a) => Object.values(a.partIds).includes(id));
+    const otherBounds = Object.values(assembly?.partIds ?? {})
+      .filter((other) => other !== id)
+      .flatMap((other) => {
+        const part = this.#world.getComponent(other);
+        return part ? [worldAabb(part.geometry, part.transform)] : [];
+      });
+    const bounds = worldAabb(c.geometry, c.transform);
+    const clearance = otherBounds.length
+      ? Math.max(2.5, Math.max(...otherBounds.map((b) => b.maxM.x)) - bounds.minM.x + 0.5)
+      : 2.5;
     this.#edit(`Detach ${c.label}`, (world) => {
       for (const link of c.connections) if (link.type === "mount") world.disconnect(link.id);
       const group = world.groupOf(id);
       if (group) world.ungroup(group.id);
       world.setTransform(
         id,
-        makeTransform(Vec3Math.add(c.transform.positionM, vec3(2.5, 0, 0)), c.transform.rotation),
+        makeTransform(
+          Vec3Math.add(c.transform.positionM, vec3(clearance, 0, 0)),
+          c.transform.rotation,
+        ),
       );
     });
     this.#selection = [id];
@@ -1495,7 +1512,7 @@ export class EditorStore {
     const moving = new Set(ids);
     for (const id of ids) {
       const c = world.requireComponent(id);
-      if (!pumpPart(c.type)) continue;
+      if (!constructionPart(c.type)) continue;
       const snap = this.#constructionSnap(world, c, moving);
       if (!snap) continue;
       const dq = QuaternionMath.multiply(
@@ -1530,10 +1547,14 @@ export class EditorStore {
       const m = world.requireComponent(id);
       const mt = currentTransform(m);
       for (const socket of m.connectionPoints) {
-        if (pumpPart(m.type) && !(m.type === "pump-base" && socket.id === "base")) continue;
+        if (constructionPart(m.type) && !(isConstructionBase(m.type) && socket.id === "base"))
+          continue;
         const p = localPointToWorld(mt, socket.localPosition);
         const hit = index.near(p, SOCKET_SNAP_RADIUS_M, socket.connectionType).find((h) => {
-          if (pumpPart(m.type) && pumpPart(world.requireComponent(h.socket.componentId).type))
+          if (
+            constructionPart(m.type) &&
+            constructionPart(world.requireComponent(h.socket.componentId).type)
+          )
             return false;
           const target = world
             .requireComponent(h.socket.componentId)
@@ -1598,17 +1619,19 @@ export class EditorStore {
             targetPoint = target.connectionPoints.find((p) => p.id === other.socketId)!;
           if (
             socket.connectionType === "mount" &&
-            (pumpPart(component.type) || pumpPart(target.type)) &&
+            (constructionPart(component.type) || constructionPart(target.type)) &&
             !isConstructionMate(component, socket, target, targetPoint)
           )
             continue;
           if (
-            (pumpPart(component.type) || pumpPart(target.type)) &&
+            (constructionPart(component.type) || constructionPart(target.type)) &&
             socket.connectionType === "structural" &&
             !(
-              (component.type === "pump-base" && socket.id === "base" && !pumpPart(target.type)) ||
-              (!pumpPart(component.type) &&
-                target.type === "pump-base" &&
+              (isConstructionBase(component.type) &&
+                socket.id === "base" &&
+                !constructionPart(target.type)) ||
+              (!constructionPart(component.type) &&
+                isConstructionBase(target.type) &&
                 targetPoint.id === "base")
             )
           )

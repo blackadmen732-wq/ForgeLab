@@ -1,0 +1,38 @@
+{
+  "families": [
+    {
+      "id": "generator-kit-v1",
+      "looseInactive": true,
+      "snappedComplete": true,
+      "detachUndo": true,
+      "draftReload": true,
+      "independentReusableCopy": true
+    },
+    {
+      "id": "steam-turbine-kit-v1",
+      "looseInactive": true,
+      "snappedComplete": true,
+      "detachUndo": true,
+      "draftReload": true,
+      "independentReusableCopy": true
+    }
+  ],
+  "operation": {
+    "grossElectricW": 31017285.406285487,
+    "rotors": [
+      {
+        "type": "generator-rotor",
+        "shaftPowerW": 0,
+        "electricalOutputW": 31017285.406285487,
+        "activity": 1
+      },
+      {
+        "type": "turbine-rotor",
+        "shaftPowerW": 31489629.85409694,
+        "electricalOutputW": 0,
+        "activity": 1
+      }
+    ]
+  },
+  "errors": []
+}

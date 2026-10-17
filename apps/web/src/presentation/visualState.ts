@@ -32,6 +32,8 @@ export const ACTIVE_ROLES: ReadonlySet<PlantRole> = new Set([
 export function rawActivity(c: ComponentReading, r: PlantReading): number {
   if (c.disabled) return 0;
   if (c.type === "pump-casing") return c.massFlowKgS;
+  if (c.type === "generator-rotor") return c.electricalOutputW ?? 0;
+  if (c.type === "turbine-rotor") return c.shaftPowerW ?? 0;
   switch (c.role) {
     case "coolant-pump":
       return c.massFlowKgS;

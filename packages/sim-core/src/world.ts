@@ -1,7 +1,8 @@
 import {
-  pumpPart,
+  constructionPart,
+  constructionRecipeForPart,
+  isConstructionBase,
   isConstructionMate,
-  PUMP_CONSTRUCTION_RECIPE,
   inspectConstruction,
   resolveConstruction,
   type BuildAssembly,
@@ -139,7 +140,7 @@ export class SimulationWorld {
   }
   /** Reconcile recognized mount graphs, independently of visual groups. */
   reconcileBuildAssemblies(): void {
-    const parts = this.listComponents().filter((c) => pumpPart(c.type));
+    const parts = this.listComponents().filter((c) => constructionPart(c.type));
     const links = new Map<string, string[]>();
     for (const connection of this.listConnections()) {
       if (connection.type !== "mount") continue;
@@ -151,7 +152,8 @@ export class SimulationWorld {
       links.set(a.id, [...(links.get(a.id) ?? []), b.id]);
       links.set(b.id, [...(links.get(b.id) ?? []), a.id]);
     }
-    for (const base of parts.filter((c) => c.type === "pump-base")) {
+    for (const base of parts.filter((c) => isConstructionBase(c.type))) {
+      const recipe = constructionRecipeForPart(base.type)!;
       const reachable = new Set<string>(),
         pending = [base.id];
       while (pending.length) {
@@ -159,25 +161,25 @@ export class SimulationWorld {
         if (reachable.has(id)) continue;
         reachable.add(id);
         for (const other of links.get(id) ?? [])
-          if (!reachable.has(other) && this.requireComponent(other).type !== "pump-base")
+          if (!reachable.has(other) && !isConstructionBase(this.requireComponent(other).type))
             pending.push(other);
       }
       const existing = this.listBuildAssemblies().find(
         (a) =>
-          a.recipeId === PUMP_CONSTRUCTION_RECIPE.id &&
+          a.recipeId === recipe.id &&
           (a.partIds["base"] === base.id ||
             (a.partIds["base"] === undefined &&
               Object.values(a.partIds).some((id) => reachable.has(id)))),
       );
       const partIds: Record<string, string> = { ...existing?.partIds, base: base.id };
       for (const id of reachable) {
-        const p = pumpPart(this.requireComponent(id).type)!;
+        const p = constructionPart(this.requireComponent(id).type)!;
         partIds[p.key] = id;
       }
       if (!existing || JSON.stringify(existing.partIds) !== JSON.stringify(partIds))
         this.setBuildAssembly({
           id: existing?.id ?? this.nextId("construction"),
-          recipeId: PUMP_CONSTRUCTION_RECIPE.id,
+          recipeId: recipe.id,
           partIds,
         });
     }
@@ -668,7 +670,10 @@ export class SimulationWorld {
     // invalidate a complete assembly without a design edit, so it is tracked separately.
     const broken = assemblies.length
       ? components
-          .filter((c) => pumpPart(c.type) && (c.state.plant.disabled || c.state.structural.failed))
+          .filter(
+            (c) =>
+              constructionPart(c.type) && (c.state.plant.disabled || c.state.structural.failed),
+          )
           .map((c) => c.id)
           .join("\0")
       : "";
@@ -701,15 +706,16 @@ export class SimulationWorld {
       const c = this.#components.get(id),
         state = result.states.get(modelId);
       if (c && state) {
-        const key = pumpPart(c.type)?.key;
+        const key = constructionPart(c.type)?.key;
+        const recipe = constructionRecipeForPart(c.type)!;
         const share = c.massKg / modelMass.get(modelId)!;
         this.#components.set(
           id,
           withPlantState(c, {
             ...state,
-            electrical: key === "motor" ? state.electrical : null,
-            coolant: key === "casing" ? state.coolant : null,
-            outputs: key === "casing" ? state.outputs : {},
+            electrical: key === recipe.readouts.electrical ? state.electrical : null,
+            coolant: key === recipe.readouts.coolant ? state.coolant : null,
+            outputs: key === recipe.readouts.outputs ? state.outputs : {},
             thermal: {
               ...state.thermal,
               heatGeneratedW: state.thermal.heatGeneratedW * share,
@@ -732,7 +738,7 @@ export class SimulationWorld {
                 ...c.state.plant,
                 warnings: [
                   ...c.state.plant.warnings,
-                  `Pump ${status.state}: ${status.issues.join(" ")}`,
+                  `${status.name} ${status.state}: ${status.issues.join(" ")}`,
                 ],
               }),
             );
@@ -744,7 +750,7 @@ export class SimulationWorld {
       ...result.diagnostics,
       ...resolved.statuses
         .filter((s) => s.state !== "complete")
-        .map((s) => `${s.name}: ${s.state}; pump inactive. ${s.issues.join(" ")}`),
+        .map((s) => `${s.name}: ${s.state}; machine inactive. ${s.issues.join(" ")}`),
     ]);
   }
 

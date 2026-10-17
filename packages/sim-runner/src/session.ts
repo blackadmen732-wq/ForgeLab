@@ -54,6 +54,8 @@ export const FRAME_FIELDS = Object.freeze([
   "heatReleaseW", // its fire's heat release rate, W (0 when not burning)
   "fuelFraction", // burnable fuel left ÷ fuel at start, −1 when nothing burns
   "burning", // 1 while its fuel burns
+  "shaftPowerW", // published mechanical output, never a presentation RPM estimate
+  "electricalOutputW", // generator output, including stock construction machines
 ] as const);
 export type FrameField = (typeof FRAME_FIELDS)[number];
 const FIELD_COUNT = FRAME_FIELDS.length;
@@ -277,6 +279,8 @@ export class SimulationSession {
           ? -1
           : combustion.fuelRemainingKg / combustion.fuelKg;
       scalars[o + 23] = combustion?.burning === true ? 1 : 0;
+      scalars[o + 24] = plant.outputs["shaftPowerW"] ?? 0;
+      scalars[o + 25] = plant.outputs["electricalOutputW"] ?? 0;
       if (plant.vessel !== null) vessels[component.id] = plant.vessel;
     });
     const newFailures = snapshot.failures.slice(this.#failuresSent);

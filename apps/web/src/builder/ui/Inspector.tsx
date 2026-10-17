@@ -16,7 +16,8 @@ import {
 import {
   ROLE_PARAMETERS,
   PUMP_CONSTRUCTION_RECIPE,
-  pumpPart,
+  constructionRecipe,
+  constructionPart,
   buildTopology,
   type ParameterSpec,
   type PlantSummary,
@@ -1629,6 +1630,28 @@ function ConstructionReadouts({ componentId, motorId }: { componentId: string; m
   );
 }
 
+function PowertrainReadouts({
+  componentId,
+  generator,
+}: {
+  componentId: string;
+  generator: boolean;
+}) {
+  const store = useEditorStore();
+  const mode = useEditor((v) => v.mode);
+  const snapshot = useEditor((v) => v.snapshot);
+  useSim((s) => s.frameNumber);
+  const field = generator ? "electricalOutputW" : "shaftPowerW";
+  const c = snapshot.components.find((part) => part.id === componentId);
+  const frame = mode === "simulate" ? store.frame : null;
+  const index = frame ? store.frameIndexOf(componentId) : undefined;
+  const power =
+    frame && index !== undefined
+      ? frameScalar(frame, index, field)
+      : (c?.state.plant.outputs[field] ?? 0);
+  return <Row label={generator ? "Electrical output" : "Shaft output"}>{watts(power)}</Row>;
+}
+
 function ConstructionPanel() {
   const store = useEditorStore();
   const snapshot = useEditor((v) => v.snapshot);
@@ -1640,83 +1663,115 @@ function ConstructionPanel() {
   if (!statuses.length) return null;
   return (
     <div className="construction-panel">
-      {statuses.map((s) => (
-        <Section key={s.assembly.id} title={s.name}>
-          <p className={`construction-status construction-status--${s.state}`} role="status">
-            {s.state === "complete"
-              ? "Complete · ready to connect"
-              : `${titleCase(s.state)} · pump inactive`}
-          </p>
-          <p className="dim">
-            Stock pump recipe · existing lumped physics model. Internal construction is schematic.
-          </p>
-          {PUMP_CONSTRUCTION_RECIPE.parts.map((p) => (
-            <Row key={p.key} label={p.name}>
-              {snapshot.components.some((c) => c.id === s.assembly.partIds[p.key])
-                ? "Present"
-                : "Missing"}
-            </Row>
-          ))}
-          {s.issues.length > 0 && (
-            <ul className="insp-warnings">
-              {s.issues.map((issue, i) => (
-                <li key={i}>{issue}</li>
-              ))}
-            </ul>
-          )}
-          {s.state === "complete" && s.assembly.partIds["casing"] && (
-            <ConstructionReadouts
-              componentId={s.assembly.partIds["casing"]!}
-              motorId={s.assembly.partIds["motor"]!}
-            />
-          )}
-          <div className="construction-actions">
-            <button
-              type="button"
-              className="btn btn--sm"
-              onClick={() => store.select(Object.values(s.assembly.partIds))}
-            >
-              Select assembly
-            </button>
-            {mode === "build" && (
+      {statuses.map((s) => {
+        const recipe = constructionRecipe(s.assembly.recipeId);
+        return (
+          <Section key={s.assembly.id} title={s.name}>
+            <p className={`construction-status construction-status--${s.state}`} role="status">
+              {s.state === "complete"
+                ? "Complete · ready to connect"
+                : `${titleCase(s.state)} · machine inactive`}
+            </p>
+            <p className="dim">
+              Stock machine construction · existing physical model. Internal geometry is schematic.
+            </p>
+            {recipe?.parts.map((p, index) => {
+              const id = s.assembly.partIds[p.key];
+              const present = snapshot.components.some((c) => c.id === id);
+              return (
+                <button
+                  type="button"
+                  key={p.key}
+                  className="construction-module"
+                  disabled={!present}
+                  onClick={() => id && store.focusComponent(id)}
+                >
+                  <span className="construction-module__number">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span>
+                    <strong>{p.name}</strong>
+                    <small>
+                      {p.purpose ?? "Mate the keyed interfaces to assemble this module."}
+                    </small>
+                  </span>
+                  <span className="construction-module__state">
+                    {present ? "Focus" : "Missing"}
+                  </span>
+                </button>
+              );
+            })}
+            {s.issues.length > 0 && (
+              <ul className="insp-warnings">
+                {s.issues.map((issue, i) => (
+                  <li key={i}>{issue}</li>
+                ))}
+              </ul>
+            )}
+            {s.state === "complete" &&
+              s.assembly.recipeId === PUMP_CONSTRUCTION_RECIPE.id &&
+              s.assembly.partIds["casing"] && (
+                <ConstructionReadouts
+                  componentId={s.assembly.partIds["casing"]!}
+                  motorId={s.assembly.partIds["motor"]!}
+                />
+              )}
+            {s.state === "complete" && recipe && recipe.id !== PUMP_CONSTRUCTION_RECIPE.id && (
+              <PowertrainReadouts
+                componentId={s.assembly.partIds[recipe.readouts.outputs]!}
+                generator={recipe.role === "generator"}
+              />
+            )}
+            <div className="construction-actions">
               <button
                 type="button"
                 className="btn btn--sm"
-                onClick={() => {
-                  store.select(Object.values(s.assembly.partIds));
-                  store.groupSelected(s.name);
-                }}
+                onClick={() => store.select(Object.values(s.assembly.partIds))}
               >
-                Group assembly
+                Select assembly
               </button>
-            )}
-            {mode === "build" &&
-              selected.length === 1 &&
-              pumpPart(snapshot.components.find((c) => c.id === selected[0])?.type ?? "") && (
+              {mode === "build" && (
                 <button
                   type="button"
                   className="btn btn--sm"
-                  onClick={() => store.detachConstructionPart(selected[0]!)}
+                  onClick={() => {
+                    store.select(Object.values(s.assembly.partIds));
+                    store.groupSelected(s.name);
+                  }}
                 >
-                  Detach module
+                  Group assembly
                 </button>
               )}
-          </div>
-          <details>
-            <summary>External interfaces</summary>
-            {Object.entries(s.externalPorts).map(([name, e]) => (
-              <Row key={name} label={name}>
-                {snapshot.components.find((c) => c.id === e.componentId)?.label} /{" "}
-                {e.connectionPointId}
-              </Row>
-            ))}
-          </details>
-          <p className="dim">
-            Move modules onto matching mounts. Alt-click picks a part inside a group; Escape cancels
-            placement.
-          </p>
-        </Section>
-      ))}
+              {mode === "build" &&
+                selected.length === 1 &&
+                constructionPart(
+                  snapshot.components.find((c) => c.id === selected[0])?.type ?? "",
+                ) && (
+                  <button
+                    type="button"
+                    className="btn btn--sm"
+                    onClick={() => store.detachConstructionPart(selected[0]!)}
+                  >
+                    Detach module
+                  </button>
+                )}
+            </div>
+            <details>
+              <summary>External interfaces</summary>
+              {Object.entries(s.externalPorts).map(([name, e]) => (
+                <Row key={name} label={name}>
+                  {snapshot.components.find((c) => c.id === e.componentId)?.label} /{" "}
+                  {e.connectionPointId}
+                </Row>
+              ))}
+            </details>
+            <p className="dim">
+              Move modules onto matching mounts. Alt-click picks a part inside a group; Escape
+              cancels placement.
+            </p>
+          </Section>
+        );
+      })}
     </div>
   );
 }

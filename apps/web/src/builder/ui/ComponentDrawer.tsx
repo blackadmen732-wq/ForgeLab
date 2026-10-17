@@ -2,11 +2,12 @@ import {
   COMPONENT_CATEGORIES,
   COMPONENT_DEFINITIONS,
   KITS,
+  ASSEMBLY_RECIPES,
   type ComponentDefinition,
 } from "@forgelab/reactor-components";
-import { pumpPart, type AssemblyFileV2, extractAssembly } from "@forgelab/sim-core";
+import { constructionPart, type AssemblyFileV2, extractAssembly } from "@forgelab/sim-core";
 import { getMaterial } from "@forgelab/materials";
-import { Boxes, LayoutTemplate, Save, Search, Trash2, X } from "lucide-react";
+import { ArrowUpRight, Boxes, Cog, LayoutTemplate, Save, Search, Trash2, X } from "lucide-react";
 import { useMemo, useState, useSyncExternalStore } from "react";
 import { assemblyLibrary } from "../assemblyLibrary.js";
 import { metres } from "../../lib/format.js";
@@ -38,11 +39,11 @@ function PartCard({ definition }: { definition: ComponentDefinition }) {
       onDragStart={(e) => {
         e.dataTransfer.setData("application/x-forgelab-part", definition.type);
         e.dataTransfer.effectAllowed = "copy";
-        if (pumpPart(definition.type)) store.beginPlacement(definition.type);
+        if (constructionPart(definition.type)) store.beginPlacement(definition.type);
       }}
       onDragEnd={() => store.cancelPlacement()}
       onClick={() =>
-        pumpPart(definition.type)
+        constructionPart(definition.type)
           ? store.beginPlacement(definition.type)
           : store.addPart(definition.type)
       }
@@ -51,6 +52,11 @@ function PartCard({ definition }: { definition: ComponentDefinition }) {
       <PartIcon role={definition.role} />
       <span className="part__text">
         <span className="part__name">{definition.name}</span>
+        {constructionPart(definition.type) && (
+          <span className="part__purpose">
+            {constructionPart(definition.type)?.purpose ?? definition.description.split(".")[0]}
+          </span>
+        )}
         <span className="part__key">{definition.keyProperty}</span>
         <span className="part__meta">
           {metres(size.x)} × {metres(size.y)} × {metres(size.z)} ·{" "}
@@ -144,6 +150,7 @@ export function ComponentDrawer() {
         </div>
       )}
       <div className="drawer__list">
+        {tab === "parts" && query === "" && category === null && <MachineWorkshop />}
         {tab === "parts" && groups.length === 0 && (
           <p className="dim drawer__empty">No parts match “{query}”.</p>
         )}
@@ -173,6 +180,84 @@ export function ComponentDrawer() {
         </section>
       </div>
     </aside>
+  );
+}
+
+/** Entry into actual loose-module construction, not a preassembled showcase or tutorial movie. */
+function MachineWorkshop() {
+  const store = useEditorStore();
+  const building = useEditor((v) => v.mode === "build");
+  const recipes = [...ASSEMBLY_RECIPES].sort(
+    (a, b) => Number(a.resultType === "coolant-pump") - Number(b.resultType === "coolant-pump"),
+  );
+  return (
+    <section className="machine-workshop" aria-label="Build machines from modules">
+      <div className="machine-workshop__heading">
+        <Cog aria-hidden="true" />
+        <div>
+          <h3>Build a machine</h3>
+          <p>Place the pieces. Mate the mounts. Connect your plant.</p>
+        </div>
+      </div>
+      {recipes.map((r) => (
+        <article key={r.id} className={`machine-kit machine-kit--${r.resultType}`}>
+          <div className="machine-kit__title">
+            <strong>{r.name.replace("Modular ", "")}</strong>
+            <span>{r.parts.length} modules</span>
+          </div>
+          <div className="machine-kit__diagram" aria-hidden="true">
+            {r.parts.map((p, i) => (
+              <span key={p.key} className={`machine-kit__block machine-kit__block--${p.key}`}>
+                <b>{String(i + 1).padStart(2, "0")}</b>
+                {p.key === "casing"
+                  ? r.resultType === "generator"
+                    ? "Stator"
+                    : "Casing"
+                  : p.key === "base"
+                    ? "Bedplate"
+                    : p.key === "drive"
+                      ? "Drive"
+                      : p.key === "chest"
+                        ? "Steam inlet"
+                        : p.key === "terminals"
+                          ? "Terminals"
+                          : p.key === "motor"
+                            ? "Motor"
+                            : "Rotor"}
+              </span>
+            ))}
+          </div>
+          <p>
+            {r.resultType === "generator"
+              ? "Shaft motion → electrical power"
+              : r.resultType === "steam-turbine"
+                ? "Steam heat → shaft power"
+                : "Electrical power → coolant flow"}
+          </p>
+          <button
+            type="button"
+            className="btn btn--sm machine-kit__start"
+            disabled={!building}
+            onClick={() => {
+              const file = kitFile(r.id);
+              if (file && store.placeAssembly(file, r.name)) store.frameSelection();
+            }}
+          >
+            Build{" "}
+            {r.resultType === "generator"
+              ? "generator"
+              : r.resultType === "steam-turbine"
+                ? "turbine"
+                : "pump"}
+            <ArrowUpRight aria-hidden="true" />
+          </button>
+        </article>
+      ))}
+      <p className="machine-workshop__note">
+        Loose modules stay inactive until their construction is complete. Finished machines remain
+        below.
+      </p>
+    </section>
   );
 }
 

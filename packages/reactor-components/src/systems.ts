@@ -1,4 +1,4 @@
-import type { ConnectionType, PlantRole } from "@forgelab/sim-core";
+import { constructionRecipeForPart, type ConnectionType, type PlantRole } from "@forgelab/sim-core";
 
 /**
  * Plant systems: how an engineer groups a plant's hardware (structure, the reactor core,
@@ -74,10 +74,12 @@ const BY_ROLE: Readonly<Record<PlantRole, PlantSystem>> = {
  * cryogenics; a gas-cooled loop's warm helium is ordinary cooling.
  */
 export function plantSystemOf(part: {
+  readonly type?: string;
   readonly role: PlantRole;
   readonly parameters: Readonly<Record<string, unknown>>;
 }): PlantSystem {
-  const system = BY_ROLE[part.role];
+  const role = part.type ? (constructionRecipeForPart(part.type)?.role ?? part.role) : part.role;
+  const system = BY_ROLE[role];
   if (system === "cooling") {
     const fluid = part.parameters["fluid"];
     if (typeof fluid === "string" && fluid.startsWith("cryogenic")) return "cryogenics";

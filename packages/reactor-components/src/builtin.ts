@@ -1,4 +1,9 @@
-import { PUMP_CONSTRUCTION_RECIPE } from "@forgelab/sim-core";
+import {
+  PUMP_CONSTRUCTION_RECIPE,
+  GENERATOR_CONSTRUCTION_RECIPE,
+  TURBINE_CONSTRUCTION_RECIPE,
+  type ConstructionRecipe,
+} from "@forgelab/sim-core";
 import { MaterialIds, type MaterialId } from "@forgelab/materials";
 import { type Vec3, Vec3Math, vec3 } from "@forgelab/shared";
 import {
@@ -1336,6 +1341,75 @@ export const INTERLOCK = define({
  * what it does is fail thermally — self-heating, runaway, a vent jet fire for NMC or
  * unburned gas for LFP — from heat that reaches it. See docs/HAZARDS.md.
  */
+
+function stockMachineParts(
+  recipe: ConstructionRecipe,
+  finished: ComponentDefinition,
+): ComponentDefinition[] {
+  const full = finished.createSpec({ id: "source" });
+  return recipe.parts.map((part) =>
+    define({
+      type: part.type,
+      name: part.name,
+      description: `${part.purpose} Mate the stock modules to build ${recipe.name.toLowerCase()}.`,
+      category: "Power conversion",
+      role: "structure",
+      material: recipe.materialId,
+      dimensions: [],
+      shape: () => {
+        const sockets: SocketTemplate[] = [];
+        for (const [name, [owner, sourceId]] of Object.entries(recipe.externalPorts)) {
+          if (owner !== part.key) continue;
+          const source = full.connectionPoints!.find((p) => p.id === sourceId)!;
+          sockets.push({
+            ...source,
+            id: name,
+            localPosition: Vec3Math.subtract(source.localPosition, part.offset),
+            derivedCapacity: source.connectionType === "structural",
+          });
+        }
+        for (const joint of recipe.joints) {
+          const mine =
+            joint.from[0] === part.key ? joint.from : joint.to[0] === part.key ? joint.to : null;
+          if (mine)
+            sockets.push(
+              mount(
+                mine[1],
+                Vec3Math.subtract(joint.position, part.offset),
+                mine === joint.from ? joint.direction : Vec3Math.scale(joint.direction, -1),
+              ),
+            );
+        }
+        if (!sockets.some((p) => p.connectionType === "structural"))
+          sockets.push(structural("support", vec3(0, -part.size.y / 2, 0), DOWN));
+        return { geometry: boxGeometry(part.size, 0.02), sockets };
+      },
+      product: {
+        summary: `${part.purpose} Stock ${recipe.resultType} construction; internal geometry is schematic.`,
+        internals: [
+          {
+            id: "module-body",
+            name: part.name,
+            kind: "structure",
+            substanceId: recipe.materialId,
+            purpose: part.purpose ?? "Stock construction module.",
+          },
+        ],
+        internalsSetMass: false,
+        capabilities: ["structural"],
+        ratings: () => [{ label: "Construction", value: recipe.name }],
+        failureModes: [],
+        audio: "none",
+        visual: "block",
+        animations: [],
+      },
+      dimensionsOf: () => ({}),
+      keyProperty: `${recipe.name} · ${part.key === "rotor" ? "shaft module" : part.key}`,
+    }),
+  );
+}
+export const GENERATOR_PARTS = stockMachineParts(GENERATOR_CONSTRUCTION_RECIPE, GENERATOR);
+export const TURBINE_PARTS = stockMachineParts(TURBINE_CONSTRUCTION_RECIPE, STEAM_TURBINE);
 function batteryModule(chemistry: "nmc" | "lfp", label: string) {
   return define({
     type: `battery-module-${chemistry}`,
@@ -1582,6 +1656,8 @@ export const COMPONENT_DEFINITIONS: readonly ComponentDefinition[] = Object.free
   STEAM_GENERATOR,
   STEAM_TURBINE,
   GENERATOR,
+  ...GENERATOR_PARTS,
+  ...TURBINE_PARTS,
   SENSOR,
   INTERLOCK,
 ]);

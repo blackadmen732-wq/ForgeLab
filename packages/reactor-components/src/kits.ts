@@ -1,4 +1,9 @@
-import { PUMP_CONSTRUCTION_RECIPE, SimulationWorld } from "@forgelab/sim-core";
+import {
+  PUMP_CONSTRUCTION_RECIPE,
+  GENERATOR_CONSTRUCTION_RECIPE,
+  TURBINE_CONSTRUCTION_RECIPE,
+  SimulationWorld,
+} from "@forgelab/sim-core";
 import { vec3 } from "@forgelab/shared";
 import { placePart } from "./designs.js";
 
@@ -41,6 +46,33 @@ export function buildBlanketModule(world: SimulationWorld, prefix = ""): void {
 }
 
 export const KITS: readonly Kit[] = Object.freeze([
+  ...[GENERATOR_CONSTRUCTION_RECIPE, TURBINE_CONSTRUCTION_RECIPE].map((recipe): Kit => ({
+    id: recipe.id,
+    name: recipe.resultType === "generator" ? "Generator Kit" : "Steam Turbine Kit",
+    description: `Four loose modules: ${recipe.parts.map((p) => p.name.toLowerCase()).join(", ")}. Assemble matching mounts; incomplete machines remain inactive.`,
+    build: () =>
+      kit(recipe.name, (w) => {
+        const partIds: Record<string, string> = {};
+        // A compact two-by-two work area, with enough space for each real module envelope.
+        recipe.parts.forEach((p, i) => {
+          const id = `${recipe.resultType}-${p.key}`;
+          partIds[p.key] = id;
+          placePart(w, p.type, {
+            id,
+            position: vec3(
+              (i % 2 === 0 ? -1 : 1) * (recipe.size.x / 2 + 1),
+              p.size.y / 2,
+              Math.floor(i / 2) * 5,
+            ),
+          });
+        });
+        w.setBuildAssembly({
+          id: `${recipe.resultType}-construction`,
+          recipeId: recipe.id,
+          partIds,
+        });
+      }),
+  })),
   {
     id: "coolant-pump-kit-v1",
     name: "Coolant Pump Kit",

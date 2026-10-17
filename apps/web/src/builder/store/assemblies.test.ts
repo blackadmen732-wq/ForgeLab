@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { vec3 } from "@forgelab/shared";
-import { extractAssembly } from "@forgelab/sim-core";
+import { extractAssembly, constructionRecipe, worldAabb } from "@forgelab/sim-core";
 import { findKit } from "@forgelab/reactor-components";
 import { EditorStore } from "./editor.js";
 
@@ -15,6 +15,38 @@ function kitFile(id: string) {
 }
 
 describe("assemblies in the builder", () => {
+  for (const recipeId of ["generator-kit-v1", "steam-turbine-kit-v1"]) {
+    it(`${recipeId}: snapping forms actual construction and detaching a long rotor clears the machine`, () => {
+      const store = new EditorStore();
+      store.placeAssembly(kitFile(recipeId));
+      const recipe = constructionRecipe(recipeId)!;
+      const a = store.world.listBuildAssemblies()[0]!;
+      store.setPosition(a.partIds["base"]!, vec3(0, 2 + recipe.parts[0]!.offset.y, 0));
+      for (const p of recipe.parts.slice(1)) {
+        const c = store.world.requireComponent(a.partIds[p.key]!);
+        store.moveComponents([
+          {
+            id: c.id,
+            position: vec3(p.offset.x + 0.04, 2 + p.offset.y, p.offset.z),
+            rotation: c.transform.rotation,
+          },
+        ]);
+      }
+      expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+      const before = store.designHash();
+      store.detachConstructionPart(a.partIds["rotor"]!);
+      expect(store.world.constructionStatus()[0]!.state).toBe("incomplete");
+      const rotor = store.world.requireComponent(a.partIds["rotor"]!);
+      const box = worldAabb(rotor.geometry, rotor.transform);
+      for (const p of recipe.parts.filter((p) => p.key !== "rotor")) {
+        const c = store.world.requireComponent(a.partIds[p.key]!);
+        expect(box.minM.x).toBeGreaterThan(worldAabb(c.geometry, c.transform).maxM.x);
+      }
+      store.undo();
+      expect(store.designHash()).toBe(before);
+      expect(store.world.constructionStatus()[0]!.state).toBe("complete");
+    });
+  }
   it("places a kit grouped and selected, as one undo step", () => {
     const store = new EditorStore();
     expect(store.placeAssembly(kitFile("blanket-module"), "Blanket Module", vec3(5, 0, 5))).toBe(

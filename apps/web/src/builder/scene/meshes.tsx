@@ -413,14 +413,14 @@ export const ComponentMesh = memo(function ComponentMesh({
       body,
       glow: glow.current,
       rotor: rotorRef.current,
-      rotorAxis: rotor?.axis ?? "y",
+      rotorAxis: model?.rotating ? "x" : (rotor?.axis ?? "y"),
       lamp: lampRef.current,
       extras: [extras.trim, extras.accent],
     });
     return () => {
       if (meshRegistry.get(component.id)?.group === g) meshRegistry.delete(component.id);
     };
-  }, [component, body, rotor, lamp, extras, invalidate]);
+  }, [component, body, rotor, model, lamp, extras, invalidate]);
 
   const handlers = {
     onClick: (event: ThreeEvent<MouseEvent>) => {
@@ -453,7 +453,23 @@ export const ComponentMesh = memo(function ComponentMesh({
             {selected && <Edges threshold={30} color="#6fd3d1" />}
           </mesh>
         )}
-        {model?.main && (
+        {model?.rotating && (
+          <group ref={rotorRef} name="construction-rotor">
+            {model.main && (
+              <mesh geometry={model.main} material={body} castShadow receiveShadow {...handlers} />
+            )}
+            {model.accent && (
+              <mesh
+                geometry={model.accent}
+                material={extras.accent}
+                castShadow
+                receiveShadow
+                {...handlers}
+              />
+            )}
+          </group>
+        )}
+        {model?.main && !model.rotating && (
           <mesh geometry={model.main} material={body} castShadow receiveShadow {...handlers} />
         )}
         {model?.trim && (
@@ -465,7 +481,7 @@ export const ComponentMesh = memo(function ComponentMesh({
             {...handlers}
           />
         )}
-        {model?.accent && (
+        {model?.accent && !model.rotating && (
           <mesh
             geometry={model.accent}
             material={extras.accent}

@@ -11,6 +11,7 @@ import { box, cyl, ring, merge, halfExtents, type V } from "./machineGeometry.js
 import { coolantPumpPartModel } from "./coolantPumpParts.js";
 import { buildCoolantPump } from "./coolantPump.js";
 import { vesselModel } from "./vessels.js";
+import { buildPowertrain, powertrainPartModel } from "./powertrain.js";
 import {
   type ArcGeometry,
   type ComponentGeometry,
@@ -35,6 +36,8 @@ export interface MachineModel {
   readonly accent: BufferGeometry | null;
   readonly accentColor: string;
   readonly replacesEnvelope: boolean;
+  /** A construction rotor's main/accent geometry turns; its bearing trim stays still. */
+  readonly rotating?: boolean;
 }
 
 export { box, cyl, ring, merge, halfExtents } from "./machineGeometry.js";
@@ -434,6 +437,10 @@ export function machineModel(
 ): MachineModel | null {
   const pumpPartModel = coolantPumpPartModel(type, points);
   if (pumpPartModel) return pumpPartModel;
+  const powertrain = powertrainPartModel(type, points);
+  if (powertrain) return powertrain;
+  if (type === "generator" || type === "steam-turbine")
+    return buildPowertrain(geometry, points, type);
   if (type === "coolant-pump") return buildCoolantPump(geometry, points);
   const vessel = vesselModel(type, geometry, points);
   if (vessel !== null) return vessel;

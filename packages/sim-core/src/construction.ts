@@ -11,6 +11,16 @@ import { type Connection, type ConnectionEndpoint, type ConnectionPoint } from "
 import { boxGeometry } from "./geometry.js";
 import { resolveParameters } from "./plant/roles.js";
 import { checkPortCompatibility } from "./ports.js";
+import {
+  GENERATOR_CONSTRUCTION_RECIPE,
+  TURBINE_CONSTRUCTION_RECIPE,
+  type ConstructionRecipe,
+} from "./powertrainConstruction.js";
+export {
+  GENERATOR_CONSTRUCTION_RECIPE,
+  TURBINE_CONSTRUCTION_RECIPE,
+  type ConstructionRecipe,
+} from "./powertrainConstruction.js";
 
 /** Stock modules supported by the existing lumped pump model. Dimensions/offsets are SI.
  * This is a model capability, not a second catalogue or a subcomponent performance solver.
@@ -76,8 +86,33 @@ export interface ConstructionStatus {
   readonly issues: readonly string[];
   readonly externalPorts: Readonly<Record<string, ConnectionEndpoint>>;
 }
-const recipe = PUMP_CONSTRUCTION_RECIPE;
-export const pumpPart = (type: string) => recipe.parts.find((p) => p.type === type);
+export const CONSTRUCTION_RECIPES: readonly ConstructionRecipe[] = [
+  {
+    ...PUMP_CONSTRUCTION_RECIPE,
+    role: "coolant-pump",
+    materialId: "stainless-steel",
+    size: vec3(2, 2, 2),
+    thicknessM: 0.04,
+    parameters: { ratedMassFlowKgS: 4000, ratedHeadM: 120 },
+    modelPart: "casing",
+    readouts: { electrical: "motor", coolant: "casing", outputs: "casing" },
+    joints: PUMP_CONSTRUCTION_RECIPE.joints.map((j) => ({
+      ...j,
+      position: vec3(0, j.from[0] === "base" ? -0.75 : j.from[0] === "casing" ? -0.235 : 0.035, 0),
+      direction: vec3(0, 1, 0),
+    })),
+  },
+  GENERATOR_CONSTRUCTION_RECIPE,
+  TURBINE_CONSTRUCTION_RECIPE,
+];
+export const constructionRecipe = (id: string) => CONSTRUCTION_RECIPES.find((r) => r.id === id);
+export const constructionRecipeForPart = (type: string) =>
+  CONSTRUCTION_RECIPES.find((r) => r.parts.some((p) => p.type === type));
+export const constructionPart = (type: string) =>
+  constructionRecipeForPart(type)?.parts.find((p) => p.type === type);
+export const isConstructionBase = (type: string) => constructionPart(type)?.key === "base";
+export const pumpPart = (type: string) =>
+  PUMP_CONSTRUCTION_RECIPE.parts.find((p) => p.type === type);
 const endpointKey = (e: ConnectionEndpoint) => `${e.componentId}/${e.connectionPointId}`;
 const point = (c: SimulationComponent, id: string) => c.connectionPoints.find((p) => p.id === id);
 
@@ -88,8 +123,10 @@ export function isConstructionMate(
   b: SimulationComponent,
   pb: ConnectionPoint,
 ): boolean {
-  const ka = pumpPart(a.type)?.key,
-    kb = pumpPart(b.type)?.key;
+  const recipe = constructionRecipeForPart(a.type);
+  if (!recipe || recipe !== constructionRecipeForPart(b.type)) return false;
+  const ka = constructionPart(a.type)?.key,
+    kb = constructionPart(b.type)?.key;
   return recipe.joints.some(
     (j) =>
       (j.from[0] === ka && j.from[1] === pa.id && j.to[0] === kb && j.to[1] === pb.id) ||
@@ -125,9 +162,10 @@ export function inspectConstruction(
   for (const a of assemblies)
     for (const id of Object.values(a.partIds)) ownership.set(id, (ownership.get(id) ?? 0) + 1);
   return assemblies.map((assembly) => {
+    const recipe = constructionRecipe(assembly.recipeId);
     const issues: string[] = [];
     const externalPorts: Record<string, ConnectionEndpoint> = {};
-    if (assembly.recipeId !== recipe.id)
+    if (!recipe)
       return {
         assembly,
         name: "Unsupported assembly",
@@ -168,15 +206,16 @@ export function inspectConstruction(
       if (
         c.type !== p.type ||
         c.role !== "structure" ||
-        c.materialId !== "stainless-steel" ||
+        c.materialId !== recipe.materialId ||
         c.composition.length > 0 ||
         c.geometry.kind !== "box" ||
         Vec3Math.distance(c.geometry.sizeM, p.size) > 1e-8
       ) {
         unsupported = true;
-        issues.push(`${p.name}: this module variant is not supported by the stock pump model.`);
+        issues.push(`${p.name}: this module variant is not supported by the stock machine model.`);
       }
       if (
+        recipe.id === PUMP_CONSTRUCTION_RECIPE.id &&
         p.key === "casing" &&
         ["inlet", "outlet"].some((id) => {
           const port = point(c, id)?.port;
@@ -197,7 +236,7 @@ export function inspectConstruction(
       if (frame) {
         const expected = localPointToWorld(
           frame,
-          Vec3Math.subtract(p.offset, recipe.parts[0].offset),
+          Vec3Math.subtract(p.offset, recipe.parts[0]!.offset),
         );
         const t = currentTransform(c);
         const q = t.rotation,
@@ -257,9 +296,11 @@ export function resolveConstruction(
 ) {
   // Construction module types never become independent pumps through a forged role.
   // Their supported active behaviour exists only after core recognizes the complete kit.
-  const passiveComponents = components.some((c) => pumpPart(c.type) && c.role !== "structure")
+  const passiveComponents = components.some(
+    (c) => constructionPart(c.type) && c.role !== "structure",
+  )
     ? components.map((c) =>
-        pumpPart(c.type)
+        constructionPart(c.type)
           ? { ...c, role: "structure" as const, parameters: resolveParameters("structure", {}) }
           : c,
       )
@@ -278,11 +319,12 @@ export function resolveConstruction(
   const byId = new Map(components.map((c) => [c.id, c]));
   for (const status of statuses) {
     if (status.state !== "complete") continue;
+    const recipe = constructionRecipe(status.assembly.recipeId)!;
     const ids = status.assembly.partIds;
-    const casing = byId.get(ids["casing"]!)!;
+    const casing = byId.get(ids[recipe.modelPart]!)!;
     const base = byId.get(ids["base"]!)!;
     const frame = currentTransform(base);
-    const origin = localPointToWorld(frame, Vec3Math.scale(recipe.parts[0].offset, -1));
+    const origin = localPointToWorld(frame, Vec3Math.scale(recipe.parts[0]!.offset, -1));
     const pose = transform(origin, frame.rotation);
     const massKg = recipe.parts.reduce((sum, part) => sum + byId.get(ids[part.key]!)!.massKg, 0);
     const points: ConnectionPoint[] = [];
@@ -308,9 +350,9 @@ export function resolveConstruction(
       ...casing,
       type: recipe.resultType,
       label: recipe.name,
-      role: "coolant-pump",
-      geometry: boxGeometry(vec3(2, 2, 2), 0.04),
-      parameters: resolveParameters("coolant-pump", { ratedMassFlowKgS: 4000, ratedHeadM: 120 }),
+      role: recipe.role,
+      geometry: boxGeometry(recipe.size, recipe.thicknessM),
+      parameters: resolveParameters(recipe.role, recipe.parameters),
       transform: pose,
       connectionPoints: points,
       massKg,

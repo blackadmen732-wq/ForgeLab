@@ -1,5 +1,8 @@
 # Modular coolant pump — first construction milestone
 
+The shared construction system now also supports [generator and turbine modules](POWERTRAIN_CONSTRUCTION.md).
+This document records the original pump milestone.
+
 This adds a playable stock pump kit to the existing editor. The finished `coolant-pump`
 remains available and old projects retain their original component, ports and behaviour.
 The user-provided facility and machinery illustrations are design references, not shipped
