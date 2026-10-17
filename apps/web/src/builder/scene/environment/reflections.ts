@@ -14,7 +14,7 @@ import {
 /**
  * What metal surfaces reflect inside the reactor hall: a dark steel box with rows of warm
  * high-bay lamps overhead, a pale clerestory band under the eave, warm wall lights and a
- * dim floor. Rendered once into a prefiltered environment map on the GPU — no download.
+ * diffusely lit floor. Rendered once into a prefiltered environment map on the GPU — no download.
  * Presentation only.
  */
 function hallReflectionScene(dark: boolean): Scene {
@@ -40,23 +40,23 @@ function hallReflectionScene(dark: boolean): Scene {
     return mesh;
   };
 
-  // The room itself: walls a little lighter than the floor, a near-black roof.
+  // Broad bounce from the actual room matters more than tiny bright lamp reflections.
   add(
     new BoxGeometry(140, 50, 90),
-    basic(dark ? "#0b0d10" : "#23272c", 1),
+    basic(dark ? "#0b0d10" : "#48515b", 1),
     0,
     25,
     0,
   ).material.side = BackSide;
   add(
     new PlaneGeometry(140, 90).rotateX(-Math.PI / 2),
-    basic(dark ? "#08090b" : "#1a1c1f", 1),
+    basic(dark ? "#08090b" : "#626970", 1),
     0,
     0.05,
     0,
   );
   // High-bay lamps: seven rows of warm sources.
-  const lamp = basic("#fff0da", dark ? 6 : 14);
+  const lamp = basic("#fff0da", dark ? 6 : 9);
   for (let row = -3; row <= 3; row += 1)
     for (let x = -60; x <= 60; x += 15) add(new BoxGeometry(2.2, 0.2, 2.2), lamp, x, 47, row * 12);
   // Clerestory band of daylight along both long walls (dim after hours).
@@ -65,7 +65,7 @@ function hallReflectionScene(dark: boolean): Scene {
   // Broad roof-light strips make cylindrical housings and flat steel readable between
   // the small lamp highlights. The night preset keeps only its existing work lights.
   if (!dark) {
-    const roofLight = basic("#e2edfa", 2.5);
+    const roofLight = basic("#e2edfa", 3.8);
     for (const x of [-28, 28]) add(new BoxGeometry(8, 0.2, 72), roofLight, x, 49, 0);
   }
   // Warm wall-mounted work lights at the base of the walls.

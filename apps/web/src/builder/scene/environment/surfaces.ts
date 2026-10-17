@@ -139,15 +139,16 @@ function heightField(ctx: CanvasRenderingContext2D, size: number): Float32Array 
 
 /**
  * Steel deck plate, as on a reactor-hall floor: one tile covers `tileM` metres, laid in
- * staggered 3 × 1.5 m plates with ground seams, countersunk fixings, brushing, grime along
- * the joints and restrained rust at fixings. Dry satin finish, without standing water.
+ * staggered 6 × 3 m plates. Small seams and fixings remain subordinate to the machinery;
+ * their dimensions are in metres rather than oversized features measured in texels.
+ * This is surface dressing, not authoritative floor construction or collision geometry.
  */
-export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
+export function steelDeckMaps(tileM = 24, seed = 4021): SurfaceMaps {
   const size = 1024;
   const ppm = size / tileM;
   const random = mulberry32(seed);
-  const plateW = 3 * ppm;
-  const plateH = 1.5 * ppm;
+  const plateW = 6 * ppm;
+  const plateH = 3 * ppm;
   const rows = Math.round(size / plateH);
   const cols = Math.round(size / plateW);
 
@@ -157,9 +158,9 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
   const a = albedo.ctx;
   const r = rough.ctx;
   const h = height.ctx;
-  a.fillStyle = "rgb(150,152,154)";
+  a.fillStyle = "rgb(180,182,184)";
   a.fillRect(0, 0, size, size);
-  r.fillStyle = "rgb(190,190,190)";
+  r.fillStyle = "rgb(220,220,220)";
   r.fillRect(0, 0, size, size);
   h.fillStyle = "rgb(200,200,200)";
   h.fillRect(0, 0, size, size);
@@ -172,9 +173,9 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
   }
   for (const p of plates) {
     // Each plate came from a different heat: slightly different tone and finish.
-    const tone = 132 + (random() - 0.5) * 16;
-    const warm = (random() - 0.5) * 6;
-    const finish = 175 + random() * 30;
+    const tone = 180 + (random() - 0.5) * 5;
+    const warm = (random() - 0.5) * 2;
+    const finish = 216 + random() * 12;
     const paint = (x: number, y: number) => {
       a.fillStyle = `rgb(${tone + warm},${tone},${tone - warm})`;
       a.fillRect(x, y, plateW, plateH);
@@ -184,7 +185,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
       for (let i = 0; i < 70; i += 1) {
         const yy = y + random() * plateH;
         const light = random() > 0.5;
-        a.fillStyle = light ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+        a.fillStyle = light ? "rgba(255,255,255,0.018)" : "rgba(0,0,0,0.018)";
         a.fillRect(x + random() * plateW * 0.3, yy, plateW * (0.3 + random() * 0.7), 1);
       }
       // Countersunk fixings near each corner.
@@ -198,21 +199,22 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
       ] as const) {
         const bx = x + fx * plateW;
         const by = y + fy * plateH;
-        a.fillStyle = "rgba(40,40,42,0.85)";
+        const fixingR = 0.016 * ppm;
+        a.fillStyle = "rgba(55,55,58,0.45)";
         a.beginPath();
-        a.arc(bx, by, 5, 0, Math.PI * 2);
+        a.arc(bx, by, fixingR, 0, Math.PI * 2);
         a.fill();
         a.fillStyle = "rgba(150,150,152,0.9)";
         a.beginPath();
-        a.arc(bx, by, 3, 0, Math.PI * 2);
+        a.arc(bx, by, fixingR * 0.6, 0, Math.PI * 2);
         a.fill();
         h.fillStyle = "rgb(150,150,150)";
         h.beginPath();
-        h.arc(bx, by, 5, 0, Math.PI * 2);
+        h.arc(bx, by, fixingR, 0, Math.PI * 2);
         h.fill();
         h.fillStyle = "rgb(190,190,190)";
         h.beginPath();
-        h.arc(bx, by, 3, 0, Math.PI * 2);
+        h.arc(bx, by, fixingR * 0.6, 0, Math.PI * 2);
         h.fill();
       }
     };
@@ -223,17 +225,17 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
   // Seams: a ground groove with grime collected along it.
   for (const p of plates) {
     const seam = (x: number, y: number) => {
-      a.strokeStyle = "rgba(18,18,20,0.9)";
-      a.lineWidth = 3;
+      a.strokeStyle = "rgba(50,52,55,0.38)";
+      a.lineWidth = 0.012 * ppm;
       a.strokeRect(x, y, plateW, plateH);
-      a.strokeStyle = "rgba(40,34,28,0.25)";
-      a.lineWidth = 12;
+      a.strokeStyle = "rgba(60,56,50,0.07)";
+      a.lineWidth = 0.08 * ppm;
       a.strokeRect(x, y, plateW, plateH);
       r.strokeStyle = "rgb(225,225,225)";
-      r.lineWidth = 6;
+      r.lineWidth = 0.04 * ppm;
       r.strokeRect(x, y, plateW, plateH);
-      h.strokeStyle = "rgb(40,40,40)";
-      h.lineWidth = 3;
+      h.strokeStyle = "rgb(160,160,160)";
+      h.lineWidth = 0.012 * ppm;
       h.strokeRect(x, y, plateW, plateH);
     };
     wrapped(size, p.x + plateW / 2, p.y + plateH / 2, plateW, (cx, cy) =>
@@ -246,8 +248,8 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     const y = random() * size;
     const rad = 40 + random() * 140;
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, "235,235,235", 0.08);
-      blob(r, px, py, rad, "140,140,140", 0.12);
+      blob(a, px, py, rad, "235,235,235", 0.035);
+      blob(r, px, py, rad, "185,185,185", 0.08);
     });
   }
   // Dry workshop dust: no decorative oil slicks or standing water in the build area.
@@ -256,7 +258,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     const y = random() * size;
     const rad = 10 + random() * 70;
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, "60,52,44", 0.05);
+      blob(a, px, py, rad, "60,52,44", 0.025);
       blob(r, px, py, rad, "255,255,255", 0.12);
     });
   }
@@ -267,8 +269,8 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     const y = p.y + (random() > 0.5 ? 0.12 : 0.88) * plateH;
     const rad = 8 + random() * 22;
     wrapped(size, x, y, rad, (px, py) => {
-      blob(a, px, py, rad, "120,62,30", 0.3);
-      blob(r, px, py, rad, "255,255,255", 0.5);
+      blob(a, px, py, rad, "120,62,30", 0.08);
+      blob(r, px, py, rad, "255,255,255", 0.12);
     });
   }
   // Scratches.
@@ -277,7 +279,7 @@ export function steelDeckMaps(tileM = 12, seed = 4021): SurfaceMaps {
     const y = random() * size;
     const angle = random() * Math.PI;
     const len = 6 + random() * 40;
-    a.strokeStyle = `rgba(215,215,215,${0.08 + random() * 0.15})`;
+    a.strokeStyle = `rgba(215,215,215,${0.025 + random() * 0.04})`;
     a.lineWidth = 1;
     a.beginPath();
     a.moveTo(x, y);

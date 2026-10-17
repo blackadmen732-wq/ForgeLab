@@ -316,7 +316,7 @@ export const ComponentMesh = memo(function ComponentMesh({
         ...wear(),
         color: "#9aa2aa",
         metalness: 0.95,
-        roughness: 0.3,
+        roughness: 0.38,
       }),
       accent: new MeshStandardMaterial({
         ...wear(),
@@ -360,8 +360,8 @@ export const ComponentMesh = memo(function ComponentMesh({
     [role, geometry],
   );
   const glowMaterial = useMemo(
-    () => createPlasmaMaterial(geometry.kind === "torus"),
-    [geometry.kind],
+    () => createPlasmaMaterial(geometry.kind === "torus", geometry),
+    [geometry],
   );
   useLayoutEffect(() => () => glowGeometry?.dispose(), [glowGeometry]);
 

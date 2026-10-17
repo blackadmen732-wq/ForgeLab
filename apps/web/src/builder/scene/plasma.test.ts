@@ -23,6 +23,34 @@ const vessel = (plasma: Partial<VesselState["plasma"]>): VesselState =>
   }) as unknown as VesselState;
 
 describe("plasma presentation", () => {
+  it("fits the optical volume to the vessel envelope on every supported symmetry axis", () => {
+    for (const [axis, canonicalAxis] of [
+      ["x", 0],
+      ["y", 1],
+      ["z", 2],
+    ] as const) {
+      const geometry = { kind: "torus", majorRadiusM: 6, minorRadiusM: 2, axis } as const;
+      const before = JSON.stringify(geometry);
+      const material = createPlasmaMaterial(true, geometry);
+      expect(material.uniforms["uShape"]!.value.toArray()).toEqual([6, 1.44, 1]);
+      expect(material.uniforms["uAxis"]!.value).toBe(canonicalAxis);
+      expect(JSON.stringify(geometry)).toBe(before);
+      material.dispose();
+    }
+  });
+
+  it("uses the linear vessel's inner radius and length instead of torus dimensions", () => {
+    const material = createPlasmaMaterial(false, {
+      kind: "cylinder",
+      radiusM: 2,
+      heightM: 10,
+      axis: "y",
+    });
+    expect(material.uniforms["uShape"]!.value.toArray()).toEqual([0, 0.9, 4]);
+    expect(material.uniforms["uToroidal"]!.value).toBe(0);
+    material.dispose();
+  });
+
   it("is dark with no plasma and glows only while one exists", () => {
     expect(plasmaBrightness(null)).toBe(0);
     for (const phase of ["off", "ended", "disrupted"] as const)

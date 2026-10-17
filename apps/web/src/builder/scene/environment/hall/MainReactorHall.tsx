@@ -63,16 +63,16 @@ interface FloorPhoto {
 function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): Materials {
   const dark = preset.id === "dark-facility";
   // Steel deck plate: photographed plate from the asset bucket when there is one (tiled at
-  // its real size), else the procedural deck tiled at 12 m.
+  // its real size), else a quiet procedural deck tiled at 24 m.
   const deck =
     photo === null
-      ? steelDeckMaps(12)
+      ? steelDeckMaps(24)
       : {
           map: photo.map.clone(),
           normalMap: (photo.normalMap ?? photo.map).clone(),
           roughnessMap: (photo.roughnessMap ?? photo.map).clone(),
         };
-  const tile = photo?.tileM ?? 12;
+  const tile = photo?.tileM ?? 24;
   for (const t of Object.values(deck))
     t.repeat.set((2 * HALL.halfX) / tile, (2 * HALL.halfZ) / tile);
   const concreteMap = concreteTexture(12, false);
@@ -106,16 +106,16 @@ function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): M
   return {
     floor: new MeshStandardMaterial({
       // A photograph carries its own colour; the procedural deck is tinted steel.
-      color: photo !== null ? (dark ? "#9a9a9a" : "#ffffff") : dark ? "#6a6f75" : "#8a8f95",
+      color: photo !== null ? (dark ? "#9a9a9a" : "#ffffff") : dark ? "#6a6f75" : "#9da2a6",
       map: deck.map,
       roughnessMap: deck.roughnessMap,
       normalMap: photo !== null && photo.normalMap === null ? null : deck.normalMap,
-      normalScale: new Vector2(0.4, 0.4),
+      normalScale: new Vector2(0.18, 0.18),
       roughness: 1,
       metalness: 0.15,
     }),
     steel: metal("#5f6a75", 0.7, 0.42),
-    steelDark: metal("#424d58", 0.85, 0.5),
+    steelDark: metal("#56616c", 0.65, 0.58),
     concrete: std(dark ? "#6f747a" : "#9aa0a6", 0, 0.92, { map: concreteMap }),
     panel: std(dark ? "#5b636c" : "#909ca8", 0, 0.6, { map: panelMap }),
     glass: std("#adc4d4", 0, 0.12, { transparent: true, opacity: 0.25, depthWrite: false }),
@@ -145,7 +145,7 @@ function createMaterials(preset: EnvironmentPreset, photo: FloorPhoto | null): M
     propGrey: metal("#6a727b", 0.5, 0.48),
     propBlue: paint("#2e4d76", 0.45),
     rubber: std("#1a1c1f", 0, 0.9),
-    roof: std("#14181d", 0, 0.95),
+    roof: std(dark ? "#14181d" : "#303944", 0, 0.95),
     baylight: glow("#ffeed6", 1.0),
   };
 }

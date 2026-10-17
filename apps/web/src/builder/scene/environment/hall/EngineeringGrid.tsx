@@ -50,7 +50,7 @@ const FRAGMENT = /* glsl */ `
     float major = line(p, 10.0, 1.5) * (1.0 - smoothstep(60.0, 240.0, dist));
     vec2 edge = smoothstep(uHalf + 0.5, uHalf - 1.5, abs(p));
     float inside = edge.x * edge.y;
-    float a = max(max(minor * 0.1, mid * 0.2), major * 0.34) * inside * uOpacity;
+    float a = max(max(minor * 0.065, mid * 0.13), major * 0.23) * inside * uOpacity;
     if (a < 0.003) discard;
     vec3 color = mix(uMinor, uMajor, max(mid * 0.5, major));
     gl_FragColor = vec4(color, a);

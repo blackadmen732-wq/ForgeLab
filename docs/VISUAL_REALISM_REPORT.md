@@ -1,5 +1,8 @@
 # ForgeLab visual realism: implementation and production plan
 
+Follow-up: [visual refinement and updated browser evidence](VISUAL_REFINEMENT.md).
+The captures and results below document the original pass.
+
 The target is an open, believable industrial assembly warehouse with a dry working floor,
 useful equipment at its perimeter and engineering machines that look manufactured. The
 user-supplied warehouse and ITER illustrations are visual references, not shipped textures

@@ -1,0 +1,179 @@
+{
+  "hall": {
+    "roughness": 1,
+    "renderer": "WebKit WebGL",
+    "memory": {
+      "geometries": 89,
+      "textures": 21
+    }
+  },
+  "plasma": {
+    "id": "vessel",
+    "state": {
+      "pressurePa": 0.44502867296931564,
+      "pumpingSpeedM3PerS": 80,
+      "gasLoadPaM3PerS": 35.63083610761829,
+      "interiorVolumeM3": 614.0694153320338,
+      "plasma": {
+        "phase": "flat-top",
+        "configuration": "tokamak",
+        "densityM3": 88211001096856830000,
+        "temperatureKeV": 7.203191187552517,
+        "thermalEnergyJ": 258244302.55748698,
+        "volumeM3": 845.5735849122109,
+        "majorRadiusM": 6.2,
+        "minorRadiusM": 2.016,
+        "plasmaCurrentA": 15000000,
+        "fieldT": 5.2908387125576235,
+        "confinementTimeS": 3.2674194481106764,
+        "fusionPowerW": 211469447.72733295,
+        "alphaPowerW": 42317933.82604957,
+        "neutronPowerW": 169151513.9012834,
+        "auxiliaryHeatingW": 50000000,
+        "ohmicHeatingW": 875851.3113468352,
+        "bremsstrahlungW": 14155895.16027572,
+        "transportLossW": 79036155.85732815,
+        "fuelingRatePerS": 4.7155991798379635e21,
+        "deuteriumFraction": 0.5,
+        "gainQ": 4.229388954546659,
+        "beta": 0.018280113884028934,
+        "normalisedBeta": 1.2998782837499072,
+        "greenwaldFraction": 0.7508659664372969,
+        "safetyFactorQ95": 2.248600172099421,
+        "statusText": "Flat-top: current at target."
+      }
+    },
+    "position": {
+      "x": 0,
+      "y": 4.35,
+      "z": 0
+    },
+    "geometry": {
+      "kind": "torus",
+      "majorRadiusM": 6.2,
+      "minorRadiusM": 2.3,
+      "axis": "y",
+      "wallThicknessM": 0.06
+    },
+    "simulationTime": 95.35
+  },
+  "faults": [
+    {
+      "id": "electrical-bus-fault",
+      "event": {
+        "eventId": "bus::over_temperature::",
+        "simulationTime": 17.4,
+        "componentId": "bus",
+        "siteComponentId": "bus",
+        "worldPosition": [18, 0.05, 4],
+        "worldDirection": [0.703566939735921, 0.4472135954999579, 0.5522622215131423],
+        "failureType": "over_temperature",
+        "family": "electrical",
+        "severity": 0.35006123427045993,
+        "estimatedEnergy": 1000,
+        "temperature": 475.9838599272255,
+        "pressure": null,
+        "electricalState": "none",
+        "structuralState": "damaged",
+        "affectedComponentIds": [],
+        "radiusM": 2.006240264773888,
+        "summary": "\"bus\" exceeded its operating temperature",
+        "combustible": true
+      },
+      "particles": {
+        "smoke": 6,
+        "steam": 0,
+        "vapor": 0,
+        "dust": 0,
+        "fire": 9,
+        "sparks": 63,
+        "spray": 0,
+        "esmoke": 6,
+        "debris (rigid)": 0,
+        "marks": 3,
+        "emitters": 5,
+        "lights": 0
+      }
+    },
+    {
+      "id": "pipe-rupture",
+      "event": {
+        "eventId": "pipe-hot::pipe_rupture::",
+        "simulationTime": 0,
+        "componentId": "pipe-hot",
+        "siteComponentId": "pipe-hot",
+        "worldPosition": [-2, 0.39, -16],
+        "worldDirection": [-0.4764477045343111, 0.6246950475544243, -0.6186708999176875],
+        "failureType": "pipe_rupture",
+        "family": "coolant",
+        "severity": 0.4314152506603801,
+        "estimatedEnergy": 14767.970440245092,
+        "temperature": 552.9974895982913,
+        "pressure": 101325,
+        "electricalState": "none",
+        "structuralState": "damaged",
+        "fluidType": "pressurized-water",
+        "affectedComponentIds": [],
+        "radiusM": 2.0746565980903924,
+        "summary": "Pipe \"pipe-hot\" ruptured",
+        "combustible": false
+      },
+      "particles": {
+        "smoke": 0,
+        "steam": 160,
+        "vapor": 0,
+        "dust": 0,
+        "fire": 0,
+        "sparks": 0,
+        "spray": 91,
+        "esmoke": 0,
+        "debris (rigid)": 0,
+        "marks": 1,
+        "emitters": 4,
+        "lights": 0
+      }
+    },
+    {
+      "id": "magnet-quench",
+      "event": {
+        "eventId": "tf-coils::quench::",
+        "simulationTime": 3.5,
+        "componentId": "tf-coils",
+        "siteComponentId": "tf-coils",
+        "worldPosition": [0, 4.35, 0],
+        "worldDirection": [-0.6970947919729397, 0.4472135954999579, 0.5604095386449124],
+        "failureType": "quench",
+        "family": "quench",
+        "severity": 0.95,
+        "estimatedEnergy": 30122690517.654396,
+        "temperature": 10.274170514023053,
+        "pressure": null,
+        "electricalState": "energised",
+        "structuralState": "fractured",
+        "affectedComponentIds": [],
+        "radiusM": 15.541155040729759,
+        "summary": "Coil \"tf-coils\" quenched",
+        "combustible": false
+      },
+      "particles": {
+        "smoke": 0,
+        "steam": 0,
+        "vapor": 345,
+        "dust": 565,
+        "fire": 0,
+        "sparks": 0,
+        "spray": 0,
+        "esmoke": 0,
+        "debris (rigid)": 14,
+        "marks": 0,
+        "emitters": 5,
+        "lights": 0
+      }
+    }
+  ],
+  "particleStudy": {
+    "purpose": "shader study only; no simulated event",
+    "kinds": ["smoke", "steam", "vapor", "dust", "fire", "sparks", "spray", "esmoke"]
+  },
+  "errors": []
+}

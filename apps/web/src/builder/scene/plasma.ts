@@ -1,5 +1,5 @@
-import { AdditiveBlending, Color, DoubleSide, ShaderMaterial } from "three";
-import type { VesselState } from "@forgelab/sim-core";
+import { AdditiveBlending, Color, DoubleSide, ShaderMaterial, Vector3 } from "three";
+import type { ComponentGeometry, VesselState } from "@forgelab/sim-core";
 
 /**
  * The plasma as drawn: presentation of the published plasma state, never a source of it.
@@ -8,8 +8,8 @@ import type { VesselState } from "@forgelab/sim-core";
  * - **Edge glow.** The highly ionized core has weak visible continuum, not a liquid
  *   surface. Cooler edge neutrals and impurities contribute visible line emission.
  *   Hydrogen Balmer lines motivate this palette; camera filters/exposure change colour.
- *   Looking through the edge layer side-on gives a longer
- *   path through it, so the rim of the torus is brighter than its face (limb brightening).
+ *   A short, bounded ray integration through a soft emitting edge avoids a solid skin.
+ *   This is an artistic optical cue, not a radiative-transfer or emissivity solver.
  * - **Filaments along field lines.** Edge filaments are stretched along the magnetic field,
  *   which winds once poloidally every q95 turns toroidally; the striations follow that
  *   pitch, taken from the published safety factor. Straight devices (linear) have straight
@@ -25,22 +25,26 @@ import type { VesselState } from "@forgelab/sim-core";
 const STRIPES = 24;
 
 const VERTEX = /* glsl */ `
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
+  uniform float uAxis;
+  varying vec3 vLocal;
+  varying vec3 vEye;
+  // Canonical optical volume has its symmetry axis along z, regardless of vessel axis.
+  vec3 canonical(vec3 p) {
+    if (uAxis < 0.5) return p.zyx;
+    if (uAxis < 1.5) return p.xzy;
+    return p;
+  }
   void main() {
-    vUv = uv;
+    vLocal = canonical(position);
+    vEye = canonical((inverse(modelViewMatrix) * vec4(0.0, 0.0, 0.0, 1.0)).xyz);
     vec4 mv = modelViewMatrix * vec4(position, 1.0);
-    vNormal = normalize(normalMatrix * normal);
-    vView = normalize(-mv.xyz);
     gl_Position = projectionMatrix * mv;
   }
 `;
 
 const FRAGMENT = /* glsl */ `
-  varying vec2 vUv;
-  varying vec3 vNormal;
-  varying vec3 vView;
+  varying vec3 vLocal;
+  varying vec3 vEye;
   uniform float uTime;
   uniform float uIntensity;
   uniform float uFlash;
@@ -48,6 +52,8 @@ const FRAGMENT = /* glsl */ `
   uniform float uToroidal;
   uniform vec3 uEdge;
   uniform vec3 uCore;
+  // major radius, minor radius, cylinder half-length; matches the existing glow envelope.
+  uniform vec3 uShape;
   // Value noise on a lattice that repeats every (px, py) cells, so the pattern closes
   // around the torus without a seam.
   float hash(vec2 p, vec2 period) {
@@ -61,30 +67,67 @@ const FRAGMENT = /* glsl */ `
     return mix(mix(hash(i, period), hash(i + vec2(1.0, 0.0), period), u.x),
                mix(hash(i + vec2(0.0, 1.0), period), hash(i + vec2(1.0, 1.0), period), u.x), u.y);
   }
+  vec2 crossSection(vec3 p) {
+    return uToroidal > 0.5 ? vec2(length(p.xy) - uShape.x, p.z) : p.xy;
+  }
+  float radiusAt(vec3 p) {
+    float radial = length(crossSection(p)) / uShape.y;
+    return uToroidal > 0.5 ? radial : max(radial, abs(p.z) / uShape.z);
+  }
   void main() {
-    float facing = abs(dot(normalize(vNormal), normalize(vView)));
-    // Thin emitting layer: bounded path-length enhancement at grazing angles. A faint
-    // face leaves the interior readable instead of filling it with an opaque neon skin.
-    float limb = pow(1.0 - facing, 2.4);
-    // Coordinate across the field (which filament) and along it.
-    float across = uToroidal > 0.5 ? vUv.y * ${STRIPES}.0 - vUv.x * uTwist : vUv.x * ${STRIPES}.0;
-    float along = uToroidal > 0.5 ? vUv.x : vUv.y;
-    vec2 period = vec2(${STRIPES}.0, 48.0);
-    float f1 = noise(vec2(across + uTime * 0.35, along * 48.0 - uTime * 1.5), period);
-    float f2 = noise(vec2(across * 2.0 - uTime * 0.2, along * 48.0 + uTime * 0.9), period * vec2(2.0, 1.0));
-    float filaments = smoothstep(0.63, 0.94, f1) * 0.65 + smoothstep(0.72, 0.98, f2) * 0.3;
-    float edgeCloud = 0.72 + 0.28 * noise(vec2(across, along * 48.0 + uTime * 0.25), period);
-    vec3 colour = mix(uCore, uEdge, 0.45 + 0.55 * limb);
-    colour = mix(colour, vec3(1.0, 0.8, 0.9), filaments * 0.2 + uFlash * 0.35);
-    float emission = uIntensity * ((0.025 + 0.55 * limb) * edgeCloud +
-                                  0.22 * filaments * (0.15 + limb) + uFlash * 0.32);
-    // SrcAlpha/One additive blending applies opacity once. Do not pre-multiply here.
-    gl_FragColor = vec4(colour, clamp(emission, 0.0, 0.85));
+    if (uIntensity <= 0.0) discard;
+    bool inside = radiusAt(vEye) < 1.0;
+    // One integration per connected interval, including when the camera enters the volume.
+    // Two-sided surface emission would count both faces and produce a hard bright rim.
+    if (gl_FrontFacing == inside) discard;
+    vec3 direction = normalize(vLocal - vEye);
+    vec3 start = inside ? vEye : vLocal;
+    float stepM = uShape.y * 0.22;
+    vec3 light = vec3(0.0);
+    // Fixed upper bound, no extra meshes/textures/particles. Stop at the first exit rather
+    // than integrating another torus segment that will draw through its own entry face.
+    for (int i = 0; i < 24; i++) {
+      vec3 p = start + direction * (float(i) + 0.5) * stepM;
+      float rho = radiusAt(p);
+      if (rho > 1.02) break;
+      vec2 section = crossSection(p);
+      float around = atan(p.y, p.x) / 6.2831853 + 0.5;
+      float poloidal = atan(section.y, section.x) / 6.2831853 + 0.5;
+      float along = uToroidal > 0.5 ? around : p.z / (2.0 * uShape.z) + 0.5;
+      float across = (uToroidal > 0.5 ? poloidal : around) * ${STRIPES}.0 - along * uTwist;
+      vec2 period = vec2(${STRIPES}.0, 48.0);
+      float cloud = noise(vec2(across + uTime * 0.18, along * 48.0 - uTime * 0.6), period);
+      float detail = noise(vec2(across * 2.0 - uTime * 0.15, along * 96.0), period * 2.0);
+      float filaments = smoothstep(0.64, 0.94, cloud * 0.7 + detail * 0.3);
+      // The edge is a broad internal layer, fading out before the envelope. Nothing
+      // emits from the polygon surface, and the interior continuum stays much fainter.
+      float edge = exp(-pow((rho - 0.76) / 0.16, 2.0));
+      float envelope = 1.0 - smoothstep(0.86, 1.0, rho);
+      float emission = envelope * (0.012 + edge * (0.12 + cloud * 0.13 + filaments * 0.55));
+      vec3 colour = mix(uCore, uEdge, clamp(edge * 0.85, 0.0, 1.0));
+      light += colour * emission * 0.22;
+    }
+    light *= uIntensity * (1.0 + uFlash * 0.55);
+    // Keep integrated strength in alpha. Converting a very faint RGB radiance to sRGB
+    // before additive blending lifts its dark values and blows out a bright background.
+    // This bounded display mapping is illustrative, not calibrated camera exposure.
+    float energy = max(light.r, max(light.g, light.b));
+    gl_FragColor = vec4(light / max(energy, 0.00001), min(0.24, energy * 0.55));
     #include <colorspace_fragment>
   }
 `;
 
-export function createPlasmaMaterial(toroidal: boolean): ShaderMaterial {
+export function createPlasmaMaterial(
+  toroidal: boolean,
+  geometry?: ComponentGeometry,
+): ShaderMaterial {
+  const axis = geometry !== undefined && "axis" in geometry ? geometry.axis : "z";
+  const shape =
+    geometry?.kind === "torus"
+      ? new Vector3(geometry.majorRadiusM, geometry.minorRadiusM * 0.72, 1)
+      : geometry?.kind === "cylinder"
+        ? new Vector3(0, geometry.radiusM * 0.45, geometry.heightM * 0.4)
+        : new Vector3(toroidal ? 1 : 0, 0.3, 1);
   return new ShaderMaterial({
     vertexShader: VERTEX,
     fragmentShader: FRAGMENT,
@@ -99,6 +142,8 @@ export function createPlasmaMaterial(toroidal: boolean): ShaderMaterial {
       uFlash: { value: 0 },
       uTwist: { value: Math.round(STRIPES / 3) },
       uToroidal: { value: toroidal ? 1 : 0 },
+      uAxis: { value: axis === "x" ? 0 : axis === "y" ? 1 : 2 },
+      uShape: { value: shape },
       // Balmer-α pink at the edge, a violet-blue hint (Balmer-β/γ) toward the face.
       uEdge: { value: new Color("#f878a8") },
       uCore: { value: new Color("#7476c9") },
