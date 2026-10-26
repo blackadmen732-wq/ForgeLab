@@ -118,6 +118,33 @@ export interface ReferencePlantOptions {
 }
 
 /**
+ * A square hollow-section steel sleeper on the floor under each coolant pipe, carrying it
+ * at the pump's nozzle height. Added after every other join so existing connection ids hold.
+ */
+function pipeSleepers(
+  world: SimulationWorld,
+  pipes: readonly string[],
+  has: (id: string) => boolean,
+): void {
+  for (const pipe of pipes) {
+    const component = has(pipe) ? world.getComponent(pipe) : undefined;
+    if (component?.geometry.kind !== "cylinder") continue;
+    const position = component.transform.positionM;
+    const sectionM = position.y - component.geometry.radiusM;
+    placePart(world, "structural-beam", {
+      id: `${pipe}-sleeper`,
+      label: "Pipe Sleeper",
+      transform: transform(
+        vec3(position.x, sectionM / 2, position.z),
+        QuaternionMath.fromAxisAngle(vec3(0, 1, 0), Math.PI / 2),
+      ),
+      dimensions: { lengthM: 1.2, sectionM, wallM: 0.012 },
+    });
+    link(world, [`${pipe}-sleeper`, "top"], [pipe, "bottom"]);
+  }
+}
+
+/**
  * A complete tokamak power plant: vessel inside a breeding blanket inside a
  * superconducting TF coil set; neutral-beam heating, fuelling and cryopumps; a pressurised
  * water loop through vessel, blanket and a steam generator; a turbine-generator; a grid
@@ -170,15 +197,20 @@ export function buildReferencePlant(
 
   // Primary coolant loop: pump → pipe → vessel → blanket → steam generator → pipe → pump.
   put("coolant-pump", "pump", vec3(-6, 1, -16), { label: "Primary Pump" });
-  put("coolant-pipe", "pipe-hot", vec3(-2, 0.39, -16), { label: "Supply Pipe" });
-  put("coolant-pipe", "pipe-cold", vec3(-10, 0.39, -16), { label: "Return Pipe" });
-  put("steam-generator", "steam-gen", vec3(8, 4, -18), { label: "Steam Generator" });
+  // Pipes run at the pump's nozzle height so each joins it with one straight spool.
+  put("coolant-pipe", "pipe-hot", vec3(-2, 1, -16), { label: "Supply Pipe" });
+  put("coolant-pipe", "pipe-cold", vec3(-10, 1, -16), { label: "Return Pipe" });
+  // Primary nozzles face back toward the coolant loop, away from the turbine's inlet.
+  put("steam-generator", "steam-gen", vec3(8, 4, -18), {
+    label: "Steam Generator",
+    transform: transform(vec3(8, 4, -18), QuaternionMath.fromAxisAngle(vec3(0, 1, 0), Math.PI)),
+  });
   join(["pump", "outlet"], ["pipe-hot", "a"]);
   join(["pipe-hot", "b"], ["vessel", "coolant-in"]);
   join(["vessel", "coolant-out"], ["blanket", "coolant-in"]);
   join(["blanket", "coolant-out"], ["steam-gen", "primary-in"]);
-  join(["steam-gen", "primary-out"], ["pipe-cold", "b"]);
-  join(["pipe-cold", "a"], ["pump", "inlet"]);
+  join(["steam-gen", "primary-out"], ["pipe-cold", "a"]);
+  join(["pipe-cold", "b"], ["pump", "inlet"]);
 
   // Power conversion.
   put("steam-turbine", "turbine", vec3(20, 2, -18), { label: "Steam Turbine" });
@@ -211,6 +243,7 @@ export function buildReferencePlant(
   join(["interlock", "signal"], ["wall-sensor", "signal"]);
   join(["interlock", "signal"], ["nbi", "control"]);
   join(["interlock", "signal"], ["injector", "control"]);
+  pipeSleepers(world, ["pipe-hot", "pipe-cold"], has);
 
   world.solve();
 }
@@ -303,17 +336,19 @@ export function buildIterClassPlant(world: SimulationWorld): void {
 
   // Primary coolant loop and power conversion, north of the cryostat.
   put("coolant-pump", "pump", "Primary Pump", { position: vec3(-10, 1, -24) });
-  put("coolant-pipe", "pipe-hot", "Supply Pipe", { position: vec3(-6, 0.39, -24) });
-  put("coolant-pipe", "pipe-cold", "Return Pipe", { position: vec3(-14, 0.39, -24) });
-  put("steam-generator", "steam-gen", "Steam Generator", { position: vec3(10, 4, -26) });
+  put("coolant-pipe", "pipe-hot", "Supply Pipe", { position: vec3(-6, 1, -24) });
+  put("coolant-pipe", "pipe-cold", "Return Pipe", { position: vec3(-14, 1, -24) });
+  put("steam-generator", "steam-gen", "Steam Generator", {
+    transform: transform(vec3(10, 4, -26), QuaternionMath.fromAxisAngle(vec3(0, 1, 0), Math.PI)),
+  });
   put("steam-turbine", "turbine", "Steam Turbine", { position: vec3(24, 2, -26) });
   put("generator", "generator", "Generator", { position: vec3(32, 2, -26) });
   join(["pump", "outlet"], ["pipe-hot", "a"]);
   join(["pipe-hot", "b"], ["vessel", "coolant-in"]);
   join(["vessel", "coolant-out"], ["blanket", "coolant-in"]);
   join(["blanket", "coolant-out"], ["steam-gen", "primary-in"]);
-  join(["steam-gen", "primary-out"], ["pipe-cold", "b"]);
-  join(["pipe-cold", "a"], ["pump", "inlet"]);
+  join(["steam-gen", "primary-out"], ["pipe-cold", "a"]);
+  join(["pipe-cold", "b"], ["pump", "inlet"]);
   join(["steam-gen", "steam"], ["turbine", "steam"]);
   join(["turbine", "shaft"], ["generator", "shaft"]);
 
@@ -361,6 +396,7 @@ export function buildIterClassPlant(world: SimulationWorld): void {
     position: vec3(16.5, (deckTop - 0.2) / 2, 20),
     dimensions: { heightM: deckTop - 0.2, widthM: 3, runM: 6 },
   });
+  pipeSleepers(world, ["pipe-hot", "pipe-cold"], (id) => world.getComponent(id) !== undefined);
 
   world.solve();
 }

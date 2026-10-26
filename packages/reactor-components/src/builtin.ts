@@ -64,6 +64,9 @@ const PX = vec3(1, 0, 0);
 const NX = vec3(-1, 0, 0);
 const PZ = vec3(0, 0, 1);
 const NZ = vec3(0, 0, -1);
+const D = Math.SQRT1_2;
+/** Outboard, between +x and −z. */
+const DIAGONAL = vec3(D, 0, -D);
 
 /** A base socket at the bottom of a part of height h, so it can stand on a deck. */
 const base = (h: number) => structural("base", vec3(0, -h / 2, 0), DOWN);
@@ -1080,8 +1083,9 @@ const BLANKET = define({
       geometry,
       sockets: [
         ...torusSupports(R, a, t),
-        socket("coolant-in", "coolant", vec3(0, 0.6, R + a), PZ),
-        socket("coolant-out", "coolant", vec3(0, -0.6, R + a), PZ),
+        // Manifolds on the outboard diagonal, clear of the vessel's four cardinal ports.
+        socket("coolant-in", "coolant", vec3(D * (R + a), 0.6, -D * (R + a)), DIAGONAL),
+        socket("coolant-out", "coolant", vec3(D * (R + a), -0.6, -D * (R + a)), DIAGONAL),
         socket("sensor", "control", vec3(-R, a, 0), UP),
       ],
     };
