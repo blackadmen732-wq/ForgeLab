@@ -270,3 +270,78 @@ describe("service occupied volume", () => {
     expect(route.points.flat().every(Number.isFinite)).toBe(true);
   });
 });
+
+describe("route planning through a real plant layout", () => {
+  function torus(id: string, R: number, a: number, wall: number): RouteObstacle {
+    const geometry = torusGeometry(R, a, "y", wall),
+      t = transform(vec3(0, 0, 0));
+    return { id, label: id, geometry, transform: t, bounds: worldAabb(geometry, t) };
+  }
+  const vessel = torus("vessel", 6, 2, 0.1);
+  const pump = box("pump", [16, 0, 0], [2, 2, 2]);
+  const fromVessel = (enclosure: RouteObstacle) =>
+    planServiceRoute(
+      "coolant",
+      end([8, 0, 0], [1, 0, 0]),
+      end([15, 0, 0], [-1, 0, 0]),
+      routeStyle("electrical"),
+      {
+        obstacles: [vessel, enclosure, pump],
+        services: [],
+        groundM: -5,
+        sourceId: "vessel",
+        targetId: "pump",
+      },
+    );
+  it("leads a nested port out through the round shell around its machine, as a port opening", () => {
+    const route = fromVessel(torus("blanket", 6, 3, 1));
+    expect(route.state).toBe("clear");
+    expect(route.points[0]).toEqual([8, 0, 0]);
+  });
+  it("never leads a port through a box enclosure such as a room wall", () => {
+    const room: RouteObstacle = (() => {
+      const geometry = boxGeometry(vec3(20, 8, 20), 0.5),
+        t = transform(vec3(0, 0, 0));
+      return { id: "room", label: "room", geometry, transform: t, bounds: worldAabb(geometry, t) };
+    })();
+    const route = fromVessel(room);
+    expect(route.state).toBe("blocked");
+    expect(route.blockers.some((b) => b.id === "room")).toBe(true);
+  });
+  it("joins two flanges facing each other on one axis with a single straight spool", () => {
+    const route = planServiceRoute(
+      "spool",
+      end([0, 1, 0], [1, 0, 0]),
+      end([1, 1, 0], [-1, 0, 0]),
+      routeStyle("coolant"),
+      empty,
+    );
+    expect(route.state).toBe("clear");
+    expect(route.points).toEqual([
+      [0, 1, 0],
+      [1, 1, 0],
+    ]);
+  });
+  it("bundles cables into one busbar terminal, and lets each sit at the terminal's height", () => {
+    const terminal = end([0, 0.05, 0], [-1, 0, 0]);
+    const first = planServiceRoute(
+      "first",
+      end([-6, 1, 3], [1, 0, 0]),
+      terminal,
+      routeStyle("electrical"),
+      empty,
+    );
+    expect(first.state).toBe("clear");
+    const second = planServiceRoute(
+      "second",
+      end([-6, 1, -3], [1, 0, 0]),
+      terminal,
+      routeStyle("electrical"),
+      { ...empty, services: [first] },
+    );
+    expect(second.state).toBe("clear");
+    // Away from the terminal the cable still clears the slab by its full radius.
+    const away = second.points.filter((p) => Math.hypot(p[0], p[2]) > 2);
+    expect(away.every((p) => p[1] - second.radiusM >= -1e-6)).toBe(true);
+  });
+});
