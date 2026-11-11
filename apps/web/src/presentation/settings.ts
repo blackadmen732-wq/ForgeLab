@@ -10,14 +10,34 @@ export type QualityTier = "LOW" | "MEDIUM" | "HIGH" | "ULTRA";
 
 export const QUALITY_TIERS: readonly QualityTier[] = ["LOW", "MEDIUM", "HIGH", "ULTRA"];
 
+/**
+ * How the plasma is drawn. Both styles show the same published plasma state and neither
+ * changes a simulated number: SCIENTIFIC is restrained (pure emission, a nearly dark core,
+ * a legend of the mappings), CINEMATIC has more contrast and glow.
+ */
+export type PlasmaStyle = "scientific" | "cinematic";
+
+export const PLASMA_STYLES: readonly PlasmaStyle[] = ["scientific", "cinematic"];
+
 export interface PresentationSettings {
   readonly quality: QualityTier;
   /** Disables camera shake, kick and flinch (also forced by the OS setting). */
   readonly reduceMotion: boolean;
   /** 0..1 scale for camera shake, kick and flinch. */
   readonly cameraEffectsIntensity: number;
-  /** Removes flashes, strobing alarm beacons and the shock light. */
+  /**
+   * Calmer effects altogether: everything `reducedFlashing` removes, and also half the
+   * particles, no heat shimmer, no shock ring and no camera exposure lift.
+   */
   readonly reducedEffects: boolean;
+  /**
+   * No flashes or strobing: arcs hold instead of flickering, the breakdown and disruption
+   * flashes are left out, lamps and beacons stop blinking. Sequences still play.
+   */
+  readonly reducedFlashing: boolean;
+  readonly plasmaStyle: PlasmaStyle;
+  /** Draws schematic field lines over the plasma (labelled; pitch from the published q95). */
+  readonly plasmaFieldLines: boolean;
   readonly bloom: boolean;
   readonly screenCrack: boolean;
   readonly haze: boolean;
@@ -29,7 +49,17 @@ export interface PresentationSettings {
   readonly masterVolume: number;
   readonly alarmVolume: number;
   readonly ambientVolume: number;
+  /** Machines and failure sounds. */
+  readonly effectsVolume: number;
+  /** Buttons and building sounds (placing, mating, connecting parts). */
+  readonly interfaceVolume: number;
   readonly muted: boolean;
+  /**
+   * Diagnostic sonification of the plasma (a tone following its published current and
+   * density). Off by default: a plasma in vacuum makes no sound, so this is a labelled
+   * instrument, never an effect.
+   */
+  readonly plasmaSonification: boolean;
   /** Developer-only effects debug panel. */
   readonly debugPanel: boolean;
 }
@@ -118,6 +148,9 @@ export const DEFAULT_SETTINGS: PresentationSettings = Object.freeze({
   reduceMotion: false,
   cameraEffectsIntensity: 0.7,
   reducedEffects: false,
+  reducedFlashing: false,
+  plasmaStyle: "cinematic",
+  plasmaFieldLines: false,
   bloom: true,
   screenCrack: true,
   haze: true,
@@ -125,7 +158,10 @@ export const DEFAULT_SETTINGS: PresentationSettings = Object.freeze({
   masterVolume: 0.8,
   alarmVolume: 0.7,
   ambientVolume: 0.6,
+  effectsVolume: 0.9,
+  interfaceVolume: 0.6,
   muted: false,
+  plasmaSonification: false,
   debugPanel: false,
 });
 
@@ -145,6 +181,11 @@ export function parseSettings(raw: unknown): PresentationSettings {
     reduceMotion: bool(r["reduceMotion"], d.reduceMotion),
     cameraEffectsIntensity: clamp01(r["cameraEffectsIntensity"], d.cameraEffectsIntensity),
     reducedEffects: bool(r["reducedEffects"], d.reducedEffects),
+    reducedFlashing: bool(r["reducedFlashing"], d.reducedFlashing),
+    plasmaStyle: PLASMA_STYLES.includes(r["plasmaStyle"] as PlasmaStyle)
+      ? (r["plasmaStyle"] as PlasmaStyle)
+      : d.plasmaStyle,
+    plasmaFieldLines: bool(r["plasmaFieldLines"], d.plasmaFieldLines),
     bloom: bool(r["bloom"], d.bloom),
     screenCrack: bool(r["screenCrack"], d.screenCrack),
     haze: bool(r["haze"], d.haze),
@@ -152,7 +193,10 @@ export function parseSettings(raw: unknown): PresentationSettings {
     masterVolume: clamp01(r["masterVolume"], d.masterVolume),
     alarmVolume: clamp01(r["alarmVolume"], d.alarmVolume),
     ambientVolume: clamp01(r["ambientVolume"], d.ambientVolume),
+    effectsVolume: clamp01(r["effectsVolume"], d.effectsVolume),
+    interfaceVolume: clamp01(r["interfaceVolume"], d.interfaceVolume),
     muted: bool(r["muted"], d.muted),
+    plasmaSonification: bool(r["plasmaSonification"], d.plasmaSonification),
     debugPanel: bool(r["debugPanel"], d.debugPanel),
   };
 }
@@ -195,6 +239,22 @@ export function useSettings(): PresentationSettings {
 
 export function tierBudget(settings: PresentationSettings = getSettings()): TierBudget {
   return TIER_BUDGETS[settings.quality];
+}
+
+/**
+ * Whether flashes and strobing are left out: the viewer asked for it directly, or asked for
+ * reduced effects (which include it).
+ */
+export function flashingReduced(settings: PresentationSettings = getSettings()): boolean {
+  return settings.reducedFlashing || settings.reducedEffects;
+}
+
+/**
+ * Share of a tier's particle budget in use: reduced effects draw half. Drawing only; the
+ * events, their timing and the simulation are the same.
+ */
+export function effectScale(settings: PresentationSettings = getSettings()): number {
+  return settings.reducedEffects ? 0.5 : 1;
 }
 
 /** Motion is off when the viewer asked for it or the operating system does. */
