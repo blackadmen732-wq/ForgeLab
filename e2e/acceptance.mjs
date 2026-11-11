@@ -47,6 +47,7 @@ const expect = (condition, message) => {
 };
 
 const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   args: ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader"],
 });
 const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });

@@ -36,6 +36,7 @@ const andre = {
 };
 
 const browser = await chromium.launch({
+  executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
   args: [
     "--use-gl=angle",
     "--use-angle=swiftshader",
