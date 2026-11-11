@@ -133,6 +133,22 @@ describe("presence roster", () => {
     );
   });
 
+  it("carries what a member is doing with the part they are on, and a change of it alone", async () => {
+    const mark = await join("mark");
+    const andre = await join("andre");
+    const seen = () => mark.snapshot().roster.find((e) => e.userId === USERS.andre.id);
+    andre.update({ focus: "coolant-pipe", action: "moving" });
+    await eventually(() =>
+      expect(seen()).toMatchObject({ focus: "coolant-pipe", action: "moving" }),
+    );
+    andre.update({ action: "configuring" });
+    await eventually(() => expect(seen()).toMatchObject({ action: "configuring" }));
+    // Until a client says, the action is unknown rather than guessed.
+    expect(andre.snapshot().roster.find((e) => e.userId === USERS.mark.id)?.action ?? null).toBe(
+      null,
+    );
+  });
+
   it("ignores presence that claims to be someone else or is not signed by the server", async () => {
     const mark = await join("mark");
     await join("andre");

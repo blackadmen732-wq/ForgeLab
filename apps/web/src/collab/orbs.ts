@@ -1,4 +1,4 @@
-import type { Activity, PresenceEntry } from "@forgelab/protocol";
+import type { Activity, PresenceAction, PresenceEntry, ProjectRole } from "@forgelab/protocol";
 import type { VoiceMember } from "@forgelab/voice";
 
 /**
@@ -55,15 +55,91 @@ export function orbPulse(level: number, timeSec: number): number {
   return 1 + 0.25 * l + 0.12 * l * Math.sin(timeSec * (8 + 10 * l));
 }
 
-export function activityText(activity: Activity): string {
+/**
+ * Voice rings around an orb, and bars beside a name: none when silent, one for quiet
+ * speech, two for normal speech, three for loud speech. A count, not only a brightness,
+ * so loudness reads without colour.
+ */
+export type VoiceRings = 0 | 1 | 2 | 3;
+export function voiceRings(level: number): VoiceRings {
+  if (!(level > 0.02)) return 0;
+  if (level < 0.3) return 1;
+  if (level < 0.65) return 2;
+  return 3;
+}
+
+/**
+ * One ring of the voice ripple at a moment in time: rings leave the orb one after another
+ * and fade as they grow, and loud speech throws them further.
+ */
+export function ringPhase(
+  index: number,
+  rings: VoiceRings,
+  level: number,
+  timeSec: number,
+): { readonly scale: number; readonly opacity: number } {
+  if (index >= rings) return { scale: 1, opacity: 0 };
+  const period = 1.15;
+  const l = Math.min(1, Math.max(0, level));
+  const t = (((timeSec / period + index / Math.max(1, rings)) % 1) + 1) % 1;
+  const reach = 1.5 + 2.2 * l;
+  return { scale: 1 + (reach - 1) * t, opacity: (1 - t) * (0.35 + 0.45 * l) };
+}
+
+/** The words a label card shows for what a teammate is doing. */
+export const ACTION_LABELS: Readonly<Record<PresenceAction, string>> = {
+  inspecting: "Inspecting",
+  editing: "Editing",
+  moving: "Moving",
+  viewing: "Viewing",
+  configuring: "Configuring",
+};
+
+/** The coarse activity every client publishes, as an action. */
+export function actionFromActivity(activity: Activity): PresenceAction {
   switch (activity) {
     case "building":
-      return "Editing";
+      return "editing";
     case "simulating":
-      return "Watching the run";
+      return "viewing";
     case "observing":
-      return "Inspecting";
+      return "inspecting";
   }
+}
+
+/** What a teammate is doing: what their client says, else read from the coarse activity. */
+export function orbAction(entry: {
+  readonly activity: Activity;
+  readonly action?: PresenceAction | null;
+}): PresenceAction {
+  return entry.action ?? actionFromActivity(entry.activity);
+}
+
+export function activityText(activity: Activity): string {
+  return ACTION_LABELS[actionFromActivity(activity)];
+}
+
+/**
+ * What this member is doing with the part they have selected, from the editor's own
+ * state. Only the word travels to teammates; nothing here moves or edits anything.
+ */
+export function presenceAction(input: {
+  readonly mode: "build" | "simulate";
+  /** Read-only access (a viewer, or someone else's design). */
+  readonly readOnly: boolean;
+  /** A gizmo drag is in progress on the selection. */
+  readonly dragging: boolean;
+  /** Keyboard focus is in one of the part's parameter fields. */
+  readonly configuring: boolean;
+  /** A cutaway, x-ray, section, peel or internals view is open. */
+  readonly inspecting: boolean;
+}): PresenceAction {
+  if (input.mode === "simulate") return "viewing";
+  if (input.readOnly) return input.inspecting ? "inspecting" : "viewing";
+  if (input.dragging) return "moving";
+  if (input.configuring) return "configuring";
+  if (input.inspecting) return "inspecting";
+  return "editing";
 }
 
 export interface OrbEntry {
@@ -73,6 +149,8 @@ export interface OrbEntry {
   /** Component id the orb hovers over. */
   readonly focus: string;
   readonly activity: Activity;
+  readonly action: PresenceAction;
+  readonly role: ProjectRole;
   readonly muted: boolean;
   readonly speaking: boolean;
   readonly level: number;
@@ -101,12 +179,25 @@ export function orbEntries(
       color: orbColor(entry.userId),
       focus: entry.focus,
       activity: entry.activity,
+      action: orbAction(entry),
+      role: entry.role,
       muted: entry.mic !== "unmuted",
       speaking: member?.speaking ?? false,
       level: member?.level ?? 0,
     });
   }
   return out.sort((a, b) => (a.userId < b.userId ? -1 : a.userId > b.userId ? 1 : 0));
+}
+
+/**
+ * Where several orbs share one part, they fan out around it instead of stacking: the
+ * n-th of `count` orbs sits on a small circle, as an offset in orb radii.
+ */
+export function orbSlot(index: number, count: number): { readonly x: number; readonly z: number } {
+  if (count <= 1) return { x: 0, z: 0 };
+  const angle = (index / count) * Math.PI * 2 + Math.PI / 6;
+  const radius = 1.6 + 0.25 * Math.min(count, 6);
+  return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
 /**

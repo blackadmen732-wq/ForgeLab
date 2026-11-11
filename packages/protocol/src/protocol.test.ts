@@ -9,6 +9,7 @@ import {
   importPublicKey,
   normaliseMessage,
   parseCollabEvent,
+  PRESENCE_ACTIONS,
   parsePresenceState,
   parseRefs,
   permissionsFor,
@@ -113,6 +114,24 @@ describe("schemas", () => {
     expect(parsePresenceState({ ...ok, mic: "shouting" })).toBeNull();
     expect(parsePresenceState({ ...ok, voiceChannelId: "general" })).toBeNull();
     expect(parsePresenceState({ ...ok, focus: "<script>" })).toBeNull();
+  });
+
+  it("carries an optional action, and stays readable without one", () => {
+    const ok = {
+      voiceChannelId: null,
+      mic: "muted",
+      deafened: false,
+      activity: "building",
+      workspaceId: `ws:${U}`,
+      focus: "pump",
+    };
+    // A client that predates the field sends none: still valid, action unknown.
+    expect(parsePresenceState(ok)?.action).toBeNull();
+    expect(parsePresenceState({ ...ok, action: null })?.action).toBeNull();
+    for (const action of PRESENCE_ACTIONS)
+      expect(parsePresenceState({ ...ok, action })?.action).toBe(action);
+    expect(parsePresenceState({ ...ok, action: "hacking" })).toBeNull();
+    expect(parsePresenceState({ ...ok, action: 3 })).toBeNull();
   });
 
   it("validates collaboration events strictly", () => {

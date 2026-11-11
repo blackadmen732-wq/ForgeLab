@@ -7,6 +7,19 @@ import { isProjectRole, type ProjectRole } from "./roles.js";
  */
 export type MicState = "unmuted" | "muted" | "unavailable";
 export type Activity = "building" | "simulating" | "observing";
+/**
+ * What the member is doing with the focused part right now, finer than `activity`. It is
+ * what teammates read on a presence orb ("Maya · TF Coil 12 · Editing"). Optional on the
+ * wire: clients that predate it send none, and readers fall back to `activity`.
+ */
+export type PresenceAction = "inspecting" | "editing" | "moving" | "viewing" | "configuring";
+export const PRESENCE_ACTIONS: readonly PresenceAction[] = [
+  "inspecting",
+  "editing",
+  "moving",
+  "viewing",
+  "configuring",
+];
 
 export interface PresenceState {
   readonly voiceChannelId: string | null;
@@ -17,6 +30,8 @@ export interface PresenceState {
   readonly workspaceId: string;
   /** Component the user is focused on, if any (for "come look at this"). */
   readonly focus: string | null;
+  /** What they are doing with it; null or absent when the client does not say. */
+  readonly action?: PresenceAction | null;
 }
 
 /** A verified roster entry: identity comes from the server-signed ticket, not the payload. */
@@ -36,6 +51,7 @@ export const IDLE_PRESENCE: PresenceState = Object.freeze({
   activity: "building",
   workspaceId: "",
   focus: null,
+  action: null,
 });
 
 const MIC: readonly string[] = ["unmuted", "muted", "unavailable"];
@@ -53,6 +69,8 @@ export function parsePresenceState(input: unknown): PresenceState | null {
   if (typeof r["workspaceId"] !== "string" || !SHORT_ID.test(r["workspaceId"])) return null;
   if (r["focus"] !== null && (typeof r["focus"] !== "string" || !SHORT_ID.test(r["focus"])))
     return null;
+  const action = r["action"] ?? null;
+  if (action !== null && !PRESENCE_ACTIONS.includes(action as PresenceAction)) return null;
   return {
     voiceChannelId:
       r["voiceChannelId"] === null ? null : (r["voiceChannelId"] as string).toLowerCase(),
@@ -61,6 +79,7 @@ export function parsePresenceState(input: unknown): PresenceState | null {
     activity: r["activity"] as Activity,
     workspaceId: r["workspaceId"],
     focus: (r["focus"] as string | null) ?? null,
+    action: action as PresenceAction | null,
   };
 }
 

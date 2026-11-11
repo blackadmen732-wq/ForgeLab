@@ -6,15 +6,20 @@ import {
   projectWorkspaceId,
   type Activity,
   type ChatMessage,
+  type CollabEvent,
+  type MessageRef,
   type Permission,
+  type PresenceAction,
+  type PresenceState,
   type ProjectRole,
 } from "@forgelab/protocol";
-import { ProjectSession, type SessionSnapshot } from "@forgelab/multiplayer";
+import { ProjectSession, type ReceivedEvent, type SessionSnapshot } from "@forgelab/multiplayer";
 import {
   VoiceClient,
   createLiveKitTransport,
   presenceMic,
   type MicMode,
+  type VoiceClientOptions,
   type VoiceState,
 } from "@forgelab/voice";
 import {
@@ -68,12 +73,75 @@ export interface CollabState {
 const VOICE_PREFS = "forgelab.voice.v1";
 const MAX_MESSAGES = 200;
 
-interface VoicePrefs {
+export interface VoicePrefs {
   muted?: boolean;
   mode?: MicMode;
   inputDeviceId?: string | null;
   outputDeviceId?: string | null;
 }
+
+/** What the controller needs from a live project session (`ProjectSession` in production). */
+export interface SessionPort {
+  subscribe(listener: (snapshot: SessionSnapshot) => void): () => void;
+  onEvent(listener: (event: ReceivedEvent) => void): () => void;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  update(patch: Partial<PresenceState>): void;
+  send(event: CollabEvent): Promise<void>;
+}
+
+/**
+ * Everything the controller asks of the outside world. Production wires these to Supabase
+ * (Postgres, Realtime), the comms endpoints and LiveKit; the demo team (demoTeam.ts) wires
+ * them to a script, so the very same controller, panels and orbs can be seen without a
+ * server. Nothing above this interface knows which one it is talking to.
+ */
+export interface CollabPorts {
+  getMyRole(projectId: string): Promise<ProjectRole | null>;
+  listMembers(projectId: string): Promise<readonly Member[]>;
+  listChannels(projectId: string): Promise<readonly Channel[]>;
+  listMessages(channelId: string): Promise<readonly ChatMessage[]>;
+  sendMessage(
+    channelId: string,
+    content: string,
+    refs: readonly MessageRef[],
+  ): Promise<ChatMessage>;
+  /** New rows of one channel, and whether the feed is connected. Resolves to an unsubscribe. */
+  subscribeChat(
+    channelId: string,
+    onRow: (row: unknown) => void,
+    onStatus: (connected: boolean) => void,
+  ): Promise<() => void>;
+  openSession(projectId: string, initial: Partial<PresenceState>): Promise<SessionPort>;
+  readonly voice: Pick<VoiceClientOptions, "requestToken" | "createTransport">;
+  readonly voicePrefs: { read(): VoicePrefs; write(prefs: VoicePrefs): void };
+}
+
+const LIVE_PORTS: CollabPorts = {
+  getMyRole,
+  listMembers,
+  listChannels,
+  listMessages: (channelId) => listMessages(channelId),
+  sendMessage,
+  subscribeChat: async (channelId, onRow, onStatus) =>
+    subscribeChat(await requireSupabase(), channelId, onRow, onStatus),
+  openSession: async (projectId, initial) =>
+    new ProjectSession({
+      projectId,
+      transport: supabaseTransport(await requireSupabase()),
+      fetchTicket: (key) => fetchPresenceTicket(projectId, key),
+      initial,
+    }),
+  voice: {
+    requestToken: fetchVoiceToken,
+    createTransport: () =>
+      createLiveKitTransport({ debug: safeStorage.get("forgelab.debugVoice") === "1" }),
+  },
+  voicePrefs: {
+    read: () => safeStorage.getJson<VoicePrefs>(VOICE_PREFS, {}),
+    write: (prefs) => safeStorage.setJson(VOICE_PREFS, prefs),
+  },
+};
 
 /**
  * Everything live about one shared project for the signed-in member: who is here, the
@@ -83,7 +151,13 @@ interface VoicePrefs {
 export class CollabController {
   readonly voice: VoiceClient;
   readonly work: WorkOrderStore;
-  private session: ProjectSession | null = null;
+  /**
+   * True for the scripted demo team. The panels, orbs and minimap label everything they
+   * draw from a demo controller as demo; it is never a claim that real people are here.
+   */
+  readonly demo: boolean;
+  private readonly ports: CollabPorts;
+  private session: SessionPort | null = null;
   private state: CollabState;
   private readonly listeners = new Set<() => void>();
   private readonly cleanups: (() => void)[] = [];
@@ -105,13 +179,14 @@ export class CollabController {
       transition: transitionWorkOrder,
       subscribe: subscribeWorkOrders,
     },
+    options: { readonly ports?: Partial<CollabPorts>; readonly demo?: boolean } = {},
   ) {
+    this.ports = { ...LIVE_PORTS, ...options.ports };
+    this.demo = options.demo === true;
     this.work = new WorkOrderStore(projectId, userId, workPort);
-    const prefs = safeStorage.getJson<VoicePrefs>(VOICE_PREFS, {});
+    const prefs = this.ports.voicePrefs.read();
     this.voice = new VoiceClient({
-      requestToken: fetchVoiceToken,
-      createTransport: () =>
-        createLiveKitTransport({ debug: safeStorage.get("forgelab.debugVoice") === "1" }),
+      ...this.ports.voice,
       preferences: {
         muted: prefs.muted === true,
         mode: prefs.mode === "push-to-talk" ? "push-to-talk" : "open",
@@ -153,9 +228,9 @@ export class CollabController {
     this.set({ loading: true, error: null });
     try {
       const [role, members, channels] = await Promise.all([
-        getMyRole(this.projectId),
-        listMembers(this.projectId),
-        listChannels(this.projectId),
+        this.ports.getMyRole(this.projectId),
+        this.ports.listMembers(this.projectId),
+        this.ports.listChannels(this.projectId),
       ]);
       if (stale()) return;
       if (role === null) {
@@ -179,26 +254,22 @@ export class CollabController {
           mic: presenceMic(voice),
           deafened: voice.deafened,
         });
-        safeStorage.setJson(VOICE_PREFS, {
+        this.ports.voicePrefs.write({
           muted: voice.muted,
           mode: voice.mode,
           inputDeviceId: voice.inputDeviceId,
           outputDeviceId: voice.outputDeviceId,
-        } satisfies VoicePrefs);
+        });
       }),
     );
     await this.startSession(stale);
   }
 
   private async startSession(stale: () => boolean): Promise<void> {
-    const supabase = await requireSupabase();
-    if (stale()) return;
-    const session = new ProjectSession({
-      projectId: this.projectId,
-      transport: supabaseTransport(supabase),
-      fetchTicket: (key) => fetchPresenceTicket(this.projectId, key),
-      initial: { workspaceId: projectWorkspaceId(this.projectId) },
+    const session = await this.ports.openSession(this.projectId, {
+      workspaceId: projectWorkspaceId(this.projectId),
     });
+    if (stale()) return;
     this.session = session;
     this.cleanups.push(
       session.subscribe((snapshot) => {
@@ -260,9 +331,9 @@ export class CollabController {
   async refresh(): Promise<void> {
     const generation = this.generation;
     const [role, members, channels] = await Promise.all([
-      getMyRole(this.projectId),
-      listMembers(this.projectId),
-      listChannels(this.projectId),
+      this.ports.getMyRole(this.projectId),
+      this.ports.listMembers(this.projectId),
+      this.ports.listChannels(this.projectId),
     ]);
     if (generation !== this.generation) return;
     if (role === null) {
@@ -288,11 +359,8 @@ export class CollabController {
     this.chatUnsubscribe?.();
     this.set({ textChannelId: channelId, messages: [], chat: "loading", chatError: null });
     const generation = this.generation;
-    const supabase = await requireSupabase();
-    if (generation !== this.generation || this.state.textChannelId !== channelId) return;
     // Subscribe first so nothing sent while the history loads is missed.
-    this.chatUnsubscribe = subscribeChat(
-      supabase,
+    const unsubscribe = await this.ports.subscribeChat(
       channelId,
       (row) => {
         const received = parseChatRow(row);
@@ -304,8 +372,13 @@ export class CollabController {
           this.set({ chat: connected ? "live" : "offline" });
       },
     );
+    if (generation !== this.generation || this.state.textChannelId !== channelId) {
+      unsubscribe();
+      return;
+    }
+    this.chatUnsubscribe = unsubscribe;
     try {
-      const history = await listMessages(channelId);
+      const history = await this.ports.listMessages(channelId);
       if (this.state.textChannelId !== channelId) return;
       this.addMessages(history);
       this.set({ chat: "live" });
@@ -324,7 +397,7 @@ export class CollabController {
     const content = normaliseMessage(text);
     if (channelId === null || content === null) return;
     const refs = findRefs(content, (id) => (componentExists(id) ? "component" : null));
-    const sent = await sendMessage(channelId, content, refs);
+    const sent = await this.ports.sendMessage(channelId, content, refs);
     if (sent.channelId === this.state.textChannelId) this.addMessages([sent]);
   }
 
@@ -350,6 +423,12 @@ export class CollabController {
 
   setActivity(activity: Activity): void {
     this.session?.update({ activity });
+  }
+
+  /** What this member is doing with the focused part ("Moving", "Configuring"…). */
+  setAction(action: PresenceAction | null): void {
+    if ((this.state.session.self.action ?? null) === action) return;
+    this.session?.update({ action });
   }
 
   /** Tells everyone else a new version exists. Saving itself went through Postgres. */
@@ -396,6 +475,7 @@ function IDLE_SELF(projectId: string) {
     activity: "building" as const,
     workspaceId: projectWorkspaceId(projectId),
     focus: null,
+    action: null,
   };
 }
 

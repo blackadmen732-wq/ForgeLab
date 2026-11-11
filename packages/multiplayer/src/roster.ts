@@ -200,6 +200,7 @@ const VISIBLE = [
   "activity",
   "workspaceId",
   "focus",
+  "action",
 ] as const;
 
 /** Heartbeats refresh signatures without changing anything anyone can see. */
